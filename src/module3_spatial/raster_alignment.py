@@ -1,0 +1,1 @@
+"""Placeholder raster alignment utilities."""
