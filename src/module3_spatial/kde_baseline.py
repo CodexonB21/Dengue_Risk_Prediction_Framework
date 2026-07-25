@@ -1,0 +1,1 @@
+"""Placeholder KDE baseline implementation."""

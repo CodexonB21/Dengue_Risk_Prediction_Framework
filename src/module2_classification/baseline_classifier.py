@@ -1,0 +1,1 @@
+"""Placeholder baseline classifier implementation."""
