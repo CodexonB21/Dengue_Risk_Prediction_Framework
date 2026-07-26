@@ -91,17 +91,19 @@ Cursor should not silently overwrite major decisions. For major architecture cha
 ## Decision 006: Population Normalization as Reporting Layer Only
 
 **Module:** Module 1 (cross-module implication for Module 3)
-**Status:** Proposed
-**Date:** 2026-07-26
+**Status:** Accepted (2026-07-27 — data placed, method finalized)
+**Date:** 2026-07-26 (finalized 2026-07-27)
 
 ### Decision
-Use interpolated census population (2001, 2012, 2024 data points) to compute cases-per-100,000 as a reporting/evaluation metric alongside raw case counts. Do not change the Stage 1 SARIMA modeling target from raw `Number_of_Cases`.
+Use interpolated census population (2001, 2012, 2024 data points, `data/raw/population/population_by_district.csv`) to compute cases-per-100,000 as a reporting/evaluation metric alongside raw case counts. Do not change the Stage 1 SARIMA modeling target from raw `Number_of_Cases`.
 
 ### Reason
 Reviewers will expect incidence normalization for cross-district comparability, but changing the modeling target would cascade into Module 2/3 label definitions and reopen Decisions 001/002. Keeping normalization additive avoids this.
 
 ### Implication
-Requires an interpolation method (linear or growth-rate) between census years, with an explicit extrapolation caveat for 2025–2026 (post-2024 census).
+- **Method finalized:** linear interpolation between 2001↔2012 and 2012↔2024 per district (`Source_Type = "interpolated"`/`"census"`). For 2025–2026, extrapolate forward using each district's own 2012→2024 linear slope (`Source_Type = "extrapolated"`).
+- **Known limitation (2026-07-27):** `Kilinochchi`, `Mullaitivu`, `Mannar` show a non-monotonic 2001→2012→2024 trend (sharp decline then recovery), consistent with civil-war-era displacement in the Vanni region ending 2009. Linear interpolation cannot recover the true wartime population path for 2007–2012, which overlaps the start of the case/climate data. Since population is reporting-layer only, this doesn't affect the modeling target, but `cases_per_100k` for these 3 districts in that period should carry an explicit caveat rather than being treated as precise. See `DATA_DICTIONARY.md` Section 3 for the numbers.
+- `Kalmunai` requires no separate population handling: it is administratively part of Ampara District, so its population is already included in Ampara's census figures (consistent with Decision 012's case-count merge).
 
 ---
 

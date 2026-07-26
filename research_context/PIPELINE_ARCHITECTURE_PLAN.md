@@ -98,8 +98,11 @@ transformations every module would make the same way.
 - `data/raw/weather/*.csv` (25 per-district files, flat, no subfolders; the
   formerly separate `Humidity/` subfolder was confirmed redundant and has been
   deleted)
-- Population census file (2001, 2012, 2024) — **not yet placed in `data/raw/`**, this
-  stage is blocked until it is provided
+- `data/raw/population/population_by_district.csv` (2001/2012/2024 census, placed
+  2026-07-27; wide format, one row per district, columns
+  `District, Population_2001, Population_2012, Population_2024`). Note: the source
+  district name `Moneragala` was corrected to `Monaragala` in this file to match the
+  canonical spelling used everywhere else.
 
 ## Steps
 
@@ -131,10 +134,21 @@ transformations every module would make the same way.
    - Output: `data/processed/shared/climate_weekly.csv` with columns
      `District, Year, Week, <13 aggregated climate columns>`.
 
-4. **Interpolate population to an annual series** (once the census file is placed).
-   - Linear interpolation between 2001-2012 and 2012-2024.
-   - Flag 2025-2026 as extrapolated (`Source_Type = "extrapolated"` vs
-     `"interpolated"` vs `"census"`).
+4. **Interpolate population to an annual series** (Decision 006, finalized).
+   - Melt the wide source file to long format: `District, Year, Population` with
+     `Year` in `{2001, 2012, 2024}`.
+   - Linear interpolation between 2001↔2012 and 2012↔2024, per district, for every
+     year needed (2006-2026 to cover the full case/climate range).
+   - For 2025-2026 (after the last census point), extrapolate forward using that
+     district's own 2012→2024 linear slope.
+   - Tag `Source_Type`: `"census"` for 2001/2012/2024 exactly, `"interpolated"` for
+     years strictly between two census points, `"extrapolated"` for 2025-2026.
+   - Known limitation to carry forward, not silently smooth over: `Kilinochchi`,
+     `Mullaitivu`, `Mannar` have a non-monotonic 2001→2012→2024 trend (war-era
+     displacement/recovery) — see `DATA_DICTIONARY.md` Section 3. Linear
+     interpolation is still used (no better data exists), but downstream
+     `cases_per_100k` for these 3 districts in 2007-2012 should be flagged as
+     lower-confidence wherever it's reported.
    - Output: `data/processed/shared/population_annual.csv` with columns
      `District, Year, Estimated_Population, Source_Type`.
 
@@ -253,8 +267,9 @@ per `FEATURE_ENGINEERING_SPEC.md`, writes to `data/features/module1/`.
 
 # Open Items Before Coding Starts
 
-1. Population census file still needs to be placed in `data/raw/` (blocks shared
-   Step 4).
+1. ~~Population census file needs to be placed in `data/raw/`.~~ **Resolved
+   2026-07-27** — placed at `data/raw/population/population_by_district.csv`;
+   shared Step 4 is now unblocked.
 2. `src/config.py` needs the Stage 0 fix described above.
 3. Confirm the master-calendar mode-based construction (shared Step 2) doesn't
    produce ties or ambiguous cases before relying on it — spot-check after

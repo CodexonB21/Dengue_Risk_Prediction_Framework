@@ -86,18 +86,69 @@ This is the result of a cleanup: the raw source originally shipped as two subfol
 
 # 3. Population / Census Dataset
 
+## Source File (placed 2026-07-27)
+`data/raw/population/population_by_district.csv` — wide format, one row per district:
+
+```text
+District,Population_2001,Population_2012,Population_2024
+Kandy,1279028,1375382,1461895
+...
+```
+
 ## Granularity
-Per district, per census year only.
+Per district, per census year only. Sri Lanka runs a national census roughly once per
+decade, so only three data points exist per district — this is a real, structural data
+limitation, not a collection gap that more scraping could fix.
 
 ## Columns
 Population count per district for census years: **2001, 2012, 2024**.
 
+## Coverage Check (2026-07-27)
+25 rows, exact 1:1 match against the 25-district modeling list in `src/config.py`
+(post Kalmunai→Ampara merge, Decision 012). `Kalmunai` correctly has **no separate
+row**: it is a divisional secretariat within Ampara District administratively, so its
+population is already counted inside Ampara's census total — no adjustment needed.
+
+## District Name Correction (2026-07-27)
+The source used `Moneragala`; corrected to `Monaragala` in the saved file to match the
+canonical spelling used everywhere else in the pipeline (the epidemiological dataset
+had the same typo, fixed during the 2026-07-26 audit — see Data Quality Notes).
+
 ## Role
 Not a Stage 1 modeling input. Used to compute cases-per-100,000 as a **reporting/evaluation-layer** metric for cross-district comparability (see Decision 006). The Stage 1 SARIMA target remains raw `Number_of_Cases`.
 
-## Interpolation Policy
-- 2001–2012 and 2012–2024: linear interpolation (or constant growth-rate model) between census points to estimate annual population per district.
-- 2025–2026: falls after the last census point and requires extrapolation. Flag any incidence figures in this range as based on extrapolated population and treat with reduced confidence.
+## Interpolation / Extrapolation Policy (finalized 2026-07-27, see Decision 006)
+- **2001–2012 and 2012–2024:** linear interpolation between the two bracketing census
+  points, per district. `Source_Type = "interpolated"` for non-census years,
+  `"census"` for 2001/2012/2024 exactly.
+- **2025–2026:** falls after the last census point. Extrapolate using the same linear
+  slope computed from 2012→2024 for that district, extended forward.
+  `Source_Type = "extrapolated"`. Treat any incidence figure in this range with
+  reduced confidence and say so explicitly if used in the write-up.
+
+## Known Limitation: War-Affected Districts (flagged 2026-07-27)
+
+`Kilinochchi`, `Mullaitivu`, and `Mannar` show a **non-monotonic** 2001→2012→2024
+trend that plain linear interpolation cannot represent correctly:
+
+| District | 2001 | 2012 | 2024 | 2001→2012 | 2012→2024 |
+|---|---|---|---|---|---|
+| Kilinochchi | 127,263 | 113,510 | 136,710 | −10.8% | +20.4% |
+| Mullaitivu | 121,667 | 92,238 | 122,619 | −24.2% | +32.9% |
+| Mannar | 151,577 | 99,570 | 123,756 | −34.3% | +24.3% |
+
+This pattern is consistent with the final phase of the Sri Lankan civil war
+(concentrated in these Vanni-region districts, ending May 2009) causing severe
+displacement between the 2001 and 2012 censuses, followed by resettlement/recovery
+after 2012. The true population path almost certainly dropped sharply during
+2007–2009 (exactly when our case/climate data begins) and did not decline smoothly
+from 2001 to 2012 as linear interpolation assumes. Because population here is a
+**reporting-layer denominator only** (Decision 006) — it does not touch the SARIMA
+target or Stage 2 features — this does not corrupt the actual modeling pipeline, but
+any `cases_per_100k` figures reported for these three districts in 2007–2012 should
+be presented with an explicit caveat, not treated as precise incidence rates. No
+better annual estimate is available, so this is documented as an accepted limitation
+rather than something to silently interpolate over.
 
 ---
 
@@ -179,3 +230,5 @@ Record future data issues here.
 | District name consistency across case/climate datasets | Resolved | Verified matching for all 25 official districts; Kalmunai handled separately (see above) |
 | Zero-inflation (most weeks report zero cases in many districts) | **Refined (2026-07-26)** — not universal | Pooled zero-week rate is 13.7%, concentrated in `Mullaitivu` (52.8%), `Kilinochchi` (47.7%), `Mannar` (40.4%), `Ampara` (32.9%), `Vavuniya` (32.3%); high-incidence districts (`Colombo` 0.5%, `Kandy` 1.4%) are near-zero. SARIMA-appropriateness question applies mainly to the sparse Northern/Eastern districts. See `module_1_forecasting/MODULE_CONTEXT.md` |
 | Climate data spatial resolution (single point per district) | Documented limitation | Acknowledged as an Open-Meteo data source constraint; not fixable, must be stated in write-up |
+| Population census file not yet placed | **Resolved (2026-07-27)** | Placed at `data/raw/population/population_by_district.csv` (2001/2012/2024). District name typo `Moneragala` corrected to `Monaragala` on ingestion |
+| Kilinochchi/Mullaitivu/Mannar population non-monotonic across census years (war-related displacement) | **Documented limitation (2026-07-27)** | Linear interpolation cannot represent the true 2007-2012 wartime population path for these 3 districts; `cases_per_100k` for that period/districts should be reported with a caveat. Reporting-layer only, does not affect modeling target |

@@ -126,6 +126,46 @@ Accepted
 
 ---
 
+## 2026-07-27 - Population Census Data Placed; Decision 006 Finalized
+
+### Module
+Module 1 (cross-module implication for Module 3)
+
+### Change
+Placed the population census file at `data/raw/population/population_by_district.csv`
+(2001/2012/2024, 25 districts, wide format). Corrected the source's `Moneragala`
+spelling to `Monaragala` on ingestion to match the rest of the pipeline. Confirmed
+`Kalmunai` needs no separate population row (administratively part of Ampara).
+Finalized Decision 006's interpolation method: linear between census points,
+linear extrapolation using the 2012→2024 slope for 2025-2026. This was previously
+the last blocker on Shared Layer Step 4 in `PIPELINE_ARCHITECTURE_PLAN.md`.
+
+### Reason
+The pipeline-implementation prompt drafted for the next session needed a real answer
+for the population step rather than an open TODO.
+
+### Impact
+- Flagged a genuine methodological limitation while reviewing the data: `Kilinochchi`,
+  `Mullaitivu`, and `Mannar` show a non-monotonic 2001→2012→2024 population trend
+  (sharp decline then recovery), consistent with civil-war-era displacement in the
+  Vanni region ending 2009 — right when the case/climate data begins. Linear
+  interpolation can't recover the true 2007-2012 population path for these 3
+  districts. Since population is a reporting-layer-only denominator (Decision 006),
+  this doesn't touch the modeling target, but `cases_per_100k` for these districts in
+  that period should be reported with an explicit caveat. Documented in
+  `DATA_DICTIONARY.md` Section 3 and `RESEARCH_DECISIONS.md` Decision 006.
+- `research_context/DATA_DICTIONARY.md` — new Population section content, source file
+  location, coverage check, district-name correction, limitation table rows.
+- `research_context/RESEARCH_DECISIONS.md` — Decision 006 status Proposed → Accepted.
+- `research_context/PIPELINE_ARCHITECTURE_PLAN.md` — Shared Step 4 unblocked, exact
+  melt/interpolate/extrapolate steps specified, Open Items list updated.
+- `module_1_forecasting/MODULE_CONTEXT.md` — Resolved Data Questions updated.
+
+### Status
+Accepted
+
+---
+
 ## 2026-07-26 - Module-Level Documentation Structure Added
 
 ### Module

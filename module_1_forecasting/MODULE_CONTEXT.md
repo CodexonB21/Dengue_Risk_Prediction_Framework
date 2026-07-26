@@ -78,7 +78,7 @@ residual = actual_cases - sarima_prediction
 - Data range confirmed: 2007–2026 per district (weekly case + daily climate), sufficient for SARIMA m=52 seasonality.
 - Epi-week definition confirmed: Sri Lanka MoH epidemiological week standard (scraped directly from source), not ISO calendar week.
 - District names confirmed consistent across case and climate datasets — no merge-key risk.
-- Population data available: census years 2001, 2012, 2024 — see Decision 006 for interpolation/reporting-layer policy. **Not yet placed in the repo** (`data/raw/` has no population file as of this writing).
+- Population data available: census years 2001, 2012, 2024 — see Decision 006 for interpolation/reporting-layer policy. **Placed 2026-07-27** at `data/raw/population/population_by_district.csv` (`Moneragala` corrected to `Monaragala` on ingestion). Note: `Kilinochchi`/`Mullaitivu`/`Mannar` show a non-monotonic, war-era population trend across the 3 census points — documented limitation, see `DATA_DICTIONARY.md` Section 3.
 - Climate data confirmed single-point-per-district (Open-Meteo constraint) — documented as a limitation in `DATA_DICTIONARY.md`.
 - See `RESEARCH_DECISIONS.md` Decisions 006–012 for the resulting policy decisions (population normalization, week-53 merge, `weather_code` exclusion, walk-forward validation, no-leakage rule, missing-week imputation, Kalmunai merge).
 
