@@ -3,106 +3,80 @@
 ## Project Title
 A Residual Compensation Modeling Framework for Dengue Risk Prediction
 
+## Team
+Team Codexon
+
 ## Research Goal
-Develop a two-stage residual compensation framework that improves dengue prediction by explicitly modeling and correcting systematic prediction errors left by baseline models.
+Develop a residual compensation modeling framework that improves dengue risk prediction by correcting the systematic errors left by baseline models.
 
-The framework contains three modules:
+The framework contains three complementary modules:
 
-1. Hybrid Time-Series Forecasting
-2. Hybrid Outbreak Risk Classification
-3. Hybrid Spatial Hotspot Detection
+1. **Module 1: Hybrid Time-Series Case Forecasting**
+2. **Module 2: Hybrid Outbreak Risk Classification**
+3. **Module 3: Hybrid Spatial Hotspot Detection**
 
-The current research focus is **Module 1: Hybrid Time-Series Case Forecasting**.
+Each module may evolve independently, but all modules follow the same research philosophy:
+
+```text
+Baseline model output + residual / error compensation = improved final output
+```
+
+---
+
+## Living Documentation Rule
+
+This repository uses living markdown documentation.
+
+That means the files in `research_context/` and each module folder must be updated whenever:
+
+- Architecture changes
+- Modeling approach changes
+- Feature engineering changes
+- New experiments are completed
+- A decision is accepted or rejected
+- A supervisor/evaluator question is answered
+- Implementation differs from documentation
+
+The Cursor agent must not treat older documentation as permanently correct. It must read the latest files before giving project-specific advice.
 
 ---
 
 ## Core Research Hypothesis
-Most dengue forecasting studies stop after generating predictions. However, forecast residuals often contain systematic information related to:
+
+Baseline dengue prediction models often leave residual errors that are not purely random. These residuals may contain useful information related to:
 
 - Climate anomalies
-- Monsoon effects
-- Environmental changes
-- Contextual factors
-
-If these residual patterns can be learned and corrected, prediction accuracy can improve.
-
----
-
-## Module 1 Architecture
-
-### Stage 1: SARIMA Baseline Forecasting Model
-SARIMA is used as the baseline model to capture:
-
-- Trend
-- Seasonality
-- Autocorrelation
-
-### Stage 2: XGBoost Residual Compensation Model
-XGBoost is used to learn the residual error left by SARIMA using lagged climate, anomaly, seasonal, and residual-specific features.
-
-### Final Prediction Formula
-
-```text
-Final Prediction = SARIMA Prediction + Predicted Residual Correction
-```
-
-or:
-
-```text
-y_hat_final = y_hat_sarima + e_hat_xgboost
-```
-
----
-
-## Why Two Stages?
-SARIMA specializes in temporal structure:
-
-- Trend
-- Seasonality
-- Autocorrelation
-
-XGBoost specializes in nonlinear correction:
-
-- Climate interactions
 - Monsoon-related nonlinear effects
-- Residual patterns
-- Anomaly-driven deviations
+- Environmental shifts
+- District-specific epidemiological behavior
+- Spatial and demographic context
+- Intervention effects, if data becomes available
 
-The framework deliberately separates these responsibilities.
-
----
-
-## Key Research Question
-Can climate-driven residual compensation improve dengue forecasting performance compared with a standalone SARIMA model?
+If these errors can be learned and corrected, the final prediction can become more accurate and more useful for public health decision-making.
 
 ---
 
-## Expected Evaluation Metrics
+## Current High-Level Architecture
 
-- RMSE
-- MAE
-- MAPE
-- sMAPE
-- Residual Variance Reduction
-- Diebold-Mariano Test
+Always check `CURRENT_ARCHITECTURE.md` for the latest accepted architecture.
 
----
+At the current planning stage, the framework is expected to follow this structure:
 
-## Geographic Scope
+```text
+Module 1: SARIMA baseline -> XGBoost residual compensation
+Module 2: Baseline classifier -> probability/error compensation model
+Module 3: KDE/Moran's I baseline -> spatial residual adjustment model
+```
 
-Sri Lanka
-
-25 administrative districts
-
-Forecasting is performed separately per district.
-
-A pooled national model is deliberately avoided because dengue dynamics differ structurally across districts.
+This may change as experiments progress.
 
 ---
 
-## Current Available Data
+## Data Currently Available
 
-### Weekly Dengue Case Data
+### Weekly Dengue Case Dataset
+
+Columns currently available:
 
 - District
 - Number_of_Cases
@@ -112,7 +86,9 @@ A pooled national model is deliberately avoided because dengue dynamics differ s
 - Week
 - Week_End_Date
 
-### Daily Meteorological Data Per District
+### Daily Meteorological Dataset Per District
+
+Columns currently available:
 
 - time
 - relative_humidity_2m_mean (%)
@@ -127,3 +103,35 @@ A pooled national model is deliberately avoided because dengue dynamics differ s
 - rain_sum (mm)
 - precipitation_sum (mm)
 - weather_code (wmo code)
+
+---
+
+## Repository Memory Principle
+
+The repository documentation is the project memory.
+
+Before answering research-specific questions, the agent should inspect:
+
+1. `research_context/PROJECT_CONTEXT.md`
+2. `research_context/CURRENT_ARCHITECTURE.md`
+3. `research_context/RESEARCH_DECISIONS.md`
+4. `research_context/CHANGELOG.md`
+5. Relevant module-specific `MODULE_CONTEXT.md`
+6. Relevant module-specific `EXPERIMENT_LOG.md`
+
+---
+
+## Documentation Update Principle
+
+After any major task, the agent should check whether documentation needs to be updated.
+
+Examples:
+
+| Change | File to Update |
+|---|---|
+| Overall architecture changed | `CURRENT_ARCHITECTURE.md`, `CHANGELOG.md` |
+| Module architecture changed | relevant `MODULE_CONTEXT.md`, `CHANGELOG.md` |
+| Experiment completed | relevant `EXPERIMENT_LOG.md` |
+| Feature added/removed | `FEATURE_ENGINEERING_SPEC.md`, module context |
+| Research decision made | `RESEARCH_DECISIONS.md`, `CHANGELOG.md` |
+| Defense answer improved | `QUESTIONS_FOR_DEFENSE.md` |
