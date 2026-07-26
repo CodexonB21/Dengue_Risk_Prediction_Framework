@@ -17,6 +17,12 @@ Stage 2: Spatial residual adjustment model
 
 ---
 
+## Data Pipeline Note (2026-07-26)
+
+Module 3 will consume `data/processed/shared/` (Kalmunai merged into Ampara — important here since Kalmunai has no independent spatial boundary, master epi-week calendar, full climate aggregation, interpolated population). Module 3 does **not** automatically inherit Module 1's week-53 merge, missing-week imputation, or `weather_code` exclusion (all Module-1-scoped per Decision 013) — Module 3 likely aggregates to a coarser temporal resolution than weekly (TBD), where a handful of missing weeks may simply wash out rather than needing explicit imputation. Spatial boundary/polygon data is not yet placed in `data/raw/spatial/` (currently empty). See `research_context/PIPELINE_ARCHITECTURE_PLAN.md` for the full layered pipeline design.
+
+---
+
 ## Stage 1 Direction
 
 Possible baseline techniques:

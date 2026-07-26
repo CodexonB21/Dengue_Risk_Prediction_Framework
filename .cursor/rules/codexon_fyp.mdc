@@ -43,6 +43,7 @@ Start with:
 
 - `research_context/PROJECT_CONTEXT.md`
 - `research_context/CURRENT_ARCHITECTURE.md`
+- `research_context/PIPELINE_ARCHITECTURE_PLAN.md`
 - `research_context/RESEARCH_DECISIONS.md`
 - `research_context/CHANGELOG.md`
 - `research_context/DATA_DICTIONARY.md`
@@ -81,6 +82,7 @@ Use this mapping when changes occur:
 | Situation | Update These Files |
 |---|---|
 | Overall architecture changes | `research_context/CURRENT_ARCHITECTURE.md`, `research_context/CHANGELOG.md` |
+| Pipeline/build-plan changes (script layout, stage order, file paths) | `research_context/PIPELINE_ARCHITECTURE_PLAN.md`, `research_context/CHANGELOG.md` |
 | Module architecture changes | Relevant `MODULE_CONTEXT.md`, `research_context/CHANGELOG.md` |
 | Feature engineering changes | `research_context/FEATURE_ENGINEERING_SPEC.md`, relevant `MODULE_CONTEXT.md` |
 | Experiment completed | Relevant `EXPERIMENT_LOG.md` |
