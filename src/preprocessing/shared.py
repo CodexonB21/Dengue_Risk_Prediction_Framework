@@ -143,7 +143,7 @@ def build_epi_week_calendar(epi_raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.Dat
         `disagreements` lists every raw row whose own date pair did not match
         the chosen mode for its (Year, Week), for the mandatory spot-check.
     """
-    pairs = epi_raw[["Year", "Week", "Week_Start_Date", "Week_End_Date"]]
+    pairs = epi_raw[["District", "Year", "Week", "Week_Start_Date", "Week_End_Date"]]
 
     calendar_rows = []
     disagreement_rows = []
@@ -180,6 +180,7 @@ def build_epi_week_calendar(epi_raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.Dat
         for _, row in mismatched.iterrows():
             disagreement_rows.append(
                 {
+                    "District": row["District"],
                     "Year": year,
                     "Week": week,
                     "row_Week_Start_Date": row["Week_Start_Date"],
