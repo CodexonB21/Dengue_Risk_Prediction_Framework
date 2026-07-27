@@ -28,6 +28,15 @@ SHARED_CLIMATE_WEEKLY_PATH = SHARED_DIR / "climate_weekly.csv"
 SHARED_POPULATION_ANNUAL_PATH = SHARED_DIR / "population_annual.csv"
 SHARED_EPIDEMIOLOGICAL_WEEKLY_PATH = SHARED_DIR / "epidemiological_weekly.csv"
 
+# --- Module 2 layer outputs ---
+MODULE2_PROCESSED_DIR = PROCESSED_DIR / "module2"
+MODULE2_WEEKLY_MODELING_TABLE_PATH = MODULE2_PROCESSED_DIR / "weekly_modeling_table.csv"
+MODULE2_FEATURES_DIR = FEATURES_DIR / "module2"
+MODULE2_STAGE1_FEATURE_TABLE_PATH = MODULE2_FEATURES_DIR / "stage1_feature_table.csv"
+MODULE2_MODELS_DIR = MODELS_DIR / "module2"
+MODULE2_METRICS_DIR = OUTPUTS_DIR / "metrics" / "module2"
+MODULE2_LABEL_BALANCE_AUDIT_PATH = MODULE2_METRICS_DIR / "label_balance_audit.csv"
+
 # --- Module 1 layer outputs ---
 MODULE1_PROCESSED_DIR = PROCESSED_DIR / "module1"
 MODULE1_WEEKLY_MODELING_TABLE_PATH = MODULE1_PROCESSED_DIR / "weekly_modeling_table.csv"
@@ -77,7 +86,13 @@ DISTRICTS = [
 MONSOON_WEEKS_SW = list(range(20, 39))          # weeks 20-38
 MONSOON_WEEKS_NE = list(range(44, 53)) + list(range(1, 9))  # weeks 44-52, 1-8
 
-# Module 2 concern - deliberately still a placeholder. Do NOT treat this as a
-# settled research decision; Module 2's label definition is an open question
-# (see module_2_classification/MODULE_CONTEXT.md).
-OUTBREAK_THRESHOLD = 50
+# Module 2 outbreak label (Decision 019, research_context/RESEARCH_DECISIONS.md).
+# Retires the old OUTBREAK_THRESHOLD fixed-count placeholder: the label is now
+# a fold-aware epidemic threshold, `mean + EPIDEMIC_THRESHOLD_K * SD`, computed
+# per (District, Week) from strictly-prior years only - see
+# src/module2_classification/label_definition.py. k=2 was confirmed via
+# scripts/data_audit_module2.py (no degenerate per-district outbreak rate at
+# k in {1.5, 2.0, 2.5}); flagged as a kickoff default, not a final validated
+# choice - see Module 2 Open Question #8 (seasonal-peak-vs-anomaly caveat).
+EPIDEMIC_THRESHOLD_K = 2.0
+EPIDEMIC_THRESHOLD_MIN_PRIOR_YEARS = 3
