@@ -166,6 +166,83 @@ Accepted
 
 ---
 
+## 2026-07-27 - Shared Preprocessing Layer and Module 1 Pipeline Implemented
+
+### Module
+All modules (shared layer); Module 1 (preprocessing, validation, feature engineering)
+
+### Change
+Implemented and ran, end to end against the real data, everything specified
+in `PIPELINE_ARCHITECTURE_PLAN.md`'s Stage 0 / Shared Layer / Module 1 Layer
+sections: `src/config.py` (real 25-district list, `MONSOON_WEEKS_SW`/`_NE`),
+`src/preprocessing/shared.py` (Kalmunai->Ampara merge, master epi-week
+calendar, climate weekly aggregation, population interpolation),
+`src/preprocessing/module1_preprocessing.py` (week-53 merge, seasonal-naive
+imputation, climate + population merge, `cases_per_100k`), and two new
+files, `src/module1_forecasting/validation.py` (walk-forward fold generator,
+`fit_window`/`get_holdout_series` no-leakage helpers) and
+`src/module1_forecasting/feature_engineering.py` (fold-agnostic Stage 2
+features + a `compute_fold_climate_anomalies` function for the fold-aware
+ones). `baseline_sarima.py`/`compensation_model.py`/`combine.py`/
+`evaluate.py`/`main.py` remain out of scope (SARIMA order selection, log1p
+vs raw, etc. are still open research questions).
+
+While spot-checking the master epi-week calendar (explicitly required by the
+build plan before trusting it downstream), found a **new, previously
+undiscovered data-quality issue distinct from the 5 collisions fixed
+2026-07-26**: 30 `(Year, Week)` labels across 2008-2024 have a date stamp
+that essentially all districts agree on (so it never showed up as a
+duplicate-key or per-row disagreement) but that is chronologically
+inconsistent with neighbouring weeks - almost certainly a page-level MoH
+scrape error for that specific week, not a per-row transcription slip. This
+measurably breaks the day-to-week join for climate aggregation on 15 of
+those weeks (375 of 25,350 rows in `weekly_modeling_table.csv` have no
+matching climate because of this; a further 125 rows have no climate for
+the separate, expected reason that climate coverage doesn't extend into the
+2006/2026 boundary years). Also confirmed the 4 documented nationwide case-data
+gaps (`2015 Wk30`, `2020 Wk1`, `2021 Wk42`, `2022 Wk43`) have zero raw rows
+for any district at all - not even a calendar entry - and added a
+conservative `fill_isolated_calendar_gaps` step to `shared.py` that
+sequentially infers a date only when it fits an unambiguous single 7-day
+slot; this recovered dates for 3 of the 4 (`2020 Wk1` could not be dated -
+2019's confirmed week-53 already runs through 2020-01-03, leaving no gap for
+a "week 1"). None of this was silently patched into "correct" values - it
+is fully logged, written to diagnostic CSVs
+(`epi_week_calendar_chronology_issues.csv`,
+`epi_week_calendar_disagreements.csv`) in `data/processed/shared/`, and
+flagged for the same joint human-review process used for the earlier 5
+collisions.
+
+### Reason
+The build plan explicitly required spot-checking the calendar-construction
+step for ties/ambiguous cases before trusting it downstream; doing so
+surfaced a real, previously-unknown, and non-trivial data quality issue
+(distinct in kind from the already-fixed collisions) that affects climate
+feature completeness for ~2% of Module 1's weekly rows.
+
+### Impact
+- Added: `data/processed/shared/{epi_week_calendar.csv, climate_weekly.csv,
+  population_annual.csv, epidemiological_weekly.csv,
+  epi_week_calendar_disagreements.csv,
+  epi_week_calendar_chronology_issues.csv}`.
+- Added: `data/processed/module1/weekly_modeling_table.csv`.
+- Added: `data/features/module1/stage2_feature_table.csv`.
+- Updated: `src/config.py`, `src/preprocessing/shared.py`,
+  `src/preprocessing/module1_preprocessing.py`.
+- Added: `src/module1_forecasting/validation.py`,
+  `src/module1_forecasting/feature_engineering.py`.
+- Updated: `module_1_forecasting/MODULE_CONTEXT.md` (implementation status,
+  deviations from plan, 3 new open questions #9-11),
+  `research_context/PIPELINE_ARCHITECTURE_PLAN.md` (status/last-updated,
+  new open item for the chronology-issue discovery),
+  `research_context/DATA_DICTIONARY.md` (new Data Quality Notes rows).
+
+### Status
+Accepted (pipeline code); the newly discovered 30-week date-mislabeling
+issue is flagged Open, pending team review - not yet resolved.
+
+---
+
 ## 2026-07-26 - Module-Level Documentation Structure Added
 
 ### Module

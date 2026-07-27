@@ -126,6 +126,141 @@ Full technical detail lives in `research_context/PIPELINE_ARCHITECTURE_PLAN.md`.
 
 ---
 
+## Implementation Status (2026-07-27 - Preprocessing Pipeline Built)
+
+The shared preprocessing layer and the full Module 1 preprocessing/feature
+pipeline (up to, but not including, the Stage 1/2 models themselves) are now
+implemented and have been run end to end against the real data:
+
+- `src/config.py` - real 25-district `DISTRICTS` list, `MONSOON_WEEKS_SW`
+  (weeks 20-38), `MONSOON_WEEKS_NE` (weeks 44-52, 1-8), and all pipeline
+  paths (raw/shared/module1 processed + feature paths).
+- `src/preprocessing/shared.py` - Kalmunai->Ampara merge, master epi-week
+  calendar, climate weekly aggregation (all climate columns retained), and
+  population interpolation/extrapolation. Outputs written to
+  `data/processed/shared/`: `epi_week_calendar.csv` (1,017 rows),
+  `climate_weekly.csv` (24,950 rows x 15 cols), `population_annual.csv`
+  (525 rows), `epidemiological_weekly.csv` (25,348 rows).
+- `src/preprocessing/module1_preprocessing.py` - week-53 merge (2009, 2016,
+  2019, 2021), seasonal-naive imputation of the 4 confirmed nationwide gap
+  weeks (100 rows flagged `is_imputed`), climate + population merge,
+  `cases_per_100k`. Output: `data/processed/module1/weekly_modeling_table.csv`
+  (25,350 rows; every interior year 2007-2025 has exactly 52 weeks/district;
+  zero duplicate `(District, Year, Week)` keys).
+- `src/module1_forecasting/validation.py` (new) - `generate_walk_forward_folds`,
+  `fit_window`, `get_holdout_series`, `iter_walk_forward_windows`,
+  `generate_walk_forward_folds_by_district`. Tested against Colombo's real
+  series: 14 expanding-window annual folds, 104-week holdout, zero overlap
+  between any fold and the holdout block.
+- `src/module1_forecasting/feature_engineering.py` (new) - fold-agnostic
+  features (case lags/rolling stats/rate of change, climate lags, cyclic
+  week + monsoon indicators) written to
+  `data/features/module1/stage2_feature_table.csv` (25,350 rows x 47 cols,
+  `weather_code` excluded). Fold-aware climate anomalies are exposed as
+  `compute_fold_climate_anomalies(df, train_mask)` - deliberately NOT written
+  to a global file, since a global computation would leak future climate
+  norms into early walk-forward folds. Verified against a manual
+  hand-calculation for one district/fold.
+
+Out of scope this session (per plan): `baseline_sarima.py`,
+`compensation_model.py`, `combine.py`, `evaluate.py`, `main.py`.
+
+### Deviations From the Plan / Implementation Choices Made
+
+1. **Weekly aggregation rule for `weather_code`** (both in
+   `shared.py`'s daily->weekly step and `module1_preprocessing.py`'s
+   week-53 merge): the plan says "keep all columns" / "average climate
+   columns" but never specifies a rule for a *categorical* code. Implemented
+   as the weekly/pair **mode** (most frequent value, ties broken by the
+   smaller code). This is an implementation choice, not a research decision -
+   flag for review if `weather_code` is ever promoted out of "excluded"
+   status (Decision 008).
+2. **`rainfall_lag_*` feature source**: Open Question #5 below ("`rain_sum`
+   vs `precipitation_sum`") is still unresolved. `feature_engineering.py`
+   defaults to `rain_sum (mm)` as a **provisional placeholder**, clearly
+   flagged in code (`RAINFALL_COLUMN`) - not a resolution of the open
+   question.
+3. **`rate_of_change` formula**: not specified in
+   `FEATURE_ENGINEERING_SPEC.md`. Implemented as the absolute difference
+   `cases_lag_1 - cases_lag_2` rather than a percent change, specifically to
+   avoid divide-by-zero blowups given this module's well-documented
+   zero-inflation. Worth an ablation later.
+4. **Rolling case stats use `shift(1)` before `rolling(4)`**: i.e.
+   `rolling_mean_cases_4w`/`rolling_std_cases_4w` for week *t* summarize
+   weeks *t-1..t-4*, never week *t* itself. Not explicit in the spec, but
+   required to avoid the feature leaking its own target.
+5. **Interior-year completeness check excludes the two boundary years**
+   (2006, 2026): "exactly 52 weeks/district/year" is enforced for 2007-2025
+   only. 2006 (starts 12/23) and 2026 (data ends mid-year) are naturally
+   partial by construction, not genuine gaps - forcing them to 52 rows would
+   have meant fabricating dozens of weeks that were never scraped because
+   they hadn't happened yet / the series hadn't started.
+6. **Calendar gap-filling added to `shared.py`** (`fill_isolated_calendar_gaps`,
+   not in the original plan text): see open question #10 below - this was
+   necessary to give the 4 confirmed nationwide-gap weeks a usable date at
+   all downstream.
+
+### New Open Questions / Data Quality Findings (discovered 2026-07-27 while implementing)
+
+9. **Confirmed via re-run**: the 4 documented nationwide case-data gaps
+   (`2015 Wk30`, `2020 Wk1`, `2021 Wk42`, `2022 Wk43`) have **zero raw rows
+   for any district** - they don't even exist in the master epi-week
+   calendar (which is built from raw rows), not just the case data. Handled
+   by (a) a new `fill_isolated_calendar_gaps` step in `shared.py` that
+   sequentially infers a clean date range when exactly one week's worth of
+   days (8-day gap) fits unambiguously between two known neighbours, and
+   (b) `module1_preprocessing.py`'s existing seasonal-naive imputation for
+   the case counts. 3 of the 4 (`2015 Wk30`, `2021 Wk42`, `2022 Wk43`) got
+   an inferred date this way. **`2020 Wk1` could not be dated**: 2019 is a
+   confirmed 53-week year whose Wk53 already runs through 2020-01-03, and
+   2020's own Wk2 starts 2020-01-04 - there is no day-range gap left to
+   place a "Week 1" in at all. `Number_of_Cases` for these 25 rows is still
+   seasonal-naive imputed and flagged `is_imputed`, but their
+   `Week_Start_Date`/`Week_End_Date` are left as `NaN` rather than
+   fabricated. **Needs team discussion**: does a real "epi-week 1 of 2020"
+   exist in the true MoH calendar at all, or is this a structural artifact
+   of 2019 running long?
+10. **New, previously-undiscovered data-quality issue: systematic per-week
+    date mislabeling, distinct from the 5 collisions fixed 2026-07-26.**
+    Building the master calendar and then sorting it chronologically
+    surfaced **30 `(Year, Week)` labels** (2008-2024, spread across most
+    years) whose date stamp is self-consistent across (almost) all
+    districts - so it does NOT show up as a per-row "disagrees with the
+    mode" case (only 2 such disagreements exist in the whole dataset, in
+    `epi_week_calendar_disagreements.csv`) - but is nonetheless
+    chronologically wrong relative to its neighbouring weeks (e.g. `2008
+    Wk39`'s "official" date, agreed by all 25 districts, is `2008-08-20`,
+    which falls *before* `2008 Wk35`'s `2008-08-23` and *inside* `Wk34`'s
+    and `Wk35`'s own ranges - `Wk39`'s true position, inferred from `Wk38`
+    ending `2008-09-19` and `Wk40` starting `2008-09-27`, should be
+    `2008-09-20`). This looks like a page-level scrape error (the whole
+    week-39-of-2008 MoH page was mis-dated) rather than a per-row
+    transcription slip, and it was NOT caught by the 2026-07-26 audit
+    because it doesn't create a duplicate `(District, Year, Week)` key -
+    only a wrong date. **Concrete impact measured**: 15 of these 30
+    mis-dated weeks currently have **zero** matching daily climate rows in
+    `data/processed/module1/weekly_modeling_table.csv` (375 of the 500 total
+    "no matching climate" rows, i.e. 15 weeks x 25 districts; the other 125
+    of the 500 are the expected/harmless boundary effect at 2006 and 2026,
+    where climate coverage genuinely doesn't extend) because their wrong
+    date range gets
+    "out-competed" for calendar days by correctly-dated neighbours (climate
+    aggregation intentionally keeps the first-claimed day rather than
+    double-counting - see `_build_day_to_week_lookup`). **Case counts
+    themselves are NOT affected** (the case value for those weeks is real,
+    only its date stamp and therefore its climate join are affected).
+    Full list persisted at
+    `data/processed/shared/epi_week_calendar_chronology_issues.csv` for
+    review. **This needs the same joint human-review treatment as the 5
+    collisions fixed 2026-07-26** - it was NOT silently auto-corrected here;
+    `shared.py` only auto-fills the sub-case where a label is completely
+    *absent* (see #9), never a label that's merely mis-dated but present.
+11. **Weather CSV dates are inconsistently formatted**: 24 of 25 per-district
+    files use ISO `YYYY-MM-DD`; the Colombo file alone uses `M/D/Y`. Parsed
+    with `pd.to_datetime(..., format="mixed")` in `shared.py` - works, but
+    is a fragile pattern worth normalizing at the source if the raw files
+    are ever regenerated.
+
 ## Documentation Rule
 
 Update this file when Module 1 architecture, features, decisions, or evaluation method changes.
