@@ -9,15 +9,17 @@ in `research_context/RESEARCH_DECISIONS.md`; this file is about *how it is built
 **Implementation status (2026-07-27):** the Stage 0 fix, the Shared Layer,
 and the Module 1 Layer described below are now implemented and have been run
 against the real data - see `module_1_forecasting/MODULE_CONTEXT.md`
-"Implementation Status" section for exact row counts, deviations from this
-plan, and new open questions discovered while building it (most notably a
-newly-found systematic date-mislabeling issue affecting 30 epi-weeks,
-distinct from the 5 collisions fixed 2026-07-26). Module 1's Stage 1/2
-modeling scripts (`baseline_sarima.py` onward) remain unimplemented pending
-resolution of the open SARIMA/log-transform questions.
+"Implementation Status" section for exact row counts and deviations from this
+plan. The systematic date-mislabeling issue affecting 30 epi-weeks (found
+while spot-checking the calendar) plus a further 5 date-entry errors and 2
+per-row disagreements found by a follow-up full-calendar day-count scan are
+now all resolved at the source (`dengue_cases_corected.csv`) — see Open Item 4
+below. Module 1's Stage 1/2 modeling scripts (`baseline_sarima.py` onward)
+remain unimplemented pending resolution of the open SARIMA/log-transform
+questions.
 
 ## Last Updated
-2026-07-27
+2026-07-27 (raw epidemiological date corrections completed and re-verified)
 
 ---
 
@@ -289,23 +291,27 @@ per `FEATURE_ENGINEERING_SPEC.md`, writes to `data/features/module1/`.
    `data/processed/shared/epi_week_calendar_disagreements.csv`) — ties are
    not the real risk here. The spot-check instead surfaced a **different,
    more significant issue**: see item 4.
-4. **NEW (2026-07-27), Open, needs team review:** 30 `(Year, Week)` labels
-   (2008-2024) have a date stamp that is self-consistent across almost all
-   districts (so it doesn't trigger the per-row disagreement check) but is
-   chronologically inconsistent with neighbouring weeks — most likely a
-   page-level MoH scrape error for that specific week, not a per-row
-   transcription slip like the 5 collisions fixed 2026-07-26. This breaks
-   the calendar-based day-to-week join for climate aggregation on 15 of
-   those weeks (375 of 25,350 rows in `weekly_modeling_table.csv` have no
-   matching climate for this reason; a further 125 rows have no climate for
-   the separate, expected 2006/2026 boundary reason). Full list in
-   `data/processed/shared/epi_week_calendar_chronology_issues.csv`.
-   `shared.py` does NOT attempt to auto-correct these (only genuinely
-   *absent* week labels are auto-inferred, via `fill_isolated_calendar_gaps`,
-   and only when unambiguous — see `module_1_forecasting/MODULE_CONTEXT.md`
-   open question #10 for full detail). Needs the same joint human-review
-   process used for the earlier 5 collisions before it can be corrected at
-   the source (`data/raw/epidemiological/dengue_cases_corected.csv`).
+4. ~~30 `(Year, Week)` labels (2008-2024) have a date stamp that is
+   self-consistent across almost all districts (so it doesn't trigger the
+   per-row disagreement check) but is chronologically inconsistent with
+   neighbouring weeks.~~ **Resolved 2026-07-27.** The user manually corrected
+   28 of the 30 against the original MoH source pages; the assistant found
+   and fixed the remaining 2 (`2009 Wk24`, `2023 Wk40`) plus 3 further
+   date-entry errors an expanded full-calendar day-count scan surfaced
+   (`2010 Wk9`, `2011 Wk48`, `2013 Wk39`/`Wk40`) and the 2 outstanding
+   per-row disagreements (`Ampara 2013 Wk51`, `Ampara 2023 Wk14`).
+   `epi_week_calendar_chronology_issues.csv` and
+   `epi_week_calendar_disagreements.csv` are now both empty after
+   re-running the full pipeline; all 375 climate rows previously blocked by
+   this issue are now populated. Two weeks (`2009 Wk17`, `2009 Wk22`) are
+   kept as accepted irregular-length weeks (8 and 6 days respectively) — a
+   genuine 1-day surplus/deficit in the source that can't be corrected by
+   editing a single date without opening a new gap elsewhere. A separate,
+   low-priority 3-day gap at the live edge of the dataset (`2025 Wk52` →
+   `2026 Wk1`) remains open — see `DATA_DICTIONARY.md` Data Quality Notes
+   for full detail on all of the above. Also fixed: `shared.py` previously
+   only wrote the two diagnostic CSVs when non-empty, leaving stale files
+   after a clean re-run — it now always rewrites them.
 5. **NEW (2026-07-27), Open, needs team decision:** `2020 Wk1` (one of the 4
    confirmed nationwide case-data gaps) cannot be assigned a calendar date at
    all — 2019 is a confirmed 53-week year whose Wk53 already runs through

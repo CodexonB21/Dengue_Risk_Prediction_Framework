@@ -243,6 +243,95 @@ issue is flagged Open, pending team review - not yet resolved.
 
 ---
 
+## 2026-07-27 - Systematic Date-Mislabeling Issue Resolved in Raw Epidemiological Data
+
+### Module
+Module 1 (raw data feeds all downstream shared/Module 1 outputs)
+
+### Change
+Resolved the 30-week systematic date-mislabeling issue discovered while
+implementing the shared preprocessing layer (previous entry). The user
+manually corrected 28 of the 30 flagged `(Year, Week)` labels in
+`dengue_cases_corected.csv` against the original MoH source pages,
+reporting back a detailed row-by-row account of what was found and fixed
+(mostly month-field-off-by-one errors and week-boundary overlaps). The
+assistant then re-ran the pipeline and cross-checked every one of the 30
+against the regenerated calendar, which found:
+
+- **2 of the 30 the user's pass had missed** (`2009 Wk24`, `2023 Wk40`) —
+  both had the same month-field error as the other 28, just not caught
+  during manual review. Corrected by the assistant.
+- **A full-calendar day-count scan** (checking *every* week in the dataset
+  for exactly 7 days and a clean 1-day gap to its neighbour, not just the
+  overlap-based check that found the original 30) surfaced 3 more
+  previously-undetected date-entry errors that don't manifest as overlaps
+  and so were invisible to both the original diagnostic and the user's
+  manual review: `2010 Wk9` (end date literally before its start date),
+  `2011 Wk48` (start date 3 days late, producing a 4-day week), and
+  `2013 Wk39`/`Wk40` (a 1-day boundary misplacement). Corrected by the
+  assistant.
+- The 2 outstanding per-row disagreements from the original diagnostic
+  (`Ampara 2013 Wk51`, `Ampara 2023 Wk14`) were also corrected.
+- **2 weeks accepted as irregular by design**: `2009 Wk17` (8 days) and
+  `2009 Wk22` (6 days) each sit in a stretch with a genuine 1-day
+  surplus/deficit in the source that cannot be fixed by editing one date
+  without opening a new gap with an already-correct neighbour — verified
+  concretely rather than assumed (the assistant initially "fixed" `2009
+  Wk17` by shortening it, found this created a brand-new 2-day gap with
+  `Wk18`, and reverted the change).
+- **1 low-priority item left open**: a genuine 3-day gap between `2025
+  Wk52` and `2026 Wk1` at the live-scrape edge of the dataset.
+- Also fixed a minor pipeline robustness bug found during verification:
+  `shared.py` previously only wrote the two chronology/disagreement
+  diagnostic CSVs when non-empty, so a clean re-run after fixing the
+  underlying data left a stale issues file on disk from the previous run.
+  `run_shared_preprocessing()` now always rewrites both files.
+
+Re-ran the full pipeline (`shared.py` → `module1_preprocessing.py` →
+`feature_engineering.py`) after every fix to confirm no regressions.
+`epi_week_calendar_chronology_issues.csv` and
+`epi_week_calendar_disagreements.csv` are now both empty. All 375 climate
+rows previously blocked by this issue in `weekly_modeling_table.csv` are
+now populated; the only remaining 150 "no matching climate" rows are the
+expected boundary cases (2006 Wk52 before climate coverage begins, 2020
+Wk1's dateless rows, 2026 Wk22-25 after current climate coverage ends).
+
+### Reason
+The 30-week issue was flagged as needing joint human review before
+correcting the raw source, per the same process used for the 5 collisions
+fixed 2026-07-26. Verifying the user's fixes against the regenerated
+calendar (rather than trusting the fix count at face value) surfaced
+additional real errors invisible to both the original overlap-only
+diagnostic and manual source-page review, which would have silently
+persisted into the modeling data otherwise.
+
+### Impact
+- `data/raw/epidemiological/dengue_cases_corected.csv` — corrected in place
+  (28 rows by the user; 5 more date fixes + 2 disagreement fixes + 3 stale
+  `Month`-column cosmetic fixes by the assistant; all changes verified via
+  full pipeline re-run).
+- `src/preprocessing/shared.py` — diagnostic CSVs now always rewritten
+  (fixes staleness bug).
+- Regenerated: all `data/processed/shared/*.csv`,
+  `data/processed/module1/weekly_modeling_table.csv`,
+  `data/features/module1/stage2_feature_table.csv`.
+- `research_context/DATA_DICTIONARY.md` — Data Quality Notes rows updated
+  from Open to Resolved, with exact before/after values for every fix and
+  the two accepted-irregular-week exceptions documented.
+- `research_context/PIPELINE_ARCHITECTURE_PLAN.md` — Open Item 4 marked
+  resolved; Open Item 5 (`2020 Wk1` dateless week) remains open and
+  unrelated to this fix.
+- `module_1_forecasting/MODULE_CONTEXT.md` — Open Question #10 marked
+  resolved with full detail; `climate_weekly.csv` row count updated
+  (24,950 → 25,300).
+
+### Status
+Accepted. Open Item 5 (`2020 Wk1`) and the `2025 Wk52`/`2026 Wk1` 3-day
+gap remain open, unrelated data-quality items requiring separate team
+decisions.
+
+---
+
 ## 2026-07-26 - Module-Level Documentation Structure Added
 
 ### Module

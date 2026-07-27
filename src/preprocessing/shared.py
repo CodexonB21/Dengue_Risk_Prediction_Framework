@@ -570,12 +570,12 @@ def run_shared_preprocessing() -> None:
     population_annual.to_csv(SHARED_POPULATION_ANNUAL_PATH, index=False)
     epidemiological_weekly.to_csv(SHARED_EPIDEMIOLOGICAL_WEEKLY_PATH, index=False)
 
-    if not disagreements.empty:
-        disagreements.to_csv(SHARED_DIR / "epi_week_calendar_disagreements.csv", index=False)
-    if not chronology_issues.empty:
-        chronology_issues.to_csv(
-            SHARED_DIR / "epi_week_calendar_chronology_issues.csv", index=False
-        )
+    # Always (re)write these diagnostics, even when empty, so a clean run after a
+    # raw-data fix doesn't leave a stale issues file from a previous run on disk.
+    disagreements.to_csv(SHARED_DIR / "epi_week_calendar_disagreements.csv", index=False)
+    chronology_issues.to_csv(
+        SHARED_DIR / "epi_week_calendar_chronology_issues.csv", index=False
+    )
 
     logger.info(
         "Shared preprocessing complete: %d calendar weeks, %d climate rows, "

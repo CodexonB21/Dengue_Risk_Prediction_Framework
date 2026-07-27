@@ -139,7 +139,8 @@ implemented and have been run end to end against the real data:
   calendar, climate weekly aggregation (all climate columns retained), and
   population interpolation/extrapolation. Outputs written to
   `data/processed/shared/`: `epi_week_calendar.csv` (1,017 rows),
-  `climate_weekly.csv` (24,950 rows x 15 cols), `population_annual.csv`
+  `climate_weekly.csv` (25,300 rows x 15 cols — up from 24,950 prior to the
+  2026-07-27 raw date corrections below), `population_annual.csv`
   (525 rows), `epidemiological_weekly.csv` (25,348 rows).
 - `src/preprocessing/module1_preprocessing.py` - week-53 merge (2009, 2016,
   2019, 2021), seasonal-naive imputation of the 4 confirmed nationwide gap
@@ -220,41 +221,55 @@ Out of scope this session (per plan): `baseline_sarima.py`,
    fabricated. **Needs team discussion**: does a real "epi-week 1 of 2020"
    exist in the true MoH calendar at all, or is this a structural artifact
    of 2019 running long?
-10. **New, previously-undiscovered data-quality issue: systematic per-week
-    date mislabeling, distinct from the 5 collisions fixed 2026-07-26.**
-    Building the master calendar and then sorting it chronologically
-    surfaced **30 `(Year, Week)` labels** (2008-2024, spread across most
-    years) whose date stamp is self-consistent across (almost) all
-    districts - so it does NOT show up as a per-row "disagrees with the
-    mode" case (only 2 such disagreements exist in the whole dataset, in
-    `epi_week_calendar_disagreements.csv`) - but is nonetheless
-    chronologically wrong relative to its neighbouring weeks (e.g. `2008
-    Wk39`'s "official" date, agreed by all 25 districts, is `2008-08-20`,
-    which falls *before* `2008 Wk35`'s `2008-08-23` and *inside* `Wk34`'s
-    and `Wk35`'s own ranges - `Wk39`'s true position, inferred from `Wk38`
-    ending `2008-09-19` and `Wk40` starting `2008-09-27`, should be
-    `2008-09-20`). This looks like a page-level scrape error (the whole
-    week-39-of-2008 MoH page was mis-dated) rather than a per-row
-    transcription slip, and it was NOT caught by the 2026-07-26 audit
-    because it doesn't create a duplicate `(District, Year, Week)` key -
-    only a wrong date. **Concrete impact measured**: 15 of these 30
-    mis-dated weeks currently have **zero** matching daily climate rows in
-    `data/processed/module1/weekly_modeling_table.csv` (375 of the 500 total
-    "no matching climate" rows, i.e. 15 weeks x 25 districts; the other 125
-    of the 500 are the expected/harmless boundary effect at 2006 and 2026,
-    where climate coverage genuinely doesn't extend) because their wrong
-    date range gets
-    "out-competed" for calendar days by correctly-dated neighbours (climate
-    aggregation intentionally keeps the first-claimed day rather than
-    double-counting - see `_build_day_to_week_lookup`). **Case counts
-    themselves are NOT affected** (the case value for those weeks is real,
-    only its date stamp and therefore its climate join are affected).
-    Full list persisted at
-    `data/processed/shared/epi_week_calendar_chronology_issues.csv` for
-    review. **This needs the same joint human-review treatment as the 5
-    collisions fixed 2026-07-26** - it was NOT silently auto-corrected here;
-    `shared.py` only auto-fills the sub-case where a label is completely
-    *absent* (see #9), never a label that's merely mis-dated but present.
+10. **RESOLVED (2026-07-27).** Systematic per-week date mislabeling,
+    distinct from the 5 collisions fixed 2026-07-26. Building the master
+    calendar and sorting it chronologically originally surfaced **30
+    `(Year, Week)` labels** (2008-2024) whose date stamp was self-consistent
+    across (almost) all districts — invisible to the per-row disagreement
+    check — but chronologically wrong relative to neighbouring weeks (a
+    page-level MoH scrape error per affected week). The user manually
+    corrected 28 of the 30 against the original MoH source pages. Verifying
+    that pass surfaced two further layers of issues, all now fixed directly
+    in `dengue_cases_corected.csv`:
+    - **2 of the 30 were missed** — `2009 Wk24` and `2023 Wk40` both had the
+      same "month field one behind" error as the other 28 (e.g. `2009 Wk24`
+      showed `5/6/2009–5/12/2009`, day-of-month exactly right, but should
+      have been `6/6/2009–6/12/2009`), just not caught during manual review.
+    - **A full-calendar day-count scan** (checking every week for exactly 7
+      days and a 1-day gap to its neighbour, not just the overlap-only check
+      that found the original 30) found 3 more previously-undetected
+      date-entry errors that don't manifest as overlaps: `2010 Wk9` (end
+      date was literally before its start date — `3/27/2010–3/5/2010`; fixed
+      to `2/27/2010–3/5/2010`), `2011 Wk48` (start date 3 days late, leaving
+      a 4-day week; fixed `11/29/2011→11/26/2011`), and `2013 Wk39`/`Wk40`
+      (a 1-day boundary misplacement mirroring the `2009 Wk21/22` pattern;
+      fixed `9/28/2013→9/27/2013` and `9/29/2013→9/28/2013` respectively).
+    - The 2 outstanding per-row disagreements (`Ampara 2013 Wk51`, `Ampara
+      2023 Wk14`) were also corrected — Ampara's own row now matches the
+      national mode for both weeks.
+    - **Two weeks are accepted as irregular by design, not left broken by
+      oversight**: `2009 Wk17` (8 days) and `2009 Wk22` (6 days) each sit in
+      a stretch of the raw data with a genuine 1-day surplus/deficit that
+      cannot be fixed by editing one date without opening a *new* gap with
+      an already-correct neighbour (verified concretely for `Wk17`: shortening
+      it creates a fresh 2-day gap with `Wk18`, which was untouched and
+      correct). Case counts for both weeks are unaffected.
+    - **One low-priority item remains open**: a genuine 3-day gap between
+      `2025 Wk52` (ends `12/26/2025`) and `2026 Wk1` (starts `12/29/2025`),
+      confirmed present in the raw source. This sits at the live-scrape edge
+      of the dataset (raw data currently extends to `2026 Wk25`) and needs a
+      source-page check rather than an assumed fix.
+    - After re-running the full pipeline, `epi_week_calendar_chronology_issues.csv`
+      and `epi_week_calendar_disagreements.csv` are both empty, and all 375
+      climate rows previously blocked by this issue in
+      `weekly_modeling_table.csv` are now populated (confirmed: the only
+      remaining 150 "no matching climate" rows are the expected boundary
+      cases — 2006 Wk52 before climate coverage begins, 2020 Wk1's dateless
+      rows per #9, and 2026 Wk22-25 after current climate coverage ends).
+    - **Bonus fix**: also found `shared.py` only wrote the two diagnostic
+      CSVs above when non-empty, so a clean re-run left a stale issues file
+      from a prior run on disk. `run_shared_preprocessing()` now always
+      (re)writes both files.
 11. **Weather CSV dates are inconsistently formatted**: 24 of 25 per-district
     files use ISO `YYYY-MM-DD`; the Colombo file alone uses `M/D/Y`. Parsed
     with `pd.to_datetime(..., format="mixed")` in `shared.py` - works, but
