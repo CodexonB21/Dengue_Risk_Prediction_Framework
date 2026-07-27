@@ -151,6 +151,33 @@ residual_lag_2
 Purpose:
 Help the compensation model learn systematic baseline error behavior.
 
+**Leakage-safe construction (implemented 2026-07-27, Decision 015):**
+`residual_lag_1/2` are built by reindexing each district's out-of-sample
+residual onto the FULL weekly calendar (not just the sparse validation +
+holdout rows) before taking `shift(1)/shift(2)`. This matters because of a
+genuine ~26-week gap per district between the last walk-forward fold's
+validation window and the holdout block's start (discovered during
+implementation, not anticipated in the original spec) — see Decision 015 for
+the full explanation. `NaN`s at each district's series start and across this
+gap are left as-is for XGBoost's native missing-value handling, not
+fabricated.
+
+---
+
+## Feature Group 5b: Pooled-Model Support Feature (added 2026-07-27, Stage 2 implementation)
+
+```text
+District
+```
+
+A categorical feature, one-hot/native-categorical-encoded via XGBoost's
+`enable_categorical=True`. This is a deliberate, documented extension beyond
+the original Feature Group list above, required by the Stage 2 architecture
+decision (Decision 014) to train a single **pooled** model across all 25
+districts rather than 25 independent per-district models — without it, the
+pooled model would have no way to distinguish district-specific baseline
+error behavior at all.
+
 ---
 
 ## Feature Group 6: Optional / Novelty Features
@@ -220,3 +247,6 @@ Record major feature changes here or in `CHANGELOG.md`.
 | 2026-07-26 | Module 1 | Initial Stage 2 feature groups defined | Based on residual compensation logic | Accepted |
 | 2026-07-26 | Module 1 | `weather_code` excluded from feature set | Redundant with continuous climate variables | Proposed (Decision 008) |
 | 2026-07-26 | Module 1 | `sin_week`/`cos_week` require week-53 merge preprocessing | Keep SARIMA seasonal period fixed at m=52 | Proposed (Decision 007) |
+| 2026-07-27 | Module 1 | Rainfall Groups 2-3 source column changed `rain_sum (mm)` -> `precipitation_sum (mm)` | `precipitation_sum` includes convective showers, more complete for Sri Lanka's monsoon pattern | Accepted (Decision 008) |
+| 2026-07-27 | Module 1 | `District` added as a categorical feature (new Group 5b) | Required to support the Stage 2 pooled-model architecture | Accepted (Decision 014) |
+| 2026-07-27 | Module 1 | `residual_lag_1/2` construction specified as full-calendar reindex + shift, not a naive concatenated-rows shift | A real ~26-week per-district gap between the last walk-forward fold and the holdout block would otherwise leak a stale value | Accepted (Decision 015) |

@@ -124,23 +124,25 @@ Requires a preprocessing step using the master MoH epi-week calendar, applied id
 
 ---
 
-## Decision 008: Exclude `weather_code` from Module 1 Feature Set
+## Decision 008: Exclude `weather_code` from Module 1 Feature Set; `precipitation_sum` Chosen Over `rain_sum`
 
 **Module:** Module 1 **only** — explicitly not shared. See Decision 013. The shared
 climate table (`data/processed/shared/climate_weekly.csv`) retains `weather_code`;
 it is dropped only at Module 1's feature-selection step, so Module 2/3 can make an
 independent choice.
-**Status:** Proposed
-**Date:** 2026-07-26
+**Status:** Accepted (rainfall column resolved 2026-07-27)
+**Date:** 2026-07-26 (rainfall sub-decision finalized 2026-07-27)
 
 ### Decision
-Exclude the categorical `weather_code` (WMO code) variable from Stage 2 features by default.
+Exclude the categorical `weather_code` (WMO code) variable from Stage 2 features by default. Separately: Module 1's `rainfall_lag_*`/`rainfall_anomaly` features (`FEATURE_ENGINEERING_SPEC.md` Groups 2-3) are sourced from `precipitation_sum (mm)`, not `rain_sum (mm)`.
 
 ### Reason
-Largely redundant with continuous rainfall/temperature/humidity variables that are more physically precise for dengue transmission mechanisms. Adds categorical encoding complexity without a clearly justified benefit.
+`weather_code`: largely redundant with continuous rainfall/temperature/humidity variables that are more physically precise for dengue transmission mechanisms. Adds categorical encoding complexity without a clearly justified benefit.
+
+`precipitation_sum` vs `rain_sum` (Module 1 Open Question #5, resolved 2026-07-27): Open-Meteo's own documentation confirms `precipitation_sum = rain_sum + showers_sum + snowfall_sum` (liquid-equivalent). Sri Lanka's monsoon rainfall is heavily convective-shower-driven, so `rain_sum` alone risks systematically undercounting real water input relevant to mosquito-breeding habitat. `precipitation_sum` is the more complete signal for this project's purpose.
 
 ### Implication
-May be revisited as an ablation-study candidate (e.g., a derived `thunderstorm_day_count` feature) if time permits, but excluded from the initial feature set.
+`weather_code` may be revisited as an ablation-study candidate (e.g., a derived `thunderstorm_day_count` feature) if time permits, but excluded from the initial feature set. `feature_engineering.py`'s `RAINFALL_COLUMN` constant was changed from `"rain_sum (mm)"` to `"precipitation_sum (mm)"` and `stage2_feature_table.csv` regenerated (2026-07-27) before Stage 2 was built, so no downstream Stage 2 artifact was ever built against the provisional `rain_sum` placeholder.
 
 ---
 
@@ -275,3 +277,107 @@ During planning it was found that week-53 merging (Decision 007), `weather_code`
 - `src/preprocessing/shared.py` handles only: raw data corrections already applied, Kalmunai→Ampara merge, master epi-week calendar construction, canonical climate source aggregation (all 13 columns retained), and population interpolation.
 - Each module's own preprocessing script owns its modeling-specific temporal/feature adjustments.
 - Full technical detail lives in `research_context/PIPELINE_ARCHITECTURE_PLAN.md`.
+
+---
+
+## Decision 014: Stage 2 XGBoost Is a Single Pooled Model (District as a Feature), Trained with a Robust (MAE) Loss
+
+**Module:** Module 1
+**Status:** Accepted (implemented and validated, 2026-07-27)
+**Date:** 2026-07-27
+
+### Decision
+Stage 2's residual-compensation model is **one pooled XGBoost model per walk-forward fold** (all 25 districts trained together, `District` as a categorical feature) — not 25 independent per-district models, which would revisit Decision 002 for Stage 2 specifically. The model is trained with `objective="reg:absoluteerror"` (MAE), not the more common `reg:squarederror`.
+
+### Reason
+**Pooling:** per-district training data under this walk-forward scheme is too thin for a many-feature GBM in early folds (as few as ~52 rows for one district in fold 2); pooling gives ~1,300+ rows even in fold 2. Per-district MASE is still used for all evaluation (`combine.py`), so pooling doesn't hide district-level failure — see the Implementation Note below for a case where it initially did, and how that was caught and fixed.
+
+**Robust loss (discovered necessary during implementation, not planned upfront):** the first full run used the standard `reg:squarederror` objective and produced a stark, suspicious result — 23/25 districts got *worse* (higher RMSE and MASE) with Stage 2 than without, including a 111-point RMSE increase for Colombo alone. Root-causing this found that Stage 1's SARIMA diverged catastrophically for `Vavuniya` in one walk-forward fold (2010, weeks 42-51): forecasts reached ~30 million against an actual mean of ~6 cases/week, producing a residual of roughly -30,000,000 for those ~10 rows. Because Stage 2 pools every district into one squared-error-loss model, this single extreme value dominated the loss function globally during training and corrupted predicted residuals for every *other* district too (e.g. Colombo's predicted residuals, which should be O(100), were being predicted at O(1,000,000) after training on the contaminated pool). Switching the objective to `reg:absoluteerror` (whose gradient is bounded at ±1 regardless of error magnitude) immediately resolved this: 24/25 districts improved on both the validation-aggregate and the (independently checked) holdout MASE.
+
+### Implication
+- This is a general robustness property required by the pooled-model architecture, not a one-off patch for this single Vavuniya fold — any future Stage 1 divergence in any single district/fold would otherwise be able to silently corrupt Stage 2's correction for every other district. Anyone extending this pipeline (e.g. adding new districts, re-running Stage 1 with different orders) should keep the robust loss rather than reverting to squared error, unless Stage 1's output is first hardened against divergent forecasts.
+- Stage 1's Vavuniya divergence itself was **not** fixed (out of scope — Stage 1 is a separate, already-accepted stage) but is flagged as a genuine Stage 1 data-quality finding worth a future look; see `module_1_forecasting/MODULE_CONTEXT.md` Open Question #14.
+- Fixed, conservative, regularized hyperparameters (`max_depth=3, learning_rate=0.05, subsample=0.8, colsample_bytree=0.8, reg_lambda=1.0, min_child_weight=5`) are used for every fold — not tuned per fold. Early stopping (where enough prior-fold history exists) uses the single most recent prior fold as an internal validation slice, then refits on all available prior folds with the resulting tree count.
+- Full per-district results: `module_1_forecasting/MODULE_CONTEXT.md` "Stage 2 Implementation Status".
+
+---
+
+## Decision 015: Leakage-Safe `residual_lag_1/2` via Full-Calendar Reindexing
+
+**Module:** Module 1
+**Status:** Accepted (implemented and validated, 2026-07-27)
+**Date:** 2026-07-27
+
+### Decision
+`residual_lag_1`/`residual_lag_2` (Feature Group 5) are built by reindexing each district's out-of-sample SARIMA residual onto the **full weekly calendar** (every `(Year, Week)` row, not just the sparse validation+holdout rows that actually have a residual), then taking `shift(1)`/`shift(2)` on that full-calendar series, before subsetting back down to the validation+holdout rows.
+
+### Reason
+A structural gap, not anticipated during planning, was discovered while implementing this: Stage 1's 14 walk-forward folds only cover weeks `[initial 3-year training window .. fold 14's validation end]`; there is a genuine, previously-undocumented **~26-week gap per district** between fold 14's validation end and the holdout block's start (these weeks are used as SARIMA training data for the holdout fit but were never scored out-of-sample, so they have no residual value). A naive `shift(1)` computed only over the concatenated validation+holdout rows (ignoring this gap) would have silently treated fold 14's last residual as "1 week ago" for the holdout block's first row — actually ~26 weeks stale. Reindexing onto the full calendar first makes `shift` correctly produce `NaN` across this gap (and at each district's series start, before the initial training window ends) instead of pulling in a stale value. Verified empirically: exactly 2/district rows have `residual_lag_1 == NaN` (1 from series start + 1 from the fold-14/holdout gap boundary) and exactly 4/district rows have `residual_lag_2 == NaN`, matching this explanation exactly.
+
+### Implication
+`NaN`s are left as-is (not fabricated/imputed) and handled natively by XGBoost's missing-value-aware split algorithm. This finding also means the "folds are contiguous, non-overlapping" assumption used elsewhere (e.g. pooling residuals for Ljung-Box/DM tests) is true *within* the validation block and *within* the holdout block, but there is a real temporal discontinuity *between* them that any future feature relying on adjacency across that boundary must account for.
+
+---
+
+## Decision 016: Stage 2 Evaluation Framework — DM Test, Residual Variance Reduction, Final Ljung-Box
+
+**Module:** Module 1
+**Status:** Accepted (implemented and validated, 2026-07-27)
+**Date:** 2026-07-27
+
+### Decision
+Beyond the existing RMSE/MAE/sMAPE/MASE (per-fold + median-aggregate + holdout, unchanged from Stage 1's framework), `combine.py` additionally reports, per district:
+1. A **Diebold-Mariano test** (`evaluate.dm_test`, HAC/Newey-West long-run variance with a 12-lag Bartlett kernel and a Harvey-Leybourne-Newbold small-sample correction) comparing Stage-1-only vs Stage-1+Stage-2 squared-error loss, at two scopes: `validation_and_holdout` (pooled, larger sample) and `holdout_only` (stricter, genuinely-never-touched-until-now sample).
+2. **Residual variance reduction**: `1 - var(final_residual) / var(stage1_residual)` on pooled non-imputed out-of-sample rows.
+3. A **final Ljung-Box check** (`evaluate.ljung_box_diagnostics`, lags 26/52) on `actual - final_prediction`, mirroring Stage 1's own diagnostic, to check whether Stage 2 actually removed autocorrelated structure or merely moved it.
+
+All three are reported **per district, honestly**, including districts where Stage 2 does not help — not only where it does.
+
+### Reason
+MASE alone answers "is the point forecast better on average" but not "is that difference statistically distinguishable from noise" (DM test), "did compensation reduce the *spread* of unexplained error, not just a point summary" (variance reduction), or "is there residual structure left to exploit" (Ljung-Box) — these three together give a fuller, more honest picture than a single scale-free accuracy metric.
+
+### Implication
+- `dm_test`/`ljung_box_diagnostics` were added to `evaluate.py` (not `combine.py` itself) so they're generic and reusable — no Stage-1/Stage-2-specific assumptions baked in.
+- Result (2026-07-27 initial run, **superseded by Decision 017's fix later the same day** — see that entry for corrected numbers): 24/25 districts improve on validation-aggregate MASE (median improvement ≈43%) and on holdout MASE (median ≈29%); only `Kilinochchi` gets worse on both. DM test reaches significance (`p < 0.05`, Stage 2 better) for 12/25 districts at the larger `validation_and_holdout` scope and 4/25 at the stricter `holdout_only` scope (n=104/district) — directionally consistent but not universally significant, an honest and expected outcome at this sample size. 23/25 districts still show significant residual autocorrelation post-Stage-2 (Ljung-Box lag 26, `p < 0.05`) — Stage 2 substantially reduces error magnitude but does **not** fully whiten the residual; real structure likely remains for future work to capture. See `module_1_forecasting/MODULE_CONTEXT.md` "Stage 2 Implementation Status" for full detail.
+
+---
+
+## Decision 017: Stage 1 SARIMA Now Guards Against Explosive/Non-Stationary AR Roots
+
+**Module:** Module 1
+**Status:** Accepted (implemented and validated, 2026-07-27)
+**Date:** 2026-07-27
+
+### Decision
+`baseline_sarima.fit_and_forecast()` now checks every fitted SARIMAX model's combined AR polynomial roots (`fitted.arroots`, which already combines regular and seasonal AR structure). If any root lies on or inside the unit circle — i.e. the fit is non-stationary/explosive despite `enforce_stationarity=False` (Decision 3 in `baseline_sarima.py`'s module docstring) having allowed the optimizer to land there — the fit is treated exactly like any other failure mode already handled by that same decision: logged, and `NaN` is recorded for that fold, rather than an unbounded-growth forecast. This directly revisits (but does not reverse) Decision 002/003's original design; it closes a gap in decision 3's robustness guarantee rather than changing order selection, transform selection, or any other part of Stage 1.
+
+### Reason
+While investigating a real-world question (whether Module 1 should be able to forecast the actual, ongoing 2026 Colombo/Gampaha outbreak — see `module_1_forecasting/MODULE_CONTEXT.md` Open Question #14), the `Vavuniya` fold-1 (2010) divergence flagged as an open question during Stage 2 development (Decision 014) was root-caused precisely: the fold's training window fit an AR(1) coefficient of 1.266 (>1, explosive) for the fixed order `(1,0,2)` chosen from the full pre-holdout history, producing a forecast that grew geometrically to ~30 million cases/week against an actual mean of ~6/week. A full 25-district scan for the same pathology found a second, independent occurrence: `Mannar`'s 2022 fold-13 fit a seasonal AR coefficient of 1.162 (`(0,0,0)x(1,0,0,52)`), putting all 52 seasonal roots essentially on the unit circle and producing a forecast that oscillated with a growing envelope. This confirmed the issue is a **general failure mode** of `enforce_stationarity=False`, not a one-off, and was therefore fixed rather than left as a documented-but-unaddressed limitation.
+
+### Implication
+- Stage 1 (`sarima_stage1_predictions.csv`, `sarima_selected_configs.csv`, `sarima_walk_forward_metrics.csv`) and, downstream, Stage 2 and `combine.py`'s outputs were all regenerated from scratch with this fix (`main.py --force --stages stage1_sarima stage2_xgboost combine`, ~62 minutes).
+- `compensation_model.py` and `combine.py` were hardened to handle the now-possible `NaN` residuals correctly: `_trainable_mask()` excludes `NaN`-target rows from all XGBoost fit/early-stopping-validation/train slices (previously only excluded `is_imputed` rows — not needed before this fix because no fold produced `NaN` residuals that fed into pooled training), and `residual_variance_reduction()` switched from `np.var` to `np.nanvar` for the same reason. `dm_test` and `ljung_box_diagnostics` already dropped `NaN`s internally and needed no change.
+- **Result: a clean sweep — 25/25 districts now improve on validation-aggregate MASE with Stage 2** (up from 24/25; `Kilinochchi`'s validation-aggregate MASE flipped from worse to marginally better, 1.448 → 1.372). Median validation MASE improved from 0.967 (Stage 1) to 0.590 (Stage 1+2), a **39.0%** reduction; median holdout MASE improved from 0.622 to 0.375, a **39.7%** reduction (holdout improvement is now much closer to the validation figure than the pre-fix run's 43%/29% split, a more internally consistent result). `Vavuniya` itself went from one of the pipeline's most fragile districts to one of its best (validation MASE 0.375 → 0.286, holdout 0.417 → 0.374); `Mannar` also improved substantially on validation (0.809 → 0.612) though not on holdout (1.119 → 1.152, DM test not significant, `p=0.40`).
+- **Holdout win rate is 23/25, not 25/25** — `Kilinochchi` (holdout MASE 2.154 → 2.407) and `Mannar` (1.119 → 1.152) both get marginally worse specifically on the untouched holdout block, though neither difference is statistically significant (DM test `p > 0.3` for both). This is reported honestly rather than only citing the validation-aggregate headline number.
+- The seasonal-vs-non-seasonal finding from Open Question #12 holds directionally with the corrected numbers: non-seasonal districts (18/25) show a larger median improvement (44.9% validation / 39.1% holdout) than seasonal districts (7/25: 31.9% validation / 26.2% holdout) — consistent with, though not identical in magnitude to, the original 43.2%/37.2% vs 28.5%/24.3% figures reported before this fix.
+- This does **not** fully answer whether Module 1 can predict the real, current 2026 outbreak — that investigation surfaced a separate, larger, and still-open finding: the shared climate data pipeline has not been refreshed past 2026 week 21, while case data extends to week 25, leaving Stage 2 with zero climate signal for the exact weeks (22-25) containing the outbreak's acute spike. See Open Question #14's update for the full analysis and evidence.
+
+---
+
+## Decision 018: Forward Production Forecasting Uses Recursive Multi-Step Feature Substitution, Kept Separate From the Validated Pipeline
+
+**Module:** Module 1
+**Status:** Accepted (implemented, 2026-07-27)
+**Date:** 2026-07-27
+
+### Decision
+A new, deliberately separate script (`src/module1_forecasting/forecast_future.py`) generates a genuine forward forecast for weeks beyond the last available case-count week — distinct from every existing Stage 1/2 output, all of which score against data already present in the dataset (walk-forward folds, the 104-week holdout block). Method: Stage 1 is refit on each district's entire available history and forecasts `FORECAST_HORIZON_WEEKS` (8) steps ahead in one deterministic multi-step call; Stage 2 uses the existing final production XGBoost model (`xgboost_final_model.json`, unchanged, no retraining) applied **recursively** — for the first 1-2 future weeks, `residual_lag_1/2` and case-count lags use real historical values, and for every subsequent week, the script's own prior-step predictions are fed back in as the lag inputs. A `feature_completeness_pct` diagnostic (share of non-`District` features that are non-`NaN`) is reported per output row rather than presenting every forecasted week as equally reliable. This is **not** wired into `main.py`'s idempotent orchestration and does not touch any validated Stage 1/2 artifact.
+
+### Reason
+Directly prompted by the user asking whether Module 1's testing is "done" and whether it can predict genuinely future case counts — a different question from "does the holdout MASE show improvement," which was already answered (M1-002/M1-003). Recursive multi-step substitution is the standard approach when true future values aren't available yet; the alternative (leaving lag features `NaN` from step 1 onward) would discard real, currently-available information (the actual residual/case history for the most recent 1-2 real weeks) for no benefit. Keeping this fully separate from `main.py` and clearly labeled as a different evidence standard prevents it from being mistaken for, or silently blended into, the rigorously validated holdout results.
+
+### Implication
+- New output: `data/processed/module1/future_forecast.csv` (200 rows = 25 districts x 8 weeks) plus illustrative plots for `Colombo`/`Gampaha` (`outputs/figures/module1/future_forecast_{Colombo,Gampaha}.png`).
+- `feature_completeness_pct` declines from 56.2% (horizon step 1) to 43.8% (steps 5-8) across all districts — an honest, quantified confidence signal rather than an implicit one.
+- For the two real-outbreak districts: `Colombo`'s forecast rises from its pre-spike ~300-500/week baseline to a ~460-470/week plateau; `Gampaha`'s rises from ~200-500/week to a ~1,360-1,370/week plateau — both substantially elevated relative to baseline but not simply repeating the single week-25 spike value, consistent with (not proof of) the model correctly discounting what may be a partly reporting-lag-driven outlier (Open Question #16).
+- Does **not** close Open Question #16's climate-data-currency gap, and does **not** substitute for the still-not-built rolling 1-week-ahead re-evaluation — both remain open, higher-rigor follow-ups. This script's numbers must never be cited alongside holdout MASE/DM-test results as if equivalently validated.

@@ -160,3 +160,394 @@ criterion) before treating Stage 1's absolute performance numbers as final.
 - `research_context/RESEARCH_DECISIONS.md` (Decisions 009, 010 status
   updated to reflect implementation).
 - `research_context/CHANGELOG.md` (new entry).
+
+---
+
+## Experiment ID: M1-002
+
+### Date
+2026-07-27
+
+### Research Question
+Does an XGBoost residual-compensation Stage 2, trained on Stage 1's genuine
+out-of-sample SARIMA residuals, measurably and reliably improve forecast
+accuracy over Stage 1 alone - and does that improvement differ systematically
+between the 18 districts whose Stage 1 SARIMA has no seasonal component and
+the 7 that do (Open Question #12)?
+
+### Districts
+All 25 (post Kalmunai -> Ampara merge, Decision 012).
+
+### Data Period
+Same as M1-001: `data/processed/module1/weekly_modeling_table.csv`, Stage
+2's own feature table `data/features/module1/stage2_feature_table.csv`
+(25,350 rows), and Stage 1's `sarima_stage1_predictions.csv` (20,800 rows)
+as the residual-target source. Stage 2 reuses Stage 1's exact 14 walk-forward
+folds and 104-week holdout - no independent fold generation.
+
+### Stage 1 Model
+Unchanged from M1-001 (per-district `auto_arima`-selected SARIMA, see
+`models/module1/sarima_selected_configs.csv`).
+
+### Stage 2 Model
+Pooled XGBoost regressor (`objective="reg:absoluteerror"`, `max_depth=3,
+learning_rate=0.05, subsample=0.8, colsample_bytree=0.8, reg_lambda=1.0,
+min_child_weight=5`, fixed across folds), one model per walk-forward fold
+plus one for the holdout block plus one final production model trained on
+all available out-of-sample residuals. `District` included as a categorical
+feature (`enable_categorical=True`). See Decision 014 for why MAE (not the
+originally-planned squared error) was needed.
+
+### Features Used
+Feature Groups 1-5 + 5b (`FEATURE_ENGINEERING_SPEC.md`): case lags/rolling
+stats/rate of change, rainfall/temperature/humidity lags (rainfall now
+`precipitation_sum`-based per Decision 008), fold-scoped climate anomalies,
+`sin_week`/`cos_week`/monsoon indicators, `sarima_prediction`,
+`residual_lag_1/2` (full-calendar-reindexed per Decision 015), and `District`
+(categorical, Decision 014).
+
+### Metrics
+RMSE, MAE, sMAPE, MASE (per fold + median-aggregate + holdout, masking
+`is_imputed`), Diebold-Mariano test (two scopes: validation+holdout pooled,
+holdout-only), residual variance reduction, final Ljung-Box (lags 26/52) on
+`actual - final_prediction`.
+
+### Results
+- **24/25 districts** improve on both validation-aggregate and holdout MASE;
+  `Kilinochchi` is the sole exception on both (validation -9.4%, holdout
+  -4.5%, neither reaching statistical significance). Median % improvement
+  across all 25 districts: 42.8% (validation-aggregate), 28.7% (holdout).
+- **Diebold-Mariano**: 12/25 districts significant (`p < 0.05`, Stage 2
+  better) at the larger validation+holdout scope; 4/25 at the stricter
+  holdout-only scope (n=104/district). No district shows a *significant*
+  worsening at either scope.
+- **Open Question #12 resolved**: the 18 non-seasonal-SARIMA districts show a
+  **larger** median improvement (43.2% validation / 37.2% holdout) than the 7
+  seasonal-SARIMA districts (28.5% validation / 24.3% holdout) - evidence
+  Stage 2's seasonal/climate features are compensating for Stage 1's missing
+  annual cycle in those 18 districts, without needing Stage 1 rework.
+- **Residual variance reduction**: 21/25 districts positive (up to 82% for
+  Trincomalee); 4 negative (`Mannar, Jaffna, Mullaitivu, Kilinochchi`) -
+  notably 3 of those 4 still improved on MASE, showing variance reduction and
+  MASE can disagree.
+- **Major mid-implementation finding**: the first full run (standard
+  `reg:squarederror` objective) produced the *opposite* result - 23/25
+  districts got worse. Root cause: Stage 1's SARIMA diverged catastrophically
+  for `Vavuniya` in one fold (2010 wk42-51, forecasts to ~30M against an
+  actual mean of ~6/week), and Stage 2's pooled-model architecture let that
+  single extreme residual dominate training globally, corrupting every other
+  district's predicted residuals too. Switching to `reg:absoluteerror`
+  (bounded gradient, outlier-immune) fixed this. See Decision 014 and Open
+  Question #14.
+- Full detail: `outputs/metrics/module1/combined_vs_baseline_metrics.csv`,
+  `outputs/metrics/module1/diebold_mariano_results.csv`,
+  `outputs/metrics/module1/xgboost_feature_importance.csv`.
+
+### Residual Diagnostics
+Final Ljung-Box (lag 26, pooled non-imputed validation residuals) still
+shows significant autocorrelation (`p < 0.05`) in **23/25 districts** - only
+`Ampara` and `Anuradhapura` pass. Stage 2 reduces error magnitude
+substantially but does not fully whiten the residual; real structure likely
+remains unexploited. ACF plots for the representative subset
+(`outputs/figures/module1/acf_residuals_final_*.png`) confirm this
+qualitatively. Top feature importances (`residual_lag_1`, `residual_lag_2`
+dominate by a wide margin) directly explain why: the prior 1-2 weeks' own
+SARIMA error is the single strongest predictor of the current week's error -
+i.e. Stage 1's error is itself autocorrelated, and Stage 2's residual lags
+are what's being exploited.
+
+### Interpretation
+Residual compensation works as hypothesized for the large majority of
+districts, with a directionally consistent and often large improvement, but
+statistical significance is only reached for a minority of districts at
+current sample sizes - an honest, not overstated, result. The pooled-model
+architecture (Decision 002 revisited for Stage 2 as Decision 014) is
+powerful (enables adequate training data per fold) but introduces a real
+robustness requirement: a single district's data-quality problem (here, a
+SARIMA divergence) can silently corrupt every other district's correction
+unless the loss function is chosen to be robust to it. This is a genuinely
+new methodological finding for the pooled-residual-compensation approach,
+not specific to this dataset. The seasonal-vs-non-seasonal diagnostic
+(Open Question #12) resolves in favor of the original sequencing bet: no
+Stage 1 rework is currently justified.
+
+### Decision
+**Keep** the pooled, MAE-objective XGBoost Stage 2 as implemented -
+`Kilinochchi` remains the one documented exception, worth a closer
+district-specific look in future work but not disqualifying for the overall
+approach. **Flag** (not fix this session) Stage 1's `Vavuniya` SARIMA
+divergence as a genuine data-quality finding (Open Question #14) - median
+fold aggregation hid it from Stage 1's own reporting. **Flag** the residual
+autocorrelation that survives Stage 2 (23/25 districts) as the next-highest
+priority follow-up (additional residual lags, or a different Stage 2
+architecture/feature set).
+
+### Documentation Updated
+- `module_1_forecasting/MODULE_CONTEXT.md` (Open Questions #4, #5, #6
+  resolved; #12 resolved with evidence; new Open Question #14; new "Stage 2
+  Implementation Status" section with full results table).
+- `module_1_forecasting/EXPERIMENT_LOG.md` (this entry).
+- `research_context/RESEARCH_DECISIONS.md` (Decision 008 rainfall
+  sub-decision finalized; new Decisions 014, 015, 016).
+- `research_context/FEATURE_ENGINEERING_SPEC.md` (Group 5's leakage-safe
+  construction note; new Group 5b for `District`; feature change log rows).
+- `research_context/CHANGELOG.md` (new entry).
+
+---
+
+## Experiment ID: M1-003
+
+### Date
+2026-07-27
+
+### Research Question
+Two related questions pursued in the same session: (1) Can Stage 1's
+`Vavuniya`/`Mannar` SARIMA divergence (Open Question #14, flagged but not
+fixed in M1-002) be root-caused and fixed, and does fixing it change Stage
+2's headline results? (2) Sanity-check prompted by a real-world event: given
+the actual, ongoing 2026 dengue outbreak in Colombo/Gampaha, does the
+Module 1 pipeline predict it with any real accuracy, and if not, why not?
+
+### Districts
+All 25 for question (1); `Colombo` and `Gampaha` specifically for question
+(2) (the two districts named in the real-world outbreak).
+
+### Data Period
+Unchanged from M1-001/M1-002, except the dataset was confirmed to extend to
+**2026 week 25** for case counts (25,350+ rows) vs. only **2026 week 21**
+for climate data - a gap discovered during question (2)'s investigation.
+
+### Stage 1 Model
+Same per-district `auto_arima`-selected SARIMA as M1-001/M1-002, with one
+fix: `fit_and_forecast()` now rejects any fit whose AR polynomial (regular +
+seasonal combined) has a root on or inside the unit circle, treating it as a
+failed fit (`NaN`) rather than returning an explosive/non-stationary
+forecast. See Decision 017.
+
+### Stage 2 Model
+Unchanged from M1-002 (pooled XGBoost, `reg:absoluteerror`), re-run against
+the corrected Stage 1 outputs. `compensation_model.py`'s training-row
+selection and `combine.py`'s `residual_variance_reduction()` were hardened
+to correctly exclude/handle the newly-possible `NaN` residual rows (see
+Decision 017's Implication section).
+
+### Features Used
+Unchanged from M1-002.
+
+### Metrics
+Unchanged from M1-002 (RMSE/MAE/sMAPE/MASE, DM test, residual variance
+reduction, final Ljung-Box). For question (2) specifically: sMAPE compared
+across periods with vs. without complete climate feature coverage.
+
+### Results
+
+**Question (1) - Stage 1 fix:**
+- Root cause confirmed precisely: `Vavuniya` fold 1 (2010) fit an AR(1)
+  coefficient of 1.266 (explosive); `Mannar` fold 13 (2022) independently
+  fit a seasonal AR coefficient of 1.162 (all 52 seasonal roots on the unit
+  circle) - confirming this is a general failure mode of
+  `enforce_stationarity=False`, not a `Vavuniya`-only quirk.
+- Full pipeline regenerated. **Stage 2 headline improved from 24/25 to a
+  clean 25/25 districts** improving on validation-aggregate MASE
+  (`Kilinochchi` flipped from -9.4% to +5.3%). Median validation MASE
+  improvement: 43.5% (was ~42.8%). Median **holdout** MASE improvement rose
+  more substantially: 32.7% (was ~28.7%) - the fix disproportionately helped
+  holdout-block consistency.
+- Holdout win rate is 23/25, not 25/25: `Kilinochchi` (-11.7%, worse than
+  before the fix) and `Mannar` (-3.0%, newly negative) are the two
+  exceptions, neither statistically significant (DM test `p > 0.3` both).
+- `Vavuniya` itself went from one of the pipeline's most fragile districts
+  to one of its best (validation MASE 0.375 → 0.286).
+- **Bug found and fixed while re-verifying DM test results**:
+  `evaluate.dm_test`'s docstring had the `mean_loss_diff` sign convention
+  backwards (said `< 0` meant "Stage 2 helped"; the actual code computation
+  means `> 0` does). The numbers reported in M1-002/Decision 016 were
+  already computed correctly in code - only the prose explanation was wrong,
+  now fixed.
+
+**Question (2) - real-world outbreak check:**
+- The dataset already includes the actual outbreak (`Colombo` 1,138 cases,
+  `Gampaha` 1,294 cases at 2026 week 25) inside the untouched holdout block.
+- Stage 1+2 achieves sMAPE of **14-24%** across every period checked with
+  complete climate data (Dec 2025: 13.9%/20.1%; all 2025: 15.9%/16.6%; 2026
+  weeks 1-21 excl. a week-14 reporting-dip artifact: 17.9%/23.8%) - a
+  genuinely useful accuracy level, including through the early ramp-up of
+  the real outbreak.
+- **Root cause of the apparent week-25 "failure" (~8-10x underestimate for
+  both districts)**: the shared climate data pipeline has not been
+  refreshed past 2026 week 21, leaving every climate feature (rainfall,
+  temperature, humidity, and all lags) entirely `NaN` for weeks 22-25 -
+  exactly the weeks containing the spike. sMAPE for those 4 weeks alone is
+  ~97% for both districts, a ~4-5x degradation directly attributable to the
+  missing inputs, not a modeling failure.
+- Separately, even with climate data present, a 104-week-ahead one-shot
+  holdout forecast would not be expected to anticipate a sudden 8-10x
+  outbreak spike regardless - that is a fundamentally different (and
+  harder) task than the rolling 1-week-ahead forecast a real deployment
+  would use. Not yet tested this session (flagged as follow-up, Open
+  Question #16).
+
+### Residual Diagnostics
+Final Ljung-Box (lag 26) still shows significant autocorrelation in 23/25
+districts post-fix - `Ampara` and `Vavuniya` now pass (previously `Ampara`
+and `Anuradhapura`); `Vavuniya` newly joins the passing set because its own
+explosive-fold contamination is gone.
+
+### Interpretation
+The Decision 017 fix confirms that Open Question #14's Vavuniya finding was
+a genuine, fixable Stage 1 robustness gap, not a data artifact - and that
+`Mannar` had the identical undiagnosed problem, found only by a systematic
+scan rather than a targeted look. Fixing a Stage 1 robustness bug measurably
+improved Stage 2's headline result, which is reassuring: it suggests Stage
+2's architecture is not just "hiding" more Stage 1 problems of this kind
+elsewhere (a full 25-district scan found exactly these two cases and no
+others). Separately, the real-world outbreak check is a valuable reality
+check on what this pipeline can and cannot currently claim to do: it
+predicts case counts with real-world-useful accuracy when given complete
+inputs, but the moment its climate inputs go stale, accuracy collapses -
+this is an operational/data-engineering concern as much as a modeling one,
+and should be foregrounded in any discussion of "real-time" outbreak
+tracking capability.
+
+### Decision
+**Keep** the AR-root stability guard permanently in Stage 1 - it is a
+strict improvement (25/25 vs 24/25 validation win rate) with no observed
+downside. **Do not** yet build the rolling 1-week-ahead re-evaluation
+proposed by Open Question #16 - deferred by explicit user direction this
+session in favor of prioritizing the Stage 1 fix first. **Flag** the
+climate data pipeline currency gap (2026 weeks 22-25) as an actionable,
+separate follow-up - refreshing it is a prerequisite before any further
+real-time-accuracy claims.
+
+### Documentation Updated
+- `module_1_forecasting/MODULE_CONTEXT.md` (Open Question #14 marked
+  resolved-and-fixed with full before/after numbers; Open Question #12's
+  numbers refreshed; new Open Question #16 for the climate-lag/real-world
+  outbreak finding; "Stage 1 Implementation Status" and "Stage 2
+  Implementation Status" sections fully refreshed with post-fix numbers).
+- `module_1_forecasting/EXPERIMENT_LOG.md` (this entry).
+- `research_context/RESEARCH_DECISIONS.md` (new Decision 017; Decision 016's
+  result line annotated as superseded).
+- `src/module1_forecasting/baseline_sarima.py` (`_has_explosive_ar_root()`
+  added, wired into `fit_and_forecast()`; module docstring updated).
+- `src/module1_forecasting/compensation_model.py` (`_trainable_mask()`
+  added to correctly exclude `NaN`-target rows from all training/
+  early-stopping slices).
+- `src/module1_forecasting/combine.py` (`residual_variance_reduction()`
+  switched to `np.nanvar`).
+- `src/module1_forecasting/evaluate.py` (`dm_test` docstring sign-convention
+  bug fixed).
+- `research_context/CHANGELOG.md` (new entry).
+
+---
+
+## Experiment ID: M1-004
+
+### Date
+2026-07-27
+
+### Research Question
+Distinct from every prior experiment (all of which score against data
+already in the dataset, just held out from training): can the trained Stage
+1+2 pipeline produce a genuine forward forecast for weeks that don't exist in
+the dataset at all, and if so, what does it predict for `Colombo`/`Gampaha`
+immediately following the real 2026 week-25 outbreak spike (Open Question
+#16)?
+
+### Districts
+All 25 (mechanism), with `Colombo`/`Gampaha` as the illustrative focus given
+the ongoing real-world outbreak.
+
+### Data Period
+Same full history as M1-003 (case data through 2026 week 25, climate data
+through 2026 week 21). New: an 8-week forward horizon (2026 weeks 26-33) with
+no ground truth in the dataset at all.
+
+### Stage 1 Model
+Each district's already-selected `(order, seasonal_order, use_log1p)`
+(`sarima_selected_configs.csv`), refit once on the district's ENTIRE
+available history (not a pre-holdout window) via the unchanged
+`fit_and_forecast()`, then forecast 8 steps ahead in one deterministic
+multi-step call.
+
+### Stage 2 Model
+The existing final production XGBoost model (`xgboost_final_model.json`,
+trained on all 14 folds + holdout - unchanged, no retraining this session).
+Applied recursively, one future week at a time (new: `forecast_future.py`):
+for the first 1-2 future weeks, `residual_lag_1/2` and case-count lags use
+real historical values; for every week after that, the script's own
+prior-step `final_prediction`/`predicted_residual` are fed back in as the
+lag inputs (standard recursive multi-step forecasting).
+
+### Features Used
+Unchanged feature set (`compensation_model.FEATURE_COLUMNS`). Climate-derived
+features (raw anomalies, and any lag reaching past week 21) are `NaN` for
+every future week, by construction, since climate data doesn't extend past
+that point (Open Question #16) - handled natively by XGBoost's missing-value
+routing, not fabricated.
+
+### Metrics
+No accuracy metric is possible (no ground truth exists yet for future
+weeks). Instead, a `feature_completeness_pct` diagnostic (share of non-`District`
+`FEATURE_COLUMNS` that are non-`NaN`) is reported per row as an honest
+per-week confidence proxy.
+
+### Results
+- `feature_completeness_pct` declines steadily with horizon across all
+  districts: 56.2% (step 1) -> 53.1% -> 50.0% -> 46.9% -> 43.8% (steps 5-8,
+  where it flattens once both `residual_lag_1/2` are fully recursive and no
+  further climate lags remain in range).
+- `Colombo`: predicted cases rise from the pre-spike ~300-500/week baseline
+  to 442.7 (week 26), peak at 524.8 (week 27), then settle to a 460-470/week
+  plateau (weeks 28-33) - well above the pre-spike baseline but far below the
+  week-25 spike value (1,138) itself.
+- `Gampaha`: similarly rises from a ~200-500/week baseline to 1,087.7 (week
+  26), peaks at 1,465.9 (week 27), then settles to a ~1,360-1,370/week
+  plateau (weeks 28-33) - also well above baseline, closer to (but not
+  exactly repeating) the week-25 spike value (1,294).
+- Both districts show a suspicious week-24 dip (`Colombo` 20, `Gampaha` 24
+  cases) immediately before the week-25 spike - a plausible reporting-lag
+  catch-up artifact (Open Question #16's third bullet). The forecast's
+  plateau-rather-than-continued-spike shape is consistent with the model
+  correctly not over-extrapolating a possibly-artifactual single-week outlier,
+  though this has not been confirmed against raw source data.
+- Full output: `data/processed/module1/future_forecast.csv` (200 rows = 25
+  districts x 8 weeks). Plots:
+  `outputs/figures/module1/future_forecast_{Colombo,Gampaha}.png`.
+
+### Residual Diagnostics
+Not applicable - no observed residual exists yet for future weeks.
+
+### Interpretation
+The pipeline can produce a directionally sensible forward forecast beyond
+the dataset's end: both outbreak districts are correctly predicted to remain
+substantially elevated relative to their pre-outbreak baseline, without
+naively repeating the single week-25 spike value (which may itself be
+partly a reporting-catchup artifact). This is qualitatively different
+evidence from the holdout MASE numbers (M1-002/M1-003) - it is a
+demonstration of the pipeline's forward-looking capability, not a validated
+accuracy claim, and should never be cited alongside the holdout results as
+if it were equivalently rigorous. The declining `feature_completeness_pct`
+is the honest, quantified reason why: by week 3 of any forward forecast, the
+two most important Stage 2 features (`residual_lag_1/2`, per M1-002's
+feature-importance finding) are already self-fed rather than real, and
+climate features are entirely absent throughout.
+
+### Decision
+**Add** `forecast_future.py` as a new, clearly-separated deliverable
+(production forward forecasting) - not merged into `main.py`'s validated
+walk-forward/holdout orchestration, since it answers a fundamentally
+different question with a fundamentally different (and lower) evidence
+standard. **Do not** treat `future_forecast.csv` as a substitute for closing
+Open Question #16's climate-data-currency gap or for the still-not-built
+rolling 1-week-ahead re-evaluation - both remain open, higher-rigor
+follow-ups.
+
+### Documentation Updated
+- `module_1_forecasting/MODULE_CONTEXT.md` (new "Forward Production
+  Forecast" section).
+- `module_1_forecasting/EXPERIMENT_LOG.md` (this entry).
+- `research_context/RESEARCH_DECISIONS.md` (new Decision 018).
+- `src/config.py` (`MODULE1_FUTURE_FORECAST_PATH` added).
+- `src/module1_forecasting/forecast_future.py` (new file).
+- `research_context/CHANGELOG.md` (new entry).

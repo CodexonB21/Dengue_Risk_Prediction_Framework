@@ -1,5 +1,6 @@
 pandas
 numpy
+scipy
 scikit-learn
 statsmodels==0.14.6
 pmdarima==2.1.1
