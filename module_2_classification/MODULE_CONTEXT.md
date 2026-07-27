@@ -19,6 +19,12 @@ Exact models may change after benchmarking.
 
 ---
 
+## Data Pipeline Note (2026-07-26)
+
+Module 2 will consume `data/processed/shared/` (Kalmunai merged into Ampara, master epi-week calendar, full 13-column climate aggregation, interpolated population) — the same base tables Module 1 uses. Module 2 does **not** automatically inherit Module 1's downstream choices: the week-53 merge (Decision 007), missing-week imputation policy (Decision 011), and `weather_code` exclusion (Decision 008) are all Module-1-scoped per Decision 013. Module 2 must decide its own missing-week policy (e.g. drop vs. impute) once its label definition is settled, and independently decide on `weather_code`. See `research_context/PIPELINE_ARCHITECTURE_PLAN.md` for the full layered pipeline design.
+
+---
+
 ## Possible Stage 1 Models
 
 - Random Forest

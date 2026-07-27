@@ -112,6 +112,8 @@ anomaly = current_week_value - long_term_mean_for_same_district_and_week
 Important:
 Calculate long-term means using training data only to avoid leakage.
 
+**Fold-aware computation requirement (added 2026-07-26):** given the walk-forward validation scheme (Decision 009), this cannot be computed once globally — the "long-term mean" must be recomputed separately inside each walk-forward fold, using only that fold's training window. Computing it once over the full history would leak future climate norms into early training folds. Contrast with Feature Groups 1 and 2 (case lags, climate lags), which are pure shifts of already-observed values and are safe to compute globally regardless of split. See `research_context/PIPELINE_ARCHITECTURE_PLAN.md` for the Module 1 feature engineering script's handling of this distinction.
+
 ---
 
 ## Feature Group 4: Seasonal / Contextual Indicators
@@ -131,6 +133,10 @@ cos_week = cos(2π × Week / 52)
 monsoon_indicator_SW = 1 for weeks 20-38, else 0
 monsoon_indicator_NE = 1 for weeks 44-52 or 1-8, else 0
 ```
+
+### 53-Week Year Handling
+
+Sri Lanka MoH epi-week years occasionally contain 53 weeks. Per Decision 007 (`RESEARCH_DECISIONS.md`), week 53 is merged into week 52 (cases summed, climate averaged) before computing the above cyclic features, so `Week` is always in `[1, 52]` and the seasonal period stays fixed for SARIMA.
 
 ---
 
@@ -155,6 +161,12 @@ rainfall_temperature_interaction
 ```
 
 Use only if data quality and availability support them.
+
+---
+
+## Excluded Feature: `weather_code`
+
+Per Decision 008 (`RESEARCH_DECISIONS.md`), the categorical `weather_code` (WMO code) is **excluded** from Module 1 Stage 2 features by default. It is largely redundant with the continuous rainfall/temperature/humidity variables already used, which are more physically precise for dengue transmission drivers. May be revisited as an ablation-study candidate (e.g., a derived `thunderstorm_day_count`) if time permits.
 
 ---
 
@@ -206,3 +218,5 @@ Record major feature changes here or in `CHANGELOG.md`.
 | Date | Module | Feature Change | Reason | Status |
 |---|---|---|---|---|
 | 2026-07-26 | Module 1 | Initial Stage 2 feature groups defined | Based on residual compensation logic | Accepted |
+| 2026-07-26 | Module 1 | `weather_code` excluded from feature set | Redundant with continuous climate variables | Proposed (Decision 008) |
+| 2026-07-26 | Module 1 | `sin_week`/`cos_week` require week-53 merge preprocessing | Keep SARIMA seasonal period fixed at m=52 | Proposed (Decision 007) |

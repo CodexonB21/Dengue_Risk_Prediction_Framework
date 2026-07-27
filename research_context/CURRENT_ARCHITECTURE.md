@@ -18,9 +18,13 @@ The project follows a residual compensation design across three modules.
 ```text
 Raw Data
   ↓
-Preprocessing + Feature Engineering
+Shared Preprocessing (module-agnostic)
+  ↓
+Module-Specific Preprocessing (temporal/modeling adjustments per module)
   ↓
 Baseline Models
+  ↓
+Module-Specific Feature Engineering
   ↓
 Residual / Error Extraction
   ↓
@@ -30,6 +34,17 @@ Final Forecasts / Risk Outputs / Hotspot Outputs
   ↓
 Dashboard / Decision Support
 ```
+
+**Guiding principle (added 2026-07-26, Decision 013):** a data transformation only
+belongs in the shared layer if every module would make the same choice for the same
+reason. Transformations that exist to satisfy one baseline model's assumptions (e.g.
+SARIMA's fixed 52-week seasonal period) belong in that module's own preprocessing
+step, not upstream, where they would silently bias the other two modules' data.
+
+The full technical build plan (file layout, script responsibilities, exact
+transformation order) lives in `research_context/PIPELINE_ARCHITECTURE_PLAN.md`. This file
+(`CURRENT_ARCHITECTURE.md`) stays at the research/design level; that file is the
+implementation-level companion.
 
 ---
 

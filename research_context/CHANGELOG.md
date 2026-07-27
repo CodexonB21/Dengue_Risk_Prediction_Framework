@@ -29,6 +29,91 @@ Accepted / Rejected / Experimental / Superseded
 
 ---
 
+## 2026-07-27 - Module 1 Stage 1 SARIMA Baseline Implemented
+
+### Module
+Module 1
+
+### Change
+Implemented `src/module1_forecasting/baseline_sarima.py` and
+`src/module1_forecasting/evaluate.py` (both previously 1-line placeholders)
+and ran the full pipeline against all 25 districts. For each district,
+`pmdarima.auto_arima` proposes a candidate SARIMA order for raw counts and
+for `log1p` counts (one-time, constrained stepwise search on the full
+pre-holdout history); both candidates are then genuinely walk-forward
+validated (14 expanding-window folds, fixed-order `SARIMAX` refit per fold
+per Decision 010) and the lower-aggregate-MASE transform is kept per
+district. The final 104-week holdout block is forecast and scored once with
+the winning config. Five design decisions were reviewed and approved before
+implementation: (1) order search uses full pre-holdout history rather than
+per-fold search (infeasible at scale - already benchmarked); (2) forecasts
+from both candidates are clipped to a 0 floor after inverse-transforming;
+(3) `SARIMAX` fits relax `enforce_stationarity`/`enforce_invertibility` for
+robustness; (4) MASE (seasonal-naive scale) is the single deciding metric
+for transform/config selection, with all four metrics logged for
+transparency; (5) the holdout block is scored now (not deferred), clearly
+labeled as a one-time, non-tuning report.
+
+Also added: `src/config.py` (`MODULE1_SARIMA_PREDICTIONS_PATH`,
+`MODULE1_SARIMA_CONFIG_PATH`, `MODULE1_SARIMA_METRICS_PATH`, plus their
+parent-directory constants); `requirements.txt` pins for `pmdarima==2.1.1`,
+`xgboost==3.2.0`, `statsmodels==0.14.6` (all already installed, previously
+unpinned).
+
+**Significant finding**: the seasonal-differencing test (`auto_arima`'s
+default OCSB test, cross-checked against Canova-Hansen — both agree)
+selected `D=0` for all 25 districts, and the constrained stepwise search
+added no seasonal MA term for any district either. **18 of 25** selected
+configs ended up with `seasonal_order=(0,0,0,52)` — a plain, non-seasonal
+ARIMA despite `m=52` being specified. Forcing `D=1` was tested directly and
+found computationally infeasible at scale (a single `D=1, m=52` SARIMAX fit
+took 7+ minutes vs. ~0.01s for the `D=0` fixed-order refits used everywhere
+else in this pipeline). This is documented as the top open finding from
+Stage 1 (`module_1_forecasting/MODULE_CONTEXT.md` Open Question #12), not
+silently patched over: 12/25 districts have validation-fold MASE > 1 (worse
+than a naive "repeat last year's same week" forecast), and Ljung-Box tests
+show significant residual autocorrelation in 23/25 districts, consistent
+with the annual cycle not being captured by these particular selected
+models. Zero-inflation % was checked as a possible explanation and largely
+ruled out as the dominant driver (`Vavuniya`, one of the sparsest districts,
+is the single best performer; `Colombo`, essentially never sparse, still
+underperforms).
+
+### Reason
+Stage 2 (residual compensation) cannot be built without genuine
+out-of-sample Stage 1 residuals to train on (Decision 010) - this was the
+last blocking step before Stage 2 work can begin. The open SARIMA
+order/log-transform questions (`module_1_forecasting/MODULE_CONTEXT.md`
+Open Questions #1, #8) needed a concrete, evidence-based per-district
+resolution rather than a single global assumption, given the project's
+already-documented zero-inflation heterogeneity.
+
+### Impact
+- Added: `data/processed/module1/sarima_stage1_predictions.csv` (20,800
+  rows), `models/module1/sarima_selected_configs.csv` (25 rows),
+  `outputs/metrics/module1/sarima_walk_forward_metrics.csv` (400 rows),
+  `outputs/figures/module1/acf_residuals_{Colombo,Kandy,Mullaitivu,
+  Kilinochchi}.png`.
+- Updated: `src/module1_forecasting/baseline_sarima.py`,
+  `src/module1_forecasting/evaluate.py`, `src/config.py`, `requirements.txt`.
+- Updated: `module_1_forecasting/MODULE_CONTEXT.md` (Open Questions #1, #2,
+  #3, #7, #8 resolved/updated; new Open Questions #12-13; new "Stage 1
+  Implementation Status" section), `module_1_forecasting/EXPERIMENT_LOG.md`
+  (first real entry, M1-001), `research_context/RESEARCH_DECISIONS.md`
+  (Decisions 009/010 status Proposed -> Accepted, implementation notes
+  added).
+- Explicitly untouched this session (per plan): `compensation_model.py`,
+  `combine.py`, `main.py`.
+
+### Status
+Accepted (Stage 1 pipeline code and outputs). The AIC/seasonal-structure
+finding (Open Question #12) is flagged Open, pending a future ablation
+(STL+SARIMA or a forecast-horizon-aware order criterion) - not yet
+resolved, and worth raising with the thesis supervisor before treating
+Stage 1's absolute performance numbers as final.
+
+---
+
 ## 2026-07-26 - Living Cursor Context System Added
 
 ### Module
@@ -55,6 +140,283 @@ Accepted
 
 ---
 
+## 2026-07-26 - Module 1 Data Realities Confirmed and New Decisions Proposed
+
+### Module
+Module 1 (with cross-module implication for Module 3 via population data)
+
+### Change
+User confirmed actual data characteristics for Module 1: full 2007–2026 weekly/daily coverage, Sri Lanka MoH epi-week standard (scraped), consistent district names, census population data (2001/2012/2024), single-point-per-district climate data (Open-Meteo constraint), and heavy zero-inflation in weekly case counts. Based on these facts, six new decisions were proposed (006–011): population used as a reporting-layer normalization only (not a Stage 1 target change), week-53 merged into week-52 for seasonal consistency, `weather_code` excluded from the feature set, walk-forward validation with a held-out final test block, a no-leakage rule for Stage 2 residual training, and a seasonal-naive imputation + flagging policy for missing weeks.
+
+### Reason
+Confirming real data characteristics resolved several previously open questions in `DATA_DICTIONARY.md` and `module_1_forecasting/MODULE_CONTEXT.md`, and surfaced new risks (zero-inflation, 53-week years, residual leakage) that needed explicit, documented handling before implementation begins.
+
+### Impact
+Updated:
+
+- `research_context/DATA_DICTIONARY.md` (epi-week definition, spatial resolution caveat, population/census section, data quality notes)
+- `research_context/RESEARCH_DECISIONS.md` (Decisions 006–011, all status Proposed pending final sign-off)
+- `research_context/FEATURE_ENGINEERING_SPEC.md` (`weather_code` exclusion, week-53 merge note, feature change log)
+- `module_1_forecasting/MODULE_CONTEXT.md` (resolved data questions, new zero-inflation open question, validation strategy, updated evaluation metrics)
+
+### Status
+Proposed (decisions 006–011 pending final user sign-off before implementation)
+
+---
+
+## 2026-07-26 - Raw Module 1 Data Audited and Cleaned
+
+### Module
+Module 1
+
+### Change
+Ran a full read-only audit (`scripts/data_audit_module1.py`, newly added) against the actual raw files placed in `data/raw/epidemiological/` and `data/raw/weather/`. Found and worked with the user through a joint iterative fix of five `(District, Year, Week)` collisions in the case data (2010 week 34/35 mislabeling, a 2012/2013 year-boundary mislabel, a 2014 week 2/3 double-track ambiguity, and a 2022/2023 year-boundary mislabel with a corrupted date). Also found and fixed two single-row district-name typos (`Moneragala`, `Puttlam`). Confirmed `Kalmunai` has a real 19-year case history but no matching weather station, and decided (Decision 012) to merge it into `Ampara`. Confirmed the `Humidity/` weather subfolder is fully redundant with `Weather (Except Humidity)/` (byte-identical humidity values) and should be dropped as a source. Corrected the earlier zero-inflation characterization: it is concentrated in 5 Northern/Eastern districts, not universal. Confirmed the earlier "encoding corruption" concern was a chat-display artifact, not a real file issue.
+
+### Reason
+The raw case data had genuine week-numbering integrity issues that would have silently corrupted any merge with climate data (row fan-out) and any SARIMA seasonal fitting (broken 7-day cadence) if left unresolved.
+
+### Impact
+- `data/raw/epidemiological/dengue_cases_corected.csv` — corrected in place by the user, verified by re-running the audit script until 0 duplicate rows remained.
+- `research_context/DATA_DICTIONARY.md` — epi-week definition, climate source-folder guidance, and Data Quality Notes table updated with verified facts.
+- `research_context/RESEARCH_DECISIONS.md` — added Decision 012 (Kalmunai → Ampara merge, Accepted); confirmed scope note added to Decision 011.
+- `module_1_forecasting/MODULE_CONTEXT.md` — to be updated with final confirmed district list and data status.
+- Added `scripts/data_audit_module1.py` as a reusable, read-only diagnostic — safe to re-run after any future edits to the raw case file.
+
+### Status
+Accepted (data-cleaning outcomes); Decision 012 Accepted; Decisions 006-011 remain Proposed pending pipeline implementation
+
+---
+
+## 2026-07-26 - Layered Pipeline Architecture Adopted; Detailed Build Plan Created
+
+### Module
+All modules
+
+### Change
+Corrected a design flaw: several transformations (week-53 merge, missing-week imputation, `weather_code` exclusion) had been implicitly treated as general-purpose data cleaning, when they actually exist to satisfy Module 1's SARIMA-specific assumptions. Adopted a layered pipeline (Decision 013): a shared, module-agnostic preprocessing stage (`data/processed/shared/`) feeding into separate module-specific preprocessing and feature-engineering stages (`data/processed/moduleN/`, `data/features/moduleN/`). Also corrected the missing-week count under Decision 011 using a more rigorous method (true label-gap detection instead of row-count comparison): the real picture is 4 weeks missing nationwide across all districts, plus a few district-specific gaps, totaling 104 rows (not the smaller, less accurate estimate previously recorded). Created a detailed technical build plan covering the shared layer and the full Module 1 pipeline, ready to implement.
+
+### Reason
+Applying Module-1-specific transformations at a shared layer would have silently discarded real data and imposed unproven feature-selection choices on Module 2 and Module 3 before their own designs are finalized.
+
+### Impact
+- Added `docs/PIPELINE_ARCHITECTURE_PLAN.md` (new, detailed technical build plan).
+- `research_context/CURRENT_ARCHITECTURE.md` — added the layered pipeline diagram and guiding principle.
+- `research_context/RESEARCH_DECISIONS.md` — added Decision 013; re-scoped Decisions 007, 008, 011 to Module 1 only; corrected Decision 011's confirmed missing-week count.
+- `research_context/FEATURE_ENGINEERING_SPEC.md` — added fold-aware computation requirement for climate anomaly features.
+- `module_1_forecasting/MODULE_CONTEXT.md` — added an Implementation Plan section.
+- `module_2_classification/MODULE_CONTEXT.md`, `module_3_spatial/MODULE_CONTEXT.md` — added data pipeline consumption notes clarifying they do not inherit Module 1's modeling-specific choices.
+
+### Status
+Accepted
+
+---
+
+## 2026-07-27 - Population Census Data Placed; Decision 006 Finalized
+
+### Module
+Module 1 (cross-module implication for Module 3)
+
+### Change
+Placed the population census file at `data/raw/population/population_by_district.csv`
+(2001/2012/2024, 25 districts, wide format). Corrected the source's `Moneragala`
+spelling to `Monaragala` on ingestion to match the rest of the pipeline. Confirmed
+`Kalmunai` needs no separate population row (administratively part of Ampara).
+Finalized Decision 006's interpolation method: linear between census points,
+linear extrapolation using the 2012→2024 slope for 2025-2026. This was previously
+the last blocker on Shared Layer Step 4 in `PIPELINE_ARCHITECTURE_PLAN.md`.
+
+### Reason
+The pipeline-implementation prompt drafted for the next session needed a real answer
+for the population step rather than an open TODO.
+
+### Impact
+- Flagged a genuine methodological limitation while reviewing the data: `Kilinochchi`,
+  `Mullaitivu`, and `Mannar` show a non-monotonic 2001→2012→2024 population trend
+  (sharp decline then recovery), consistent with civil-war-era displacement in the
+  Vanni region ending 2009 — right when the case/climate data begins. Linear
+  interpolation can't recover the true 2007-2012 population path for these 3
+  districts. Since population is a reporting-layer-only denominator (Decision 006),
+  this doesn't touch the modeling target, but `cases_per_100k` for these districts in
+  that period should be reported with an explicit caveat. Documented in
+  `DATA_DICTIONARY.md` Section 3 and `RESEARCH_DECISIONS.md` Decision 006.
+- `research_context/DATA_DICTIONARY.md` — new Population section content, source file
+  location, coverage check, district-name correction, limitation table rows.
+- `research_context/RESEARCH_DECISIONS.md` — Decision 006 status Proposed → Accepted.
+- `research_context/PIPELINE_ARCHITECTURE_PLAN.md` — Shared Step 4 unblocked, exact
+  melt/interpolate/extrapolate steps specified, Open Items list updated.
+- `module_1_forecasting/MODULE_CONTEXT.md` — Resolved Data Questions updated.
+
+### Status
+Accepted
+
+---
+
+## 2026-07-27 - Shared Preprocessing Layer and Module 1 Pipeline Implemented
+
+### Module
+All modules (shared layer); Module 1 (preprocessing, validation, feature engineering)
+
+### Change
+Implemented and ran, end to end against the real data, everything specified
+in `PIPELINE_ARCHITECTURE_PLAN.md`'s Stage 0 / Shared Layer / Module 1 Layer
+sections: `src/config.py` (real 25-district list, `MONSOON_WEEKS_SW`/`_NE`),
+`src/preprocessing/shared.py` (Kalmunai->Ampara merge, master epi-week
+calendar, climate weekly aggregation, population interpolation),
+`src/preprocessing/module1_preprocessing.py` (week-53 merge, seasonal-naive
+imputation, climate + population merge, `cases_per_100k`), and two new
+files, `src/module1_forecasting/validation.py` (walk-forward fold generator,
+`fit_window`/`get_holdout_series` no-leakage helpers) and
+`src/module1_forecasting/feature_engineering.py` (fold-agnostic Stage 2
+features + a `compute_fold_climate_anomalies` function for the fold-aware
+ones). `baseline_sarima.py`/`compensation_model.py`/`combine.py`/
+`evaluate.py`/`main.py` remain out of scope (SARIMA order selection, log1p
+vs raw, etc. are still open research questions).
+
+While spot-checking the master epi-week calendar (explicitly required by the
+build plan before trusting it downstream), found a **new, previously
+undiscovered data-quality issue distinct from the 5 collisions fixed
+2026-07-26**: 30 `(Year, Week)` labels across 2008-2024 have a date stamp
+that essentially all districts agree on (so it never showed up as a
+duplicate-key or per-row disagreement) but that is chronologically
+inconsistent with neighbouring weeks - almost certainly a page-level MoH
+scrape error for that specific week, not a per-row transcription slip. This
+measurably breaks the day-to-week join for climate aggregation on 15 of
+those weeks (375 of 25,350 rows in `weekly_modeling_table.csv` have no
+matching climate because of this; a further 125 rows have no climate for
+the separate, expected reason that climate coverage doesn't extend into the
+2006/2026 boundary years). Also confirmed the 4 documented nationwide case-data
+gaps (`2015 Wk30`, `2020 Wk1`, `2021 Wk42`, `2022 Wk43`) have zero raw rows
+for any district at all - not even a calendar entry - and added a
+conservative `fill_isolated_calendar_gaps` step to `shared.py` that
+sequentially infers a date only when it fits an unambiguous single 7-day
+slot; this recovered dates for 3 of the 4 (`2020 Wk1` could not be dated -
+2019's confirmed week-53 already runs through 2020-01-03, leaving no gap for
+a "week 1"). None of this was silently patched into "correct" values - it
+is fully logged, written to diagnostic CSVs
+(`epi_week_calendar_chronology_issues.csv`,
+`epi_week_calendar_disagreements.csv`) in `data/processed/shared/`, and
+flagged for the same joint human-review process used for the earlier 5
+collisions.
+
+### Reason
+The build plan explicitly required spot-checking the calendar-construction
+step for ties/ambiguous cases before trusting it downstream; doing so
+surfaced a real, previously-unknown, and non-trivial data quality issue
+(distinct in kind from the already-fixed collisions) that affects climate
+feature completeness for ~2% of Module 1's weekly rows.
+
+### Impact
+- Added: `data/processed/shared/{epi_week_calendar.csv, climate_weekly.csv,
+  population_annual.csv, epidemiological_weekly.csv,
+  epi_week_calendar_disagreements.csv,
+  epi_week_calendar_chronology_issues.csv}`.
+- Added: `data/processed/module1/weekly_modeling_table.csv`.
+- Added: `data/features/module1/stage2_feature_table.csv`.
+- Updated: `src/config.py`, `src/preprocessing/shared.py`,
+  `src/preprocessing/module1_preprocessing.py`.
+- Added: `src/module1_forecasting/validation.py`,
+  `src/module1_forecasting/feature_engineering.py`.
+- Updated: `module_1_forecasting/MODULE_CONTEXT.md` (implementation status,
+  deviations from plan, 3 new open questions #9-11),
+  `research_context/PIPELINE_ARCHITECTURE_PLAN.md` (status/last-updated,
+  new open item for the chronology-issue discovery),
+  `research_context/DATA_DICTIONARY.md` (new Data Quality Notes rows).
+
+### Status
+Accepted (pipeline code); the newly discovered 30-week date-mislabeling
+issue is flagged Open, pending team review - not yet resolved.
+
+---
+
+## 2026-07-27 - Systematic Date-Mislabeling Issue Resolved in Raw Epidemiological Data
+
+### Module
+Module 1 (raw data feeds all downstream shared/Module 1 outputs)
+
+### Change
+Resolved the 30-week systematic date-mislabeling issue discovered while
+implementing the shared preprocessing layer (previous entry). The user
+manually corrected 28 of the 30 flagged `(Year, Week)` labels in
+`dengue_cases_corected.csv` against the original MoH source pages,
+reporting back a detailed row-by-row account of what was found and fixed
+(mostly month-field-off-by-one errors and week-boundary overlaps). The
+assistant then re-ran the pipeline and cross-checked every one of the 30
+against the regenerated calendar, which found:
+
+- **2 of the 30 the user's pass had missed** (`2009 Wk24`, `2023 Wk40`) —
+  both had the same month-field error as the other 28, just not caught
+  during manual review. Corrected by the assistant.
+- **A full-calendar day-count scan** (checking *every* week in the dataset
+  for exactly 7 days and a clean 1-day gap to its neighbour, not just the
+  overlap-based check that found the original 30) surfaced 3 more
+  previously-undetected date-entry errors that don't manifest as overlaps
+  and so were invisible to both the original diagnostic and the user's
+  manual review: `2010 Wk9` (end date literally before its start date),
+  `2011 Wk48` (start date 3 days late, producing a 4-day week), and
+  `2013 Wk39`/`Wk40` (a 1-day boundary misplacement). Corrected by the
+  assistant.
+- The 2 outstanding per-row disagreements from the original diagnostic
+  (`Ampara 2013 Wk51`, `Ampara 2023 Wk14`) were also corrected.
+- **2 weeks accepted as irregular by design**: `2009 Wk17` (8 days) and
+  `2009 Wk22` (6 days) each sit in a stretch with a genuine 1-day
+  surplus/deficit in the source that cannot be fixed by editing one date
+  without opening a new gap with an already-correct neighbour — verified
+  concretely rather than assumed (the assistant initially "fixed" `2009
+  Wk17` by shortening it, found this created a brand-new 2-day gap with
+  `Wk18`, and reverted the change).
+- **1 low-priority item left open**: a genuine 3-day gap between `2025
+  Wk52` and `2026 Wk1` at the live-scrape edge of the dataset.
+- Also fixed a minor pipeline robustness bug found during verification:
+  `shared.py` previously only wrote the two chronology/disagreement
+  diagnostic CSVs when non-empty, so a clean re-run after fixing the
+  underlying data left a stale issues file on disk from the previous run.
+  `run_shared_preprocessing()` now always rewrites both files.
+
+Re-ran the full pipeline (`shared.py` → `module1_preprocessing.py` →
+`feature_engineering.py`) after every fix to confirm no regressions.
+`epi_week_calendar_chronology_issues.csv` and
+`epi_week_calendar_disagreements.csv` are now both empty. All 375 climate
+rows previously blocked by this issue in `weekly_modeling_table.csv` are
+now populated; the only remaining 150 "no matching climate" rows are the
+expected boundary cases (2006 Wk52 before climate coverage begins, 2020
+Wk1's dateless rows, 2026 Wk22-25 after current climate coverage ends).
+
+### Reason
+The 30-week issue was flagged as needing joint human review before
+correcting the raw source, per the same process used for the 5 collisions
+fixed 2026-07-26. Verifying the user's fixes against the regenerated
+calendar (rather than trusting the fix count at face value) surfaced
+additional real errors invisible to both the original overlap-only
+diagnostic and manual source-page review, which would have silently
+persisted into the modeling data otherwise.
+
+### Impact
+- `data/raw/epidemiological/dengue_cases_corected.csv` — corrected in place
+  (28 rows by the user; 5 more date fixes + 2 disagreement fixes + 3 stale
+  `Month`-column cosmetic fixes by the assistant; all changes verified via
+  full pipeline re-run).
+- `src/preprocessing/shared.py` — diagnostic CSVs now always rewritten
+  (fixes staleness bug).
+- Regenerated: all `data/processed/shared/*.csv`,
+  `data/processed/module1/weekly_modeling_table.csv`,
+  `data/features/module1/stage2_feature_table.csv`.
+- `research_context/DATA_DICTIONARY.md` — Data Quality Notes rows updated
+  from Open to Resolved, with exact before/after values for every fix and
+  the two accepted-irregular-week exceptions documented.
+- `research_context/PIPELINE_ARCHITECTURE_PLAN.md` — Open Item 4 marked
+  resolved; Open Item 5 (`2020 Wk1` dateless week) remains open and
+  unrelated to this fix.
+- `module_1_forecasting/MODULE_CONTEXT.md` — Open Question #10 marked
+  resolved with full detail; `climate_weekly.csv` row count updated
+  (24,950 → 25,300).
+
+### Status
+Accepted. Open Item 5 (`2020 Wk1`) and the `2025 Wk52`/`2026 Wk1` 3-day
+gap remain open, unrelated data-quality items requiring separate team
+decisions.
+
+---
+
 ## 2026-07-26 - Module-Level Documentation Structure Added
 
 ### Module
@@ -75,6 +437,41 @@ Added:
 - `module_2_classification/EXPERIMENT_LOG.md`
 - `module_3_spatial/MODULE_CONTEXT.md`
 - `module_3_spatial/EXPERIMENT_LOG.md`
+
+### Status
+Accepted
+
+---
+
+## 2026-07-27 - Raw Weather Folder Flattened; Build Plan Relocated
+
+### Module
+All modules (Module 1 most directly affected)
+
+### Change
+The user moved the 25 canonical per-district weather CSVs out of the nested
+`data/raw/weather/Weather (Except Humidity)/` subfolder directly into
+`data/raw/weather/`, and deleted the now-redundant `data/raw/weather/Humidity/`
+subfolder entirely (both subfolders no longer exist). Separately,
+`PIPELINE_ARCHITECTURE_PLAN.md` was relocated from `docs/` to
+`research_context/` (the `docs/` folder no longer exists). Updated all path
+references accordingly: `DATA_DICTIONARY.md`, `module_1_forecasting/MODULE_CONTEXT.md`,
+`PIPELINE_ARCHITECTURE_PLAN.md` itself (weather path), and `scripts/data_audit_module1.py`
+(simplified to a single `WEATHER_DIR` with no Humidity-comparison logic); and all
+`docs/PIPELINE_ARCHITECTURE_PLAN.md` cross-references in `CURRENT_ARCHITECTURE.md`,
+`RESEARCH_DECISIONS.md`, `FEATURE_ENGINEERING_SPEC.md`, and all three
+`MODULE_CONTEXT.md` files were repointed to `research_context/PIPELINE_ARCHITECTURE_PLAN.md`.
+
+### Reason
+Keep living documentation and scripts in sync with the actual raw-data folder
+layout and file locations on disk, so pipeline code written against these paths
+doesn't break.
+
+### Impact
+Weather ingestion in the upcoming `src/preprocessing/shared.py` should read
+`data/raw/weather/*.csv` directly (no subfolder). All references to
+`docs/PIPELINE_ARCHITECTURE_PLAN.md` should be read as
+`research_context/PIPELINE_ARCHITECTURE_PLAN.md`.
 
 ### Status
 Accepted

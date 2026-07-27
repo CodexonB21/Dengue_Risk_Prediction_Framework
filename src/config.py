@@ -1,4 +1,10 @@
-"""Configuration placeholders for the dengue prediction framework."""
+"""Central configuration for the dengue prediction framework.
+
+All paths are derived from PROJECT_ROOT so preprocessing/feature-engineering
+code works regardless of the working directory it's invoked from. Scripts
+should import paths and shared constants from here rather than hardcoding
+strings (see `research_context/PIPELINE_ARCHITECTURE_PLAN.md`).
+"""
 
 from pathlib import Path
 
@@ -10,6 +16,51 @@ FEATURES_DIR = DATA_DIR / "features"
 MODELS_DIR = PROJECT_ROOT / "models"
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 
-DISTRICTS = ["District A", "District B", "District C"]
-MONSOON_WEEKS = [1, 2, 3, 4]
+# --- Raw data sources ---
+RAW_EPI_PATH = RAW_DIR / "epidemiological" / "dengue_cases_corected.csv"
+RAW_WEATHER_DIR = RAW_DIR / "weather"
+RAW_POPULATION_PATH = RAW_DIR / "population" / "population_by_district.csv"
+
+# --- Shared layer outputs (module-agnostic; src/preprocessing/shared.py) ---
+SHARED_DIR = PROCESSED_DIR / "shared"
+SHARED_EPI_WEEK_CALENDAR_PATH = SHARED_DIR / "epi_week_calendar.csv"
+SHARED_CLIMATE_WEEKLY_PATH = SHARED_DIR / "climate_weekly.csv"
+SHARED_POPULATION_ANNUAL_PATH = SHARED_DIR / "population_annual.csv"
+SHARED_EPIDEMIOLOGICAL_WEEKLY_PATH = SHARED_DIR / "epidemiological_weekly.csv"
+
+# --- Module 1 layer outputs ---
+MODULE1_PROCESSED_DIR = PROCESSED_DIR / "module1"
+MODULE1_WEEKLY_MODELING_TABLE_PATH = MODULE1_PROCESSED_DIR / "weekly_modeling_table.csv"
+MODULE1_FEATURES_DIR = FEATURES_DIR / "module1"
+MODULE1_STAGE2_FEATURE_TABLE_PATH = MODULE1_FEATURES_DIR / "stage2_feature_table.csv"
+
+# --- Module 1 Stage 1 (SARIMA baseline; src/module1_forecasting/baseline_sarima.py) ---
+MODULE1_SARIMA_PREDICTIONS_PATH = MODULE1_PROCESSED_DIR / "sarima_stage1_predictions.csv"
+MODULE1_MODELS_DIR = MODELS_DIR / "module1"
+MODULE1_SARIMA_CONFIG_PATH = MODULE1_MODELS_DIR / "sarima_selected_configs.csv"
+MODULE1_METRICS_DIR = OUTPUTS_DIR / "metrics" / "module1"
+MODULE1_SARIMA_METRICS_PATH = MODULE1_METRICS_DIR / "sarima_walk_forward_metrics.csv"
+MODULE1_FIGURES_DIR = OUTPUTS_DIR / "figures" / "module1"
+
+# 25 official Sri Lankan districts modeled post Kalmunai -> Ampara merge
+# (Decision 012). Kalmunai is a real ~19-year case series with no matching
+# Open-Meteo weather station; it is folded into Ampara upstream and is never
+# modeled as its own district.
+DISTRICTS = [
+    "Ampara", "Anuradhapura", "Badulla", "Batticaloa", "Colombo", "Galle",
+    "Gampaha", "Hambantota", "Jaffna", "Kalutara", "Kandy", "Kegalle",
+    "Kilinochchi", "Kurunegala", "Mannar", "Matale", "Matara", "Monaragala",
+    "Mullaitivu", "Nuwara Eliya", "Polonnaruwa", "Puttalam", "Ratnapura",
+    "Trincomalee", "Vavuniya",
+]  # 25 official districts, post Kalmunai->Ampara merge (Decision 012)
+
+# Sri Lanka monsoon epi-week ranges (FEATURE_ENGINEERING_SPEC.md Feature
+# Group 4). Assumes a fixed 52-week epi-year (Decision 007's week-53 merge
+# is applied upstream of any code that consumes these).
+MONSOON_WEEKS_SW = list(range(20, 39))          # weeks 20-38
+MONSOON_WEEKS_NE = list(range(44, 53)) + list(range(1, 9))  # weeks 44-52, 1-8
+
+# Module 2 concern - deliberately still a placeholder. Do NOT treat this as a
+# settled research decision; Module 2's label definition is an open question
+# (see module_2_classification/MODULE_CONTEXT.md).
 OUTBREAK_THRESHOLD = 50
