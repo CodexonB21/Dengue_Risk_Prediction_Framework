@@ -34,6 +34,14 @@ MODULE1_WEEKLY_MODELING_TABLE_PATH = MODULE1_PROCESSED_DIR / "weekly_modeling_ta
 MODULE1_FEATURES_DIR = FEATURES_DIR / "module1"
 MODULE1_STAGE2_FEATURE_TABLE_PATH = MODULE1_FEATURES_DIR / "stage2_feature_table.csv"
 
+# --- Module 1 Stage 1 (SARIMA baseline; src/module1_forecasting/baseline_sarima.py) ---
+MODULE1_SARIMA_PREDICTIONS_PATH = MODULE1_PROCESSED_DIR / "sarima_stage1_predictions.csv"
+MODULE1_MODELS_DIR = MODELS_DIR / "module1"
+MODULE1_SARIMA_CONFIG_PATH = MODULE1_MODELS_DIR / "sarima_selected_configs.csv"
+MODULE1_METRICS_DIR = OUTPUTS_DIR / "metrics" / "module1"
+MODULE1_SARIMA_METRICS_PATH = MODULE1_METRICS_DIR / "sarima_walk_forward_metrics.csv"
+MODULE1_FIGURES_DIR = OUTPUTS_DIR / "figures" / "module1"
+
 # 25 official Sri Lankan districts modeled post Kalmunai -> Ampara merge
 # (Decision 012). Kalmunai is a real ~19-year case series with no matching
 # Open-Meteo weather station; it is folded into Ampara upstream and is never

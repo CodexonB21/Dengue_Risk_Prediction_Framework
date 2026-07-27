@@ -62,14 +62,133 @@ residual = actual_cases - sarima_prediction
 
 ## Current Open Questions
 
-1. Which SARIMA orders perform best per district?
-2. Should STL + SARIMA be tested as an alternative baseline?
-3. Are residuals autocorrelated enough to justify residual_lag features?
+1. **RESOLVED (2026-07-27).** Which SARIMA orders perform best per district?
+   Answered empirically: `pmdarima.auto_arima` (constrained stepwise search,
+   `max_p=2, max_q=2, max_P=1, max_Q=1`, run once per district per transform
+   on the full pre-holdout history) proposed a candidate order for raw counts
+   and for `log1p` counts; both were then genuinely walk-forward validated
+   (`src/module1_forecasting/baseline_sarima.py`, reusing
+   `validation.py` unchanged) and the lower-MASE candidate kept. Full
+   per-district `(order, seasonal_order, use_log1p)` is in
+   `models/module1/sarima_selected_configs.csv` — see the results table in
+   "Stage 1 Implementation Status" below. **Major finding, not a defect**:
+   the seasonal-differencing test (OCSB, cross-checked against
+   Canova-Hansen — both agree) selected `D=0` for **all 25 districts**, and
+   the stepwise search added a seasonal MA term (`Q=1`) for **none** of
+   them; only 7/25 got a seasonal AR(1) term (`P=1`). 18/25 districts ended
+   up with `seasonal_order=(0,0,0,52)` — a plain, non-seasonal ARIMA despite
+   `m=52` being specified. Forcing `D=1` was tested and found computationally
+   infeasible at scale (one `D=1, m=52` SARIMAX fit took 7+ minutes vs
+   ~0.01s for the fixed-order refits used everywhere else in this pipeline).
+   See open question #12 (new) for the implication.
+2. **Deferred, not resolved — rationale strengthened (2026-07-27).** Should
+   STL + SARIMA be tested as an alternative baseline? Still explicitly out
+   of scope this session (building a second baseline architecture in the
+   same pass as the first was an explicit non-goal). This is now a
+   *higher-priority* future ablation than originally thought: since 18/25
+   districts' selected SARIMA has no seasonal component at all (#1 above),
+   an STL decomposition that explicitly extracts the annual cycle before
+   differencing may recover seasonal structure that AIC-driven `auto_arima`
+   is currently missing entirely.
+3. **Answered with evidence (2026-07-27).** Are residuals autocorrelated
+   enough to justify `residual_lag` features? Ljung-Box tests (lags 26, 52)
+   on pooled out-of-sample validation residuals show statistically
+   significant residual autocorrelation (p < 0.05 at lag 52) in **23 of 25
+   districts** — the two exceptions being `Kilinochchi` (p ≈ 1.0) and
+   `Mullaitivu` (p ≈ 0.10, where heavy zero-inflation likely swamps any
+   autocorrelation signal). ACF plots for a representative subset
+   (`Colombo`, `Kandy`, `Mullaitivu`, `Kilinochchi` —
+   `outputs/figures/module1/acf_residuals_*.png`) confirm this visually:
+   Colombo's residual ACF decays slowly over ~30 lags, indicating a large
+   amount of exploitable structure remains unmodeled. This is genuine
+   evidence FOR residual autocorrelation being present and exploitable — it
+   supports, but per `PIPELINE_ARCHITECTURE_PLAN.md` does not by itself
+   decide, Stage 2's planned `residual_lag_1/2` features. That remains
+   Stage 2's own decision.
 4. Which rainfall lag window gives best performance?
 5. Should `rain_sum` or `precipitation_sum` be preferred?
 6. How much improvement is required to claim compensation benefit?
-7. **Zero-inflation risk (new, 2026-07-26):** Most weeks report zero cases across many districts. Need to compute per-district zero-week % and assess whether SARIMA remains an appropriate Stage 1 baseline for very sparse districts, or whether a simpler baseline (e.g., week-of-year historical mean, monthly aggregation) is more defensible there. This is a potential refinement to Decision 002 ("one SARIMA per district"), not yet resolved.
-8. Log transform for SARIMA should use `log1p`, not plain `log`, given zero-valued weeks — both transformed and untransformed SARIMA should be compared empirically.
+7. **Resolved (2026-07-27) — evidence gathered, Decision 002 kept
+   unchanged.** Zero-inflation risk: rather than special-casing sparse
+   districts, all 25 got the same uniform SARIMA treatment and their
+   walk-forward results were compared directly. The results do **not**
+   show a simple relationship between zero-inflation % and SARIMA
+   performance: `Vavuniya` (32.2% zero-weeks — one of the four sparsest
+   districts) has the *best* validation MASE of all 25 (0.38), while
+   `Mullaitivu` (52.7% zero-weeks, the sparsest) has the *worst* (2.92);
+   meanwhile `Colombo` (0.5% zero-weeks, essentially never sparse) also
+   underperforms the seasonal-naive benchmark (MASE 1.63). Zero-inflation
+   alone is not the dominant driver of relative SARIMA performance here —
+   see #12 (outbreak volatility appears more relevant). This is evidence
+   *against* the originally hypothesized concern, which supports keeping
+   Decision 002 exactly as accepted.
+8. **Resolved (2026-07-27), per-district, as recommended.** `log1p` won
+   (lower validation MASE) for **17/25** districts; raw counts won for the
+   remaining **8** (`Vavuniya, Kegalle, Mannar, Ratnapura, Hambantota,
+   Gampaha, Badulla, Jaffna`). No obvious pattern by district size or
+   zero-inflation level predicts which transform wins — this was correctly
+   a per-district empirical question, not a global one (see
+   `models/module1/sarima_selected_configs.csv`). Predictions are always
+   inverse-transformed (`expm1`) back to raw case-count scale, and clipped
+   to a 0 floor (both candidates, not just raw — see decision 2 below),
+   before any metric is computed.
+
+### New Open Questions (discovered 2026-07-27, Stage 1 implementation)
+
+12. **Is AIC-driven `auto_arima` order selection actually fit for a
+    52-week-ahead walk-forward forecasting task?** Given #1's finding (18/25
+    districts get a non-seasonal ARIMA despite `m=52`), and that both
+    seasonal-differencing tests independently agree with that choice, the
+    underlying issue may be that AIC optimizes one-step-ahead in-sample fit,
+    not long-horizon (52-week) forecast skill — a real mismatch for this
+    project's use case. 12/25 districts have validation MASE > 1 (worse than
+    a naive "repeat last year's same week" forecast). Candidate future work:
+    (a) the already-deferred STL+SARIMA ablation (#2), (b) a
+    forecast-horizon-aware order-selection criterion (e.g., selecting order
+    directly by walk-forward MASE rather than AIC — computationally
+    infeasible to do exhaustively within this session's one-time-per-district
+    design), or (c) an explicit seasonal-naive/harmonic-regression ensemble
+    component.
+
+    **Sequencing decision (2026-07-27): intentionally deferred until after
+    Stage 2 exists, not abandoned.** Reworking Stage 1's order selection now
+    would be acting on a theoretical concern before knowing whether it's a
+    practical problem. Stage 2's own feature set (`sin_week`/`cos_week`,
+    monsoon indicators, climate lags, climate anomalies —
+    `FEATURE_ENGINEERING_SPEC.md` Feature Groups 2-4) is specifically
+    designed to capture the same annual/monsoon cycle that Stage 1 is
+    missing for 18/25 districts. If Stage 1 misses that cycle, it doesn't
+    disappear - it shows up as a large, systematic, predictable component of
+    the residual, which is exactly what Stage 2 is built to learn. It is
+    plausible Stage 2 compensates for this gap without any Stage 1 changes,
+    in which case reworking Stage 1 first would have solved a problem Stage
+    2 already solves.
+
+    The concrete diagnostic that resolves this, once Stage 2 is built: split
+    Stage 2's per-district improvement (Stage 1 vs. Stage 1+Stage 2 metrics)
+    by whether that district's Stage 1 config has a seasonal component
+    (7/25, `seasonal_P=1`) or not (18/25, `seasonal_order=(0,0,0,52)`). If
+    the 18 non-seasonal districts show systematically weaker Stage 2
+    compensation than the 7 seasonal ones, that is direct evidence Stage 1
+    needs rework for (at least) those districts. If not, this open question
+    can be closed without touching Stage 1 further. Revisiting Stage 1 later
+    is cheap regardless of outcome: the expensive part (`auto_arima` search)
+    is a one-time, already-benchmarked ~82-minute cost for all 25 districts,
+    and could be re-run for only the specific districts found to need it,
+    not all 25 - so deferring this carries no meaningful lock-in cost. Not
+    addressed further this session; flagged as the single most significant
+    finding from Stage 1's implementation, worth raising with the thesis
+    supervisor.
+13. **Holdout vs. validation-fold performance diverges more than expected**:
+    18/25 districts have holdout MASE < 1 vs. only 13/25 for the walk-forward
+    validation aggregate, and several districts' holdout MASE is noticeably
+    better than their validation-fold median (e.g. `Jaffna`: 2.22 validation
+    vs. 0.32 holdout; `Puttalam`: 0.89 vs. 0.31). Plausible explanations
+    (not yet investigated): the single-block holdout fit benefits from
+    using the single longest available training window, or recent years
+    (2022-2026) are simply less volatile than the 2007-2021 span most
+    validation folds are drawn from. Worth a closer look before Stage 2
+    treats holdout numbers as representative of "true" future performance.
 
 ---
 
@@ -275,6 +394,116 @@ Out of scope this session (per plan): `baseline_sarima.py`,
     with `pd.to_datetime(..., format="mixed")` in `shared.py` - works, but
     is a fragile pattern worth normalizing at the source if the raw files
     are ever regenerated.
+
+## Stage 1 Implementation Status (2026-07-27 - SARIMA Baseline Built)
+
+`src/module1_forecasting/baseline_sarima.py` and `src/module1_forecasting/
+evaluate.py` are implemented and have been run end to end against all 25
+districts (`python -m src.module1_forecasting.baseline_sarima`, ~82 minutes
+wall time, dominated by the 50 one-time `auto_arima` calls). Outputs:
+
+- `data/processed/module1/sarima_stage1_predictions.csv` (20,800 rows =
+  25 districts x (14 folds x 52 validation weeks + 104 holdout weeks)):
+  `District, Year, Week, split (validation/holdout), fold_id, Number_of_Cases,
+  is_imputed, sarima_prediction, residual`.
+- `models/module1/sarima_selected_configs.csv` (25 rows): per-district
+  winning `(order, seasonal_order, use_log1p)` plus both candidates'
+  aggregate MASE for transparency.
+- `outputs/metrics/module1/sarima_walk_forward_metrics.csv` (400 rows =
+  25 districts x (14 validation folds + 1 `validation_aggregate` + 1
+  `holdout`)): RMSE/MAE/sMAPE/MASE + Ljung-Box stat/p-value (lags 26, 52)
+  on the aggregate row.
+- `outputs/figures/module1/acf_residuals_{Colombo,Kandy,Mullaitivu,
+  Kilinochchi}.png`: representative-subset ACF diagnostic plots.
+
+Zero fallback orders were needed - `auto_arima` completed successfully for
+all 25 districts x 2 transforms.
+
+### Five design decisions approved before implementation
+
+1. **Order search uses full pre-holdout history, not per-fold.** One
+   `auto_arima` call per district per transform (constrained stepwise
+   search: `max_p=2, max_q=2, max_P=1, max_Q=1`), not per walk-forward
+   fold (infeasible - already benchmarked at ~25-59s/call). Accepted,
+   documented compromise: the order chosen for an early fold is technically
+   informed by later data, but every fold's *fitted parameters and
+   residuals* still come from a fresh `SARIMAX.fit()` on that fold's own
+   training window only (Decision 010 unaffected - see `fit_and_forecast()`).
+2. **Forecasts clipped to a 0 floor after inverse-transforming**, for BOTH
+   candidates (not just raw) - case counts cannot be negative, and a
+   `log1p`-space forecast can technically dip below `log1p(0) == 0`, which
+   `expm1` would turn negative.
+3. **`SARIMAX(..., enforce_stationarity=False, enforce_invertibility=False)`**
+   on every fit, to avoid convergence failures across 25 districts x 14
+   folds x 2 candidates. Any fold whose fit still fails is caught, logged,
+   and recorded as `NaN` (none occurred in the full run).
+4. **MASE is the single deciding metric** for both (a) raw-vs-`log1p` per
+   district and (b) the reported "winning" config, computed with a
+   seasonal-naive (m=52) scale from the *training* window, with
+   `is_imputed` rows excluded from both the scale and the scored error
+   (Decision 011). RMSE/MAE/sMAPE are still stored for every fold.
+5. **Holdout (104 weeks) is forecast AND scored now**, fit once on all
+   pre-holdout data with the winning config, explicitly labeled
+   `split="holdout"` - a one-time report, never used to revise the
+   selected order/transform (Decision 009's "untouched until final
+   reporting" is intact: nothing here fed back into order/transform
+   selection).
+
+### Per-district results (validation = median across 14 walk-forward folds; holdout = single final 104-week block)
+
+| District | Transform | Order | Seasonal Order | Validation MASE | Holdout MASE |
+|---|---|---|---|---|---|
+| Ampara | log1p | (0,1,1) | (0,0,0,52) | 0.97 | 0.43 |
+| Anuradhapura | log1p | (0,1,2) | (1,0,0,52) | 0.79 | 0.53 |
+| Badulla | raw | (1,1,1) | (1,0,0,52) | 1.36 | 0.55 |
+| Batticaloa | log1p | (0,1,1) | (0,0,0,52) | 1.92 | 0.59 |
+| Colombo | log1p | (1,1,1) | (0,0,0,52) | 1.63 | 0.65 |
+| Galle | log1p | (0,1,1) | (0,0,0,52) | 1.21 | 1.17 |
+| Gampaha | raw | (2,1,0) | (0,0,0,52) | 1.05 | 0.74 |
+| Hambantota | raw | (0,1,1) | (0,0,0,52) | 0.96 | 0.95 |
+| Jaffna | raw | (2,1,2) | (1,0,0,52) | 2.22 | 0.32 |
+| Kalutara | log1p | (2,1,1) | (0,0,0,52) | 1.42 | 0.66 |
+| Kandy | log1p | (0,1,1) | (0,0,0,52) | 1.27 | 0.43 |
+| Kegalle | raw | (0,1,2) | (0,0,0,52) | 0.59 | 0.33 |
+| Kilinochchi | log1p | (0,1,1) | (1,0,0,52) | 1.45 | 2.15 |
+| Kurunegala | log1p | (1,1,1) | (0,0,0,52) | 0.86 | 0.38 |
+| Mannar | raw | (0,0,0) | (1,0,0,52) | 0.84 | 1.12 |
+| Matale | log1p | (1,1,2) | (0,0,0,52) | 0.84 | 1.28 |
+| Matara | log1p | (2,1,2) | (0,0,0,52) | 0.94 | 1.45 |
+| Monaragala | log1p | (1,1,2) | (1,0,0,52) | 0.63 | 0.62 |
+| Mullaitivu | log1p | (0,1,1) | (0,0,0,52) | 2.92 | 0.53 |
+| Nuwara Eliya | log1p | (0,1,2) | (0,0,0,52) | 0.93 | 1.37 |
+| Polonnaruwa | log1p | (1,1,2) | (1,0,0,52) | 1.04 | 0.78 |
+| Puttalam | log1p | (0,1,1) | (0,0,0,52) | 0.89 | 0.31 |
+| Ratnapura | raw | (2,1,0) | (0,0,0,52) | 0.90 | 1.11 |
+| Trincomalee | log1p | (0,1,2) | (0,0,0,52) | 1.04 | 0.41 |
+| Vavuniya | raw | (1,0,2) | (0,0,0,52) | 0.38 | 0.42 |
+
+Full detail (RMSE/MAE/sMAPE, both candidates' MASE, Ljung-Box results) in
+`models/module1/sarima_selected_configs.csv` and `outputs/metrics/module1/
+sarima_walk_forward_metrics.csv`. Summary: **17/25 districts use `log1p`**,
+8 use raw counts; **13/25 beat the seasonal-naive benchmark** on validation
+(MASE < 1), 18/25 do on the holdout block; **18/25 selected configs have NO
+seasonal AR/I/MA component at all** (`seasonal_order=(0,0,0,52)`) despite
+`m=52` - see Open Question #12 (new) for why, and its implications.
+
+### Implementation choices made (not explicit in the plan/spec)
+
+1. **Aggregation across folds uses the median**, not the mean, of each
+   metric (RMSE/MAE/sMAPE/MASE) - consistent with how `aggregate_mase`
+   already had to be defined for candidate selection, and more robust to
+   the occasional very-bad fold than a mean would be.
+2. **Pooled Ljung-Box/ACF residuals** are the winning candidate's
+   validation-fold residuals concatenated in chronological fold order
+   (folds are non-overlapping and already generated in ascending order, so
+   simple list concatenation is chronologically correct without extra
+   sorting), with `is_imputed` rows and any failed-fit `NaN`s excluded.
+3. **Metrics CSV mixes per-fold, aggregate, and holdout rows** in one file
+   (`fold_id` is an int for validation folds, the string `"aggregate"` for
+   the per-district aggregate row, and `"holdout"` for the holdout row) -
+   simpler than three separate files, distinguished by the `split` column.
+
+---
 
 ## Documentation Rule
 

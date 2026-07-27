@@ -29,6 +29,91 @@ Accepted / Rejected / Experimental / Superseded
 
 ---
 
+## 2026-07-27 - Module 1 Stage 1 SARIMA Baseline Implemented
+
+### Module
+Module 1
+
+### Change
+Implemented `src/module1_forecasting/baseline_sarima.py` and
+`src/module1_forecasting/evaluate.py` (both previously 1-line placeholders)
+and ran the full pipeline against all 25 districts. For each district,
+`pmdarima.auto_arima` proposes a candidate SARIMA order for raw counts and
+for `log1p` counts (one-time, constrained stepwise search on the full
+pre-holdout history); both candidates are then genuinely walk-forward
+validated (14 expanding-window folds, fixed-order `SARIMAX` refit per fold
+per Decision 010) and the lower-aggregate-MASE transform is kept per
+district. The final 104-week holdout block is forecast and scored once with
+the winning config. Five design decisions were reviewed and approved before
+implementation: (1) order search uses full pre-holdout history rather than
+per-fold search (infeasible at scale - already benchmarked); (2) forecasts
+from both candidates are clipped to a 0 floor after inverse-transforming;
+(3) `SARIMAX` fits relax `enforce_stationarity`/`enforce_invertibility` for
+robustness; (4) MASE (seasonal-naive scale) is the single deciding metric
+for transform/config selection, with all four metrics logged for
+transparency; (5) the holdout block is scored now (not deferred), clearly
+labeled as a one-time, non-tuning report.
+
+Also added: `src/config.py` (`MODULE1_SARIMA_PREDICTIONS_PATH`,
+`MODULE1_SARIMA_CONFIG_PATH`, `MODULE1_SARIMA_METRICS_PATH`, plus their
+parent-directory constants); `requirements.txt` pins for `pmdarima==2.1.1`,
+`xgboost==3.2.0`, `statsmodels==0.14.6` (all already installed, previously
+unpinned).
+
+**Significant finding**: the seasonal-differencing test (`auto_arima`'s
+default OCSB test, cross-checked against Canova-Hansen — both agree)
+selected `D=0` for all 25 districts, and the constrained stepwise search
+added no seasonal MA term for any district either. **18 of 25** selected
+configs ended up with `seasonal_order=(0,0,0,52)` — a plain, non-seasonal
+ARIMA despite `m=52` being specified. Forcing `D=1` was tested directly and
+found computationally infeasible at scale (a single `D=1, m=52` SARIMAX fit
+took 7+ minutes vs. ~0.01s for the `D=0` fixed-order refits used everywhere
+else in this pipeline). This is documented as the top open finding from
+Stage 1 (`module_1_forecasting/MODULE_CONTEXT.md` Open Question #12), not
+silently patched over: 12/25 districts have validation-fold MASE > 1 (worse
+than a naive "repeat last year's same week" forecast), and Ljung-Box tests
+show significant residual autocorrelation in 23/25 districts, consistent
+with the annual cycle not being captured by these particular selected
+models. Zero-inflation % was checked as a possible explanation and largely
+ruled out as the dominant driver (`Vavuniya`, one of the sparsest districts,
+is the single best performer; `Colombo`, essentially never sparse, still
+underperforms).
+
+### Reason
+Stage 2 (residual compensation) cannot be built without genuine
+out-of-sample Stage 1 residuals to train on (Decision 010) - this was the
+last blocking step before Stage 2 work can begin. The open SARIMA
+order/log-transform questions (`module_1_forecasting/MODULE_CONTEXT.md`
+Open Questions #1, #8) needed a concrete, evidence-based per-district
+resolution rather than a single global assumption, given the project's
+already-documented zero-inflation heterogeneity.
+
+### Impact
+- Added: `data/processed/module1/sarima_stage1_predictions.csv` (20,800
+  rows), `models/module1/sarima_selected_configs.csv` (25 rows),
+  `outputs/metrics/module1/sarima_walk_forward_metrics.csv` (400 rows),
+  `outputs/figures/module1/acf_residuals_{Colombo,Kandy,Mullaitivu,
+  Kilinochchi}.png`.
+- Updated: `src/module1_forecasting/baseline_sarima.py`,
+  `src/module1_forecasting/evaluate.py`, `src/config.py`, `requirements.txt`.
+- Updated: `module_1_forecasting/MODULE_CONTEXT.md` (Open Questions #1, #2,
+  #3, #7, #8 resolved/updated; new Open Questions #12-13; new "Stage 1
+  Implementation Status" section), `module_1_forecasting/EXPERIMENT_LOG.md`
+  (first real entry, M1-001), `research_context/RESEARCH_DECISIONS.md`
+  (Decisions 009/010 status Proposed -> Accepted, implementation notes
+  added).
+- Explicitly untouched this session (per plan): `compensation_model.py`,
+  `combine.py`, `main.py`.
+
+### Status
+Accepted (Stage 1 pipeline code and outputs). The AIC/seasonal-structure
+finding (Open Question #12) is flagged Open, pending a future ablation
+(STL+SARIMA or a forecast-horizon-aware order criterion) - not yet
+resolved, and worth raising with the thesis supervisor before treating
+Stage 1's absolute performance numbers as final.
+
+---
+
 ## 2026-07-26 - Living Cursor Context System Added
 
 ### Module

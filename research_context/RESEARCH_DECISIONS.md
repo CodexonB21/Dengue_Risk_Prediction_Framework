@@ -147,7 +147,7 @@ May be revisited as an ablation-study candidate (e.g., a derived `thunderstorm_d
 ## Decision 009: Walk-Forward Validation with Held-Out Final Test Block
 
 **Module:** Module 1
-**Status:** Proposed
+**Status:** Accepted (implemented and validated, 2026-07-27)
 **Date:** 2026-07-26
 
 ### Decision
@@ -159,12 +159,29 @@ A single static split is an unreliable performance estimate for a ~19-year serie
 ### Implication
 Requires per-district fold generation, with SARIMA refit within each fold using only data available up to that fold's cutoff.
 
+### Implementation Note (2026-07-27)
+Implemented in `src/module1_forecasting/validation.py` (14 expanding-window
+annual folds per district, 3-year minimum initial training window) and
+consumed unchanged by `src/module1_forecasting/baseline_sarima.py`. One
+accepted, documented compromise: `auto_arima`'s ORDER search (not its
+per-fold parameter fitting) runs once per district on the full pre-holdout
+history rather than being re-run per fold (already benchmarked as
+computationally infeasible per fold - see `module_1_forecasting/
+MODULE_CONTEXT.md` "Stage 1 Implementation Status", decision 1). Every
+fold's actual fitted parameters and residuals still come from a fresh
+`SARIMAX.fit()` on that fold's own training window only - this compromise
+touches order *selection*, not the no-leakage rule in Decision 010. The
+final holdout block was forecast and scored in the same run (using the
+already-finalized per-district config), consistent with "untouched until
+final reporting" since nothing about the holdout numbers fed back into
+order/transform selection.
+
 ---
 
 ## Decision 010: No-Leakage Rule for Stage 2 Residual Training
 
 **Module:** Module 1
-**Status:** Proposed
+**Status:** Accepted (implemented and validated, 2026-07-27)
 **Date:** 2026-07-26
 
 ### Decision
@@ -175,6 +192,16 @@ In-sample residuals systematically underestimate real Stage 1 error, which would
 
 ### Implication
 Every walk-forward fold requires its own refit SARIMA model to generate that fold's Stage 2 training residuals.
+
+### Implementation Note (2026-07-27)
+Implemented in `src/module1_forecasting/baseline_sarima.py`'s
+`validate_candidate()`/`fit_and_forecast()`: every one of the 14 walk-forward
+folds x 25 districts x 2 transform candidates refits a fixed-order SARIMAX
+on that fold's own training window only (via `validation.py`'s
+`fit_window()`, unchanged) and forecasts strictly forward - never in-sample.
+Genuine out-of-sample residuals for every validation fold are written to
+`data/processed/module1/sarima_stage1_predictions.csv` (`split="validation"`),
+ready for Stage 2 to consume once built.
 
 ---
 
