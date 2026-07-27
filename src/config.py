@@ -42,6 +42,23 @@ MODULE1_METRICS_DIR = OUTPUTS_DIR / "metrics" / "module1"
 MODULE1_SARIMA_METRICS_PATH = MODULE1_METRICS_DIR / "sarima_walk_forward_metrics.csv"
 MODULE1_FIGURES_DIR = OUTPUTS_DIR / "figures" / "module1"
 
+# --- Module 1 Stage 2 (XGBoost residual compensation; src/module1_forecasting/compensation_model.py) ---
+MODULE1_XGBOOST_PREDICTIONS_PATH = MODULE1_PROCESSED_DIR / "xgboost_stage2_predictions.csv"
+MODULE1_XGBOOST_MODELS_DIR = MODULE1_MODELS_DIR / "xgboost_folds"
+MODULE1_XGBOOST_FINAL_MODEL_PATH = MODULE1_MODELS_DIR / "xgboost_final_model.json"
+MODULE1_XGBOOST_METRICS_PATH = MODULE1_METRICS_DIR / "xgboost_stage2_metrics.csv"
+MODULE1_XGBOOST_FEATURE_IMPORTANCE_PATH = MODULE1_METRICS_DIR / "xgboost_feature_importance.csv"
+
+# --- Module 1 combined final forecast (Decision 010; src/module1_forecasting/combine.py) ---
+MODULE1_FINAL_PREDICTIONS_PATH = MODULE1_PROCESSED_DIR / "final_combined_predictions.csv"
+MODULE1_COMBINED_METRICS_PATH = MODULE1_METRICS_DIR / "combined_vs_baseline_metrics.csv"
+MODULE1_DM_TEST_PATH = MODULE1_METRICS_DIR / "diebold_mariano_results.csv"
+
+# --- Module 1 forward production forecast (beyond last available data;
+# src/module1_forecasting/forecast_future.py) - distinct from the validated
+# holdout evaluation above: no ground truth exists yet to score against.
+MODULE1_FUTURE_FORECAST_PATH = MODULE1_PROCESSED_DIR / "future_forecast.csv"
+
 # 25 official Sri Lankan districts modeled post Kalmunai -> Ampara merge
 # (Decision 012). Kalmunai is a real ~19-year case series with no matching
 # Open-Meteo weather station; it is folded into Ampara upstream and is never

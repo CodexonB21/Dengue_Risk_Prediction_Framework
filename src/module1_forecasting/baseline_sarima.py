@@ -45,9 +45,30 @@ before this file was written (see `module_1_forecasting/MODULE_CONTEXT.md`
    would violate Decision 009's "untouched until final reporting" rule.
 
 Genuine out-of-sample validation-fold residuals (`split="validation"`) are
-exactly what Stage 2 (`compensation_model.py`, not built this session) must
-train on per Decision 010 - this script is the one and only place they are
-produced.
+exactly what Stage 2 (`compensation_model.py`) trains on per Decision 010 -
+this script is the one and only place they are produced.
+
+### Post-hoc fix: explosive/non-stationary AR root guard (2026-07-27)
+
+Discovered while building and debugging Stage 2 (Open Question #14,
+`module_1_forecasting/MODULE_CONTEXT.md`): `enforce_stationarity=False`
+(decision 3 above) lets `SARIMAX.fit()` land on a non-stationary AR
+polynomial (root(s) on or inside the unit circle) when a fold's training
+window is short/choppy relative to the fixed order chosen from the full
+pre-holdout history. Concretely, `Vavuniya`'s fold 1 (2010) fit an AR(1)
+coefficient of 1.266 (>1, explosive), producing a forecast that grew
+geometrically to ~30 million cases/week by the end of that fold's 52-week
+horizon against an actual mean of ~6/week - silently, since a squared-error-
+based fit doesn't flag this as a "failure". The same pathology was
+independently confirmed for `Mannar`'s 2022 fold (seasonal AR coefficient
+1.162, `(0,0,0)x(1,0,0,52)`) - a general failure mode of this design, not a
+one-off. `_has_explosive_ar_root()` below checks the fitted model's combined
+AR polynomial roots after every fit; if any root fails to lie strictly
+outside the unit circle, the fit is treated exactly like any other failure
+mode already handled by decision 3 (logged, recorded as `NaN` for that fold)
+rather than silently returning an unbounded-growth forecast. This is a
+narrow, targeted fix - it does not change order selection, transform
+selection, or any other part of Stage 1's design.
 """
 
 from __future__ import annotations
@@ -119,6 +140,11 @@ AUTO_ARIMA_KWARGS = dict(
 FALLBACK_ORDER = (1, 1, 1)
 FALLBACK_SEASONAL_ORDER = (0, 1, 1, WEEKS_PER_YEAR)
 
+# A stationary AR polynomial's roots must lie strictly outside the unit
+# circle; a small tolerance avoids flagging a root landing at ~1.0000001 due
+# to floating-point noise as "stable" when it is really borderline-explosive.
+AR_ROOT_STABILITY_TOLERANCE = 1.0 + 1e-6
+
 # ACF plots are diagnostic spot-checks, not a full 25-district report -
 # one high-volume (Colombo), one moderate (Kandy), two sparse/zero-inflated
 # (Mullaitivu, Kilinochchi) per the task brief.
@@ -178,6 +204,24 @@ def select_order(
 # Cheap per-fold refit + forecast (fast: fixed order, statsmodels SARIMAX)
 # ---------------------------------------------------------------------------
 
+def _has_explosive_ar_root(fitted) -> bool:
+    """Return True if the fitted (S)ARIMAX model's combined AR polynomial
+    (regular and seasonal roots together - `SARIMAXResults.arroots` already
+    combines both) has any root on or inside the unit circle, i.e. the
+    optimizer (permitted by `enforce_stationarity=False`) landed on a
+    non-stationary/explosive fit. Such a fit's forecast either grows
+    geometrically without bound (regular AR instability) or oscillates with
+    a growing envelope every `seasonal_order[3]` weeks (seasonal AR
+    instability) - never a valid model for a bounded weekly case-count
+    series. See the module docstring "Post-hoc fix" note for the concrete
+    `Vavuniya`/`Mannar` cases that motivated this check.
+    """
+    roots = np.asarray(fitted.arroots)
+    if roots.size == 0:
+        return False
+    return bool(np.any(np.abs(roots) <= AR_ROOT_STABILITY_TOLERANCE))
+
+
 def fit_and_forecast(
     train_series: pd.Series,
     n_periods: int,
@@ -207,6 +251,20 @@ def fit_and_forecast(
                 enforce_invertibility=False,
             )
             fitted = model.fit(disp=False)
+            if _has_explosive_ar_root(fitted):
+                logger.warning(
+                    "SARIMAX fit for %s (order=%s, seasonal_order=%s, "
+                    "use_log1p=%s) is non-stationary/explosive (an AR root "
+                    "landed on or inside the unit circle) despite "
+                    "enforce_stationarity=False having allowed it; treating "
+                    "as a failed fit and returning NaNs for this fold "
+                    "rather than an unbounded-growth forecast.",
+                    context,
+                    order,
+                    seasonal_order,
+                    use_log1p,
+                )
+                return np.full(n_periods, np.nan)
             forecast = fitted.forecast(steps=n_periods)
     except Exception:
         logger.warning(
