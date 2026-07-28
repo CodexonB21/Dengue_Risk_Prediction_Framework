@@ -114,6 +114,58 @@ Cap at 4 iterations as a practical safeguard. Log risk values and Moran's I per 
 
 **Final output:** converged `Risk_t` = Hybrid Risk Map, exported as GeoJSON (merged with GADM shapefile) for the dashboard.
 
+### Stage 2 Implementation Status
+
+**Feature engineering + residual target (implemented 2026-07-28)** —
+`src/module3_spatial/feature_engineering.py` merges `master_table.csv` with
+`baseline_risk.csv` on `(District, Year, Week)` and writes
+`data/features/module3/stage2_feature_table.csv` (25,223 rows, 23
+columns). The Random Forest model and iterative loop are **not yet
+built** - this step is feature engineering only.
+
+Two column choices the spec above leaves implicit were pinned down:
+- **"Rainfall" / "temperature"** each map to ONE canonical column:
+  `rain_sum (mm)` and `temperature_2m_mean (°C)` - not every rainfall/temp
+  column in `master_table.csv`. `precipitation_sum (mm)` was excluded as a
+  rainfall candidate because it is identical to `rain_sum (mm)` in this
+  dataset (Sri Lanka has no snow, so Open-Meteo's rain/precipitation
+  totals never diverge).
+- **"Population density" is not actually a column in `master_table.csv`**
+  (only raw `Estimated_Population` is) - it is derived in
+  `compute_population_density()` from the same reprojected GADM Level-1
+  polygons `kde_baseline.py` already uses for centroids/Queen weights
+  (`Estimated_Population / district land area`), rather than mislabeling
+  the raw headcount as a density. Sanity-checked against real Sri Lankan
+  demographics: Colombo highest (3,356/km²), Mullaitivu lowest (41/km²).
+
+Feature set (16 columns beyond the 4 keys + 3 target-related columns):
+`rain_sum (mm)`, `temperature_2m_mean (°C)` (current-week raw values),
+`rainfall_lag_2/3/4`, `temperature_lag_2/3/4`, `rainfall_anomaly`,
+`temperature_anomaly`, `monsoon_indicator_SW`, `monsoon_indicator_NE`,
+`elevation_m`, `Estimated_Population`, `population_density`,
+`mahalanobis_anomaly_score`.
+
+Design notes:
+- Climate anomaly uses the historical mean for that (District, calendar
+  Week) across **all years**, not a strictly-prior-years expanding
+  window - defensible here because Module 3's validation axis is spatial
+  K-means CV (Open Questions #4/5), not a temporal walk-forward split, so
+  a full-sample per-week mean does not leak across folds the way it would
+  under Module 1/2's temporal CV.
+- Lags use `.shift()` on each district's own time-ordered rows, not
+  calendar-week arithmetic - the ~2 known genuinely-absent (District,
+  Year, Week) cells (see Stage 1's KDE fix) mean a shifted value could, in
+  that rare case, be the previous AVAILABLE week rather than strictly N
+  calendar weeks prior. Module 3 does not impute (no such decision is
+  recorded), so this is an accepted, documented limitation.
+- Mahalanobis score is computed against the FULL dataset's mean/covariance
+  (not per-district) - it measures how unusual a district-week's
+  combination of the 4 variables is relative to the whole series.
+- **NaN from lags (series start) are KEPT, not dropped**: 50/75/100 rows
+  per lag depth (2/3/4 weeks × 25 districts) - this is a feature table,
+  not a training matrix; drop-vs-impute is deferred to the RF-training
+  step, which may want different handling per lag depth.
+
 ---
 
 ## Open Questions — now answered

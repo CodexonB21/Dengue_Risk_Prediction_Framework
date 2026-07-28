@@ -182,3 +182,113 @@ a permutation test.
 - `src/module3_spatial/kde_baseline.py` (seeded RNG, writes
   `morans_i_validation.csv`).
 - Added `outputs/metrics/module3/morans_i_validation.csv`.
+
+---
+
+## Experiment ID: M3-002
+
+### Date
+2026-07-28
+
+### Research Question
+What feature set does Stage 2's Random Forest residual model need, and can
+it be built entirely from data already produced by Stage 1 plus the raw
+GADM geometry, without collecting anything new? (Feature engineering +
+residual target only - no model training this session, per explicit scope
+restriction for this piece of work.)
+
+### Spatial Unit
+District-week (25 districts), same grain as Stage 1's `baseline_risk.csv`.
+
+### Baseline Spatial Method
+N/A - this experiment builds on Stage 1's KDE baseline (`M3-001`) as an
+input (`KDE_baseline` is the `Current_Risk` term in the residual), it does
+not change the spatial baseline method itself.
+
+### Stage 2 Model
+Not built this session - feature engineering only.
+`src/module3_spatial/feature_engineering.py` merges `master_table.csv`
+with `baseline_risk.csv` on `(District, Year, Week)` and writes
+`data/features/module3/stage2_feature_table.csv`.
+
+### Spatial Features Used
+`elevation_m` (carried through from `master_table.csv`) and
+`population_density` (newly derived - see Results).
+
+### Validation Method
+N/A - no model was trained. Manual sanity checks only: lag values
+hand-traced against source rows, population density ranked against known
+Sri Lankan demographics, Mahalanobis score distribution inspected for a
+plausible right-skew with genuine outliers.
+
+### Results
+- **Output**: `data/features/module3/stage2_feature_table.csv` - 25,223
+  rows (same as `baseline_risk.csv`; the merge preserved every row), 23
+  columns (4 keys, 3 target-related, 16 feature columns).
+- **Residual target**: `Residual = Number_of_Cases - KDE_baseline`.
+- **Two column choices the Stage 2 spec left implicit, resolved here**:
+  1. "Rainfall"/"temperature" each map to ONE canonical column -
+     `rain_sum (mm)` and `temperature_2m_mean (°C)`, not every candidate
+     column in `master_table.csv`. `precipitation_sum (mm)` was excluded
+     as a rainfall candidate because it is identical to `rain_sum (mm)`
+     in this dataset (no snow in Sri Lanka, so Open-Meteo's two fields
+     never diverge).
+  2. "Population density" does not actually exist as a column in
+     `master_table.csv` (only raw `Estimated_Population` does) - derived
+     it instead from the same reprojected GADM Level-1 polygons
+     `kde_baseline.py` already computes for centroids/Queen weights
+     (`Estimated_Population / district land area`). Sanity-checked:
+     Colombo highest (3,356/km²), Mullaitivu lowest (41/km²) - matches
+     known Sri Lankan demographics, not an artifact.
+- **Lags** (`rainfall_lag_2/3/4`, `temperature_lag_2/3/4`): computed via
+  `.shift()` on each district's own time-ordered rows (sorted by
+  `Week_Start_Date`), not calendar arithmetic. Manually verified correct
+  (e.g. Ampara Wk4's `rainfall_lag_2` = Wk2's actual `rain_sum` = 82.9).
+- **Climate anomaly** (`rainfall_anomaly`, `temperature_anomaly`): actual
+  minus the historical mean for that (District, calendar Week) across ALL
+  years, not a strictly-prior-years window - acceptable here because
+  Stage 2's validation axis is spatial K-means CV (Open Questions #4/5),
+  not temporal walk-forward, so this does not leak across CV folds the
+  way it would under Module 1/2's temporal setup.
+- **Monsoon dummies** (`monsoon_indicator_SW`, `monsoon_indicator_NE`):
+  from `MONSOON_WEEKS_SW`/`MONSOON_WEEKS_NE` in `config.py`.
+- **Mahalanobis anomaly score**: computed across
+  `[rain_sum (mm), temperature_2m_mean (°C), elevation_m,
+  Estimated_Population]` against the FULL dataset's mean/covariance (not
+  per-district). Distribution: mean 1.73, median 1.51, max 13.12 - a
+  plausible right-skewed multivariate anomaly distribution with genuine
+  outlier rows, not a degenerate constant.
+- **NaN from lags (series start), per column**: `rainfall_lag_2` /
+  `temperature_lag_2` = 50 rows each (2 weeks x 25 districts);
+  `rainfall_lag_3` / `temperature_lag_3` = 75 each; `rainfall_lag_4` /
+  `temperature_lag_4` = 100 each. Verified no NaN exists in any other
+  column (`validate_feature_table` raises otherwise).
+- **NaN decision: KEPT, not dropped.** This is a feature table, not a
+  training matrix - drop-vs-impute is deferred to the RF-training step
+  (out of scope this session), which may legitimately want different
+  handling per lag depth.
+
+### Interpretation
+All 16 feature columns are derivable from data Stage 1 already produced
+plus the raw GADM shapefile - no new raw data collection was needed for
+Stage 2's planned feature set. The two implicit-column ambiguities in the
+original spec (rainfall/temperature column choice, population density not
+actually existing) were real gaps between the written spec and the actual
+data, not oversights in this implementation - both are now made explicit
+and reusable by whoever builds the RF model next.
+
+### Decision
+**Keep** this feature table as Stage 2's input. **Keep** the NaN-kept (not
+dropped) policy for lag columns - explicitly deferring the drop/impute
+choice to the RF-training step rather than baking an assumption into the
+shared feature table. **Proceed** to building the Random Forest residual
+model and the iterative convergence loop as the next piece of Stage 2
+work - not started this session.
+
+### Documentation Updated
+- `module_3_spatial/MODULE_CONTEXT.md` (new "Stage 2 Implementation
+  Status" section under Stage 2 — Residual Compensation).
+- `module_3_spatial/EXPERIMENT_LOG.md` (this entry).
+- `src/config.py` (added `MODULE3_STAGE2_FEATURE_TABLE_PATH`).
+- Added `src/module3_spatial/feature_engineering.py` and
+  `data/features/module3/stage2_feature_table.csv`.
