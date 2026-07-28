@@ -153,6 +153,48 @@ held-out final block.
   `outputs/metrics/module2/baseline_classifier_feature_importance.csv`,
   `data/processed/module2/baseline_classifier_predictions.csv` (58,500 rows).
 
+### Addendum (2026-07-28): Discrimination-vs-Calibration Diagnostic
+Prompted by the question "how do we know Stage 1 is actually a success?" -
+raw metrics from the table above are not self-interpreting without a
+no-skill/climatology reference. Added `scripts/stage1_calibration_diagnostic.py`
+(read-only, derives from the already-written metrics CSV, no rerun needed)
+computing three comparisons not in the raw metrics file, for the official
+XGBoost model:
+
+1. **PR-AUC uplift ratio** (`pr_auc / prevalence` - the correct no-skill
+   reference for PR-AUC is the fold's own prevalence, not 0): XGBoost beats
+   this in **every fold and the holdout**, median uplift **3.65x**, up to
+   13.2x in the sparsest fold (11). Confirms genuine discriminative skill,
+   not an imbalance artifact.
+2. **Accuracy uplift vs. majority-class baseline** (`accuracy - (1 -
+   prevalence)`): **negative in 8/13 validation folds** (e.g. fold 6: 71.6%
+   vs. 82.2% majority-baseline). Not a failure - it is exactly why PR-AUC,
+   not accuracy, is the primary metric (Decision 021) - but flagged
+   because a bare "accuracy = 0.85" reading of the metrics CSV would be
+   misleading without this comparison.
+3. **Brier skill score** (`1 - brier_score / (prevalence * (1 -
+   prevalence))`, i.e. skill relative to always predicting the fold's own
+   base rate): **negative in 8/14 folds+holdout** (as low as -0.93 in fold
+   12), median **-0.11**. This means the model's raw predicted
+   probabilities are, in most folds, LESS accurate than a trivial
+   "always-predict-the-base-rate" forecast - despite the same model having
+   strong PR-AUC discrimination in those same folds. This is a well-known
+   decoupling: `scale_pos_weight`-based imbalance correction improves
+   ranking under a reweighted loss but distorts the output probability
+   scale (typically overconfident on the minority class), and is a
+   standard reason models trained this way need explicit post-hoc
+   recalibration. Full per-fold table:
+   `outputs/metrics/module2/baseline_classifier_calibration_diagnostic.csv`.
+
+Cross-checked the two most extreme-prevalence folds against real-world
+epidemiology as an independent, non-circular sanity check on the label
+itself: fold 7's validation window (prevalence 78.9%, a huge outlier) is
+**2016-2017** - Sri Lanka's worst recorded dengue epidemic year
+(~186,000 national cases); fold 11's (prevalence 2.5%, the sparsest fold)
+is **2020-2021** - plausibly consistent with COVID-era mobility
+restrictions suppressing transmission. Both are genuine, independently
+verifiable epidemiological events, not label-construction noise.
+
 ### Interpretation
 The pooled architecture is not just theoretically preferable (more training
 data per fold) but empirically confirmed on this exact label and feature
@@ -160,32 +202,47 @@ set, particularly valuable in the sparse early folds where a per-district
 model has too little history to be reliable. All three models are
 directionally reasonable (PR-AUC well above the ~0.14-0.22 pooled
 prevalence baseline in most folds), with XGBoost's edge being modest but
-consistent, and its notably lower Brier score suggesting its probability
-output is the best-calibrated starting point for Stage 2's residual
-compensation work. `case_anomaly_lag_1`'s dominance is expected, not a
-leakage red flag - it is conceptually near-identical to the label one week
-prior (documented in `FEATURE_ENGINEERING_SPEC.md`'s Group M2-5 leakage
-note), analogous to how `residual_lag_1` dominated Module 1 Stage 2's
-feature importance.
+consistent. `case_anomaly_lag_1`'s dominance is expected, not a leakage red
+flag - it is conceptually near-identical to the label one week prior
+(documented in `FEATURE_ENGINEERING_SPEC.md`'s Group M2-5 leakage note),
+analogous to how `residual_lag_1` dominated Module 1 Stage 2's feature
+importance.
+
+The calibration diagnostic revises one claim from the original write-up:
+XGBoost's lower raw Brier score does **not** mean its probability output is
+"the best-calibrated starting point" in any absolute sense - both its raw
+Brier score AND the correct no-skill Brier reference scale down together
+with prevalence, so a small raw Brier score across low-prevalence folds is
+not itself evidence of good calibration. **Stage 1 succeeds at
+discrimination (ranking outbreak-risk weeks correctly), not at calibration
+(the probability values themselves are not trustworthy as-is)** - which
+means Stage 2's planned probability recalibration (Open Question #5) is not
+optional polish but a necessary, now-evidenced step before
+`predicted_probability` can be used as a real risk estimate.
 
 ### Decision
 **Keep** the pooled XGBoost model as Stage 1's official output - it will be
-the artifact Stage 2 consumes (`predicted_probability` column). **Keep**
+the artifact Stage 2 consumes (`predicted_probability` column), on the
+basis of its discrimination, not its raw calibration. **Keep**
 `MODULE2_MIN_TRAIN_YEARS = 4` as a permanent, documented Module-2-specific
-override, not a temporary workaround. **Defer** probability calibration
-(Open Question #5) and the consecutive-week outbreak trigger refinement
-(Open Question #8) to future work - both remain open, not silently
+override, not a temporary workaround. **Elevate** probability calibration
+(Open Question #5) from "planned" to a load-bearing prerequisite for Stage
+2, given the negative Brier skill score finding - it is no longer just a
+nice-to-have refinement. **Defer** the consecutive-week outbreak trigger
+refinement (Open Question #8) to future work - remains open, not silently
 resolved by this experiment.
 
 ### Documentation Updated
 - `module_2_classification/MODULE_CONTEXT.md` (Open Question #4 resolved;
   Possible Stage 1 Models section resolved; Current Feature Direction
   updated; Implementation Plan steps 3/5/7 updated; new "Stage 1
-  Implementation Status" section).
-- `module_2_classification/EXPERIMENT_LOG.md` (this entry).
+  Implementation Status" section, including the calibration diagnostic).
+- `module_2_classification/EXPERIMENT_LOG.md` (this entry, incl. addendum).
 - `research_context/RESEARCH_DECISIONS.md` (new Decision 021).
 - `research_context/PIPELINE_ARCHITECTURE_PLAN.md` (Module 2 Layer section
   updated, `baseline_classifier.py` marked implemented).
 - `research_context/FEATURE_ENGINEERING_SPEC.md` (baseline classifier
   probability now available for Stage 2).
 - `research_context/CHANGELOG.md` (new entry).
+- Added `scripts/stage1_calibration_diagnostic.py` and
+  `outputs/metrics/module2/baseline_classifier_calibration_diagnostic.csv`.
