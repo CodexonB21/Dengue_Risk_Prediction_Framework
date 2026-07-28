@@ -20,6 +20,8 @@ OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 RAW_EPI_PATH = RAW_DIR / "epidemiological" / "dengue_cases_corected.csv"
 RAW_WEATHER_DIR = RAW_DIR / "weather"
 RAW_POPULATION_PATH = RAW_DIR / "population" / "population_by_district.csv"
+RAW_SPATIAL_DIR = RAW_DIR / "spatial"
+GADM_LEVEL1_SHAPEFILE_PATH = RAW_SPATIAL_DIR / "gadm41_LKA_1.shp"
 
 # --- Shared layer outputs (module-agnostic; src/preprocessing/shared.py) ---
 SHARED_DIR = PROCESSED_DIR / "shared"
@@ -36,6 +38,14 @@ MODULE2_STAGE1_FEATURE_TABLE_PATH = MODULE2_FEATURES_DIR / "stage1_feature_table
 MODULE2_MODELS_DIR = MODELS_DIR / "module2"
 MODULE2_METRICS_DIR = OUTPUTS_DIR / "metrics" / "module2"
 MODULE2_LABEL_BALANCE_AUDIT_PATH = MODULE2_METRICS_DIR / "label_balance_audit.csv"
+
+# --- Module 3 layer outputs ---
+MODULE3_PROCESSED_DIR = PROCESSED_DIR / "module3"
+MODULE3_MASTER_TABLE_PATH = MODULE3_PROCESSED_DIR / "master_table.csv"
+MODULE3_FEATURES_DIR = FEATURES_DIR / "module3"
+MODULE3_BASELINE_RISK_PATH = MODULE3_FEATURES_DIR / "baseline_risk.csv"
+MODULE3_METRICS_DIR = OUTPUTS_DIR / "metrics" / "module3"
+MODULE3_MORANS_I_METRICS_PATH = MODULE3_METRICS_DIR / "morans_i_validation.csv"
 
 # --- Module 1 layer outputs ---
 MODULE1_PROCESSED_DIR = PROCESSED_DIR / "module1"
