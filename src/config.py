@@ -86,16 +86,28 @@ DISTRICTS = [
 MONSOON_WEEKS_SW = list(range(20, 39))          # weeks 20-38
 MONSOON_WEEKS_NE = list(range(44, 53)) + list(range(1, 9))  # weeks 44-52, 1-8
 
-# Module 2 outbreak label (Decision 019, research_context/RESEARCH_DECISIONS.md).
-# Retires the old OUTBREAK_THRESHOLD fixed-count placeholder: the label is now
-# a fold-aware epidemic threshold, `mean + EPIDEMIC_THRESHOLD_K * SD`, computed
-# per (District, Week) from strictly-prior years only - see
-# src/module2_classification/label_definition.py. k=2 was confirmed via
-# scripts/data_audit_module2.py (no degenerate per-district outbreak rate at
-# k in {1.5, 2.0, 2.5}); flagged as a kickoff default, not a final validated
-# choice - see Module 2 Open Question #8 (seasonal-peak-vs-anomaly caveat).
-EPIDEMIC_THRESHOLD_K = 2.0
+# Module 2 outbreak label (Decision 019, research_context/RESEARCH_DECISIONS.md;
+# mean/SD ESTIMATOR superseded by Decision 025). Retires the old
+# OUTBREAK_THRESHOLD fixed-count placeholder: the label is a threshold,
+# `mean + EPIDEMIC_THRESHOLD_K * SD`, applied per (District, Week) using only
+# strictly-prior years - see src/module2_classification/labels.py. The
+# ORIGINAL (Decision 019) mean/SD estimator computed an exact per-(District,
+# Week) sample mean/SD, k=2 chosen via scripts/data_audit_module2.py. That
+# exact-week estimator was found (Decision 025, Open Question #8) to be too
+# noisy from small per-week sample sizes - pooled "outbreak" prevalence was
+# 18-25% of weeks, well above WHO/CDC's typical single-digit-percent epidemic
+# alert rate. Decision 025 replaces the mean/SD estimator with a per-district
+# harmonic regression (EPIDEMIC_THRESHOLD_N_HARMONICS harmonics of week-of-year,
+# refit expanding per year on strictly-prior real data) - historical_mean is
+# the fitted seasonal curve, historical_sd is the fit's residual standard
+# error. k was re-audited for this new estimator (scripts/
+# audit_label_stabilization.py) rather than assumed to carry over unchanged,
+# since the SD quantity's meaning changed - k=3.0 chosen to bring pooled
+# prevalence to 8.6% (vs. k=2.0's 12.3%), closer to the WHO/CDC aspiration
+# cited in Open Question #8, with no degenerate district at either k.
+EPIDEMIC_THRESHOLD_K = 3.0
 EPIDEMIC_THRESHOLD_MIN_PRIOR_YEARS = 3
+EPIDEMIC_THRESHOLD_N_HARMONICS = 1
 
 # Module 2 Stage 1 baseline classifier (Decision 021,
 # research_context/RESEARCH_DECISIONS.md). Module-2-specific override of
@@ -117,3 +129,22 @@ MODULE2_BASELINE_FEATURE_IMPORTANCE_PATH = MODULE2_METRICS_DIR / "baseline_class
 MODULE2_POOLED_VS_DISTRICT_PATH = MODULE2_METRICS_DIR / "pooled_vs_per_district_comparison.csv"
 MODULE2_BASELINE_MODELS_DIR = MODULE2_MODELS_DIR / "baseline_classifier"
 MODULE2_BASELINE_FINAL_MODEL_PATH = MODULE2_BASELINE_MODELS_DIR / "final_production_model"
+
+# --- Module 2 Stage 2 (probability/classification-error compensation;
+# src/module2_classification/compensation_model.py; Decision 022) ---
+MODULE2_STAGE2_PREDICTIONS_PATH = MODULE2_PROCESSED_DIR / "stage2_compensated_predictions.csv"
+MODULE2_STAGE2_METRICS_PATH = MODULE2_METRICS_DIR / "stage2_compensation_metrics.csv"
+MODULE2_STAGE2_POOLED_VS_DISTRICT_PATH = MODULE2_METRICS_DIR / "stage2_pooled_vs_per_district_comparison.csv"
+MODULE2_STAGE2_MODELS_DIR = MODULE2_MODELS_DIR / "stage2_compensation"
+MODULE2_STAGE2_FINAL_MODEL_PATH = MODULE2_STAGE2_MODELS_DIR / "final_production_model"
+MODULE2_FIGURES_DIR = OUTPUTS_DIR / "figures" / "module2"
+
+# --- Module 2 risk-tier thresholds (alert threshold + low/medium/high tiers;
+# src/module2_classification/risk_thresholds.py; Decision 024) ---
+MODULE2_RISK_TIER_PREDICTIONS_PATH = MODULE2_PROCESSED_DIR / "stage2_risk_tier_predictions.csv"
+MODULE2_RISK_THRESHOLD_SCAN_PATH = MODULE2_METRICS_DIR / "risk_threshold_scan.csv"
+MODULE2_RISK_THRESHOLD_HOLDOUT_COMPARISON_PATH = MODULE2_METRICS_DIR / "risk_threshold_holdout_comparison.csv"
+
+# --- Module 2 live/production scoring (genuinely new incoming weeks, for
+# dashboard consumption; src/module2_classification/live_scoring.py) ---
+MODULE2_LIVE_RISK_PREDICTIONS_PATH = MODULE2_PROCESSED_DIR / "live_risk_predictions.csv"

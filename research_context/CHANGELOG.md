@@ -29,6 +29,414 @@ Accepted / Rejected / Experimental / Superseded
 
 ---
 
+## 2026-07-28 - Module 2 Live/Production Risk Scoring Added; New Climate-Currency-Gap Finding
+
+### Module
+Module 2
+
+### Change
+Added `src/module2_classification/live_scoring.py` (new, standalone - not
+wired into `main.py`'s idempotent `PIPELINE_STAGES`, same precedent as Module
+1's `forecast_future.py`). Recomputes Stage 1's feature table fresh from the
+current `weekly_modeling_table.csv`, attaches full-history climate anomalies,
+scores the most recent N weeks per district (default 8) through the frozen
+Stage 1 + Stage 2 final-production models (model/architecture type read
+dynamically from each stage's metrics CSV `selected` column, never
+hardcoded), and applies the persisted alert/high-confidence risk thresholds.
+Outputs `data/processed/module2/live_risk_predictions.csv`.
+
+While building/testing this script, discovered that Module 2 shares Module
+1's Open Question #16 climate-currency gap: `weekly_modeling_table.csv`'s
+case counts extend through 2026 Wk25 but every climate column stops 4 weeks
+earlier (2026 Wk21) for all 25 districts, since both modules consume the same
+shared climate pipeline. `feature_completeness_pct` drops from 100% to 60%
+over the most recent 4 scored weeks as a result.
+
+### Reason
+Module 2's training/evaluation pipeline (Stage 1 -> Stage 2 -> risk
+thresholds) only ever scores against data already inside the dataset
+(walk-forward folds, the 2-year holdout). There was no way to produce a risk
+classification for the dashboard's actual use case - "what does the model say
+about the most recent real weeks, right now" - without manually rerunning the
+entire walk-forward benchmark. Unlike Module 1, no SARIMA-style recursive
+multi-step extrapolation is needed: every Stage 1 feature is a lag of a prior
+week or that week's own already-reported climate, never that week's own case
+count, so as long as the raw data already covers the target week, every
+feature is a real observation.
+
+### Impact
+New: `src/module2_classification/live_scoring.py`,
+`data/processed/module2/live_risk_predictions.csv`. Config: added
+`MODULE2_LIVE_RISK_PREDICTIONS_PATH` to `src/config.py`. Documentation:
+`module_2_classification/MODULE_CONTEXT.md` new "Live/Production Risk
+Scoring" section and new Open Question #10 (climate-currency gap). No
+production training/evaluation code changed.
+
+### Status
+Accepted. First real-world spot check (current data through 2026 Wk25)
+correctly flags 9 districts `high` and 6 `medium`, including `Colombo` and
+`Gampaha` - the same two districts already independently confirmed as a real,
+ongoing 2026 outbreak in `module_1_forecasting/MODULE_CONTEXT.md`. The
+climate-currency-gap finding remains open (shared fix with Module 1's Open
+Question #16: rerun the shared climate preprocessing/Open-Meteo fetch).
+
+---
+
+## 2026-07-28 - Module 2 SMOTENC Oversampling Audited and Rejected; Decision 021 Reconfirmed (Decision 026, M2-006)
+
+### Module
+Module 2
+
+### Change
+Added `scripts/audit_smote_imbalance.py` (read-only diagnostic, added
+`imbalanced-learn` to `requirements.txt`) and used it to benchmark leakage-safe
+SMOTENC oversampling (fit strictly on each fold's own training rows, `District`
+as a `categorical_features` column) against the current
+`class_weight`/`scale_pos_weight`-only approach, across 4 variants x 2 models
+(Random Forest, XGBoost), on the identical 13 walk-forward folds + holdout
+used by production `baseline_classifier.py`.
+
+### Reason
+A user request to research accuracy-improvement techniques beyond this repo
+surfaced SMOTE-family oversampling as a commonly cited lever for imbalanced
+outbreak classification in the literature. Decision 021 had already rejected
+SMOTE, but on a reasoning ("blurs the temporal fold boundary") that doesn't
+precisely describe the real risk of oversampling this pipeline's lagged
+features - the reasoning needed correcting, so the underlying conclusion was
+re-tested empirically rather than assumed to still hold, per this project's
+"critique assumptions, don't just agree" rule.
+
+### Impact
+No production code changed - `baseline_classifier.py` and all its outputs are
+unchanged. Result: **rejected**. For Random Forest (official model), the best
+SMOTENC variant shows a small validation-median PR-AUC gain (+0.0096) that
+evaporates on holdout (effectively a wash) and costs holdout recall. Every
+SMOTENC variant improved XGBoost's validation PR-AUC but worsened its holdout
+PR-AUC - a validation-improves/holdout-regresses pattern the pre-registered
+holdout check exists to catch. A consistent secondary finding (better raw
+Brier/calibration under SMOTENC) is judged likely redundant with Stage 2's
+existing isotonic recalibration. `research_context/RESEARCH_DECISIONS.md`
+(new Decision 026), `module_2_classification/EXPERIMENT_LOG.md` (new entry
+M2-006), `module_2_classification/MODULE_CONTEXT.md` (Open Question #4
+addendum), `requirements.txt` (added `imbalanced-learn`). New artifacts:
+`scripts/audit_smote_imbalance.py`, `outputs/metrics/module2/
+smote_imbalance_audit.csv`.
+
+### Status
+Rejected
+
+---
+
+## 2026-07-28 - Module 2 Label Mean/SD Estimator Replaced With Harmonic Regression; k Re-Audited to 3.0 (Decision 025, M2-005)
+
+### Module
+Module 2
+
+### Change
+Added `scripts/audit_label_stabilization.py` (read-only diagnostic, mirrors
+`scripts/data_audit_module2.py`'s original k-audit) and used it to compare 6
+candidate `historical_mean`/`historical_sd` estimators for Decision 019's
+outbreak-threshold label formula (`exact_week` control, `windowed` at
+window=1/2/3, `harmonic` at 1/2 harmonics) x 3 `k` values each, plus an
+explicit spot-check of Colombo District/2025/Week 15. **Adopted harmonic
+regression (`compute_historical_stats_harmonic`, `n_harmonics=1`) with
+`k=3.0`** as the new official estimator in
+`src/module2_classification/labels.py`, replacing Decision 019's exact-per-
+(District, Week) sample mean/SD (kept in the codebase, not deleted, marked
+superseded). `src/module2_classification/feature_engineering.py`'s
+`compute_case_anomaly_lags` switched to match (Group M2-5 reuses the same
+estimator as the label by design). `src/config.py`: `EPIDEMIC_THRESHOLD_K`
+`2.0` -> `3.0`; new `EPIDEMIC_THRESHOLD_N_HARMONICS = 1`. Reran the full
+Module 2 pipeline end to end (`feature_engineering` through
+`stage2_risk_thresholds`, `--force`).
+
+**Important correction to the motivating evidence, surfaced before
+implementing anything**: the task's flagship example (Colombo 2025 Wk15,
+277 cases, cited as a label defect) was verified directly against the
+running pipeline and found to be **already correctly labeled `1`
+(outbreak)** under the OLD estimator (`threshold=256.4 < 277`). The actual
+issue was a Stage 2 calibration near-miss (isotonic-calibrated probability
+0.155, just under the pre-existing 0.170 alert threshold) - not a label
+problem. The real, addressed problem is the separately-documented 18-25%
+pooled "outbreak" prevalence (well above WHO/CDC's single-digit-percent
+norm), which this change reduces to 8.57% while also reducing the
+undefined-label rate (16.0% -> 10.7%). **Window-pooling was tested and
+rejected**: it increases the SD estimate in high-variance districts,
+raising (not lowering) their threshold. **Honest limitation, not hidden**:
+the chosen `k=3.0` raises Colombo's own threshold enough that its 2025
+Wk15 row's label actually FLIPS from `1` to `0` under the new estimator -
+an expected consequence of one global `k` fixing an aggregate-prevalence
+problem, flagged as an open follow-up (district-specific/variance-adaptive
+`k`), not silently presented as a clean win.
+
+Full pipeline rerun surfaced further downstream consequences of the label
+change: **Stage 1's official model selection flipped from XGBoost to
+Random Forest** (median validation PR-AUC 0.3766 vs. 0.3726), Stage 2's
+architecture contest tightened considerably (isotonic 0.2146 vs. Platt
+0.2116 median BSS, both markedly improved vs. Stage 1 raw), and risk
+thresholds recalibrated lower (alert 0.170 -> 0.140, high-confidence 0.570
+-> 0.350) to track the new, lower prevalence.
+
+### Reason
+Open Question #8 (flagged at Decision 019's kickoff, never acted on until
+now) argued the single-week `mean + k*SD` threshold was too noisy from
+small per-week sample sizes. An audit-first approach (rather than assuming
+a fix direction) was required per the user's explicit instruction, and
+that audit's first useful output was disproving the specific motivating
+example rather than confirming it - a finding that had to be surfaced
+honestly before proceeding, per this project's "critique assumptions"
+mandate, rather than silently implementing a fix for a problem that (in
+that specific case) didn't exist.
+
+### Impact
+New file `scripts/audit_label_stabilization.py`. New outputs:
+`outputs/metrics/module2/{label_stabilization_audit,
+label_stabilization_spot_check}.csv`. Modified
+`src/module2_classification/labels.py` (new
+`compute_historical_stats_harmonic`/`_harmonic_design`; old
+`compute_historical_stats` kept, marked superseded),
+`src/module2_classification/feature_engineering.py` (estimator switched for
+`case_anomaly_lag_1/2`), `src/config.py` (`EPIDEMIC_THRESHOLD_K` and new
+`EPIDEMIC_THRESHOLD_N_HARMONICS`). Regenerated
+`data/features/module2/stage1_feature_table.csv`,
+`data/processed/module2/{baseline_classifier_predictions,
+stage2_compensated_predictions, stage2_risk_tier_predictions}.csv`, all
+Stage 1/2/threshold metrics and figures, and both stages' model artifacts.
+Updated `research_context/RESEARCH_DECISIONS.md` (new Decision 025),
+`module_2_classification/EXPERIMENT_LOG.md` (new entry M2-005; M2-001
+through M2-004 explicitly marked as measured against the superseded
+label), `module_2_classification/MODULE_CONTEXT.md` (Open Question #8
+resolved; Stage 1/Stage 2 Implementation Status refreshed),
+`research_context/FEATURE_ENGINEERING_SPEC.md` (Label Definition and Group
+M2-5 updated), `research_context/PIPELINE_ARCHITECTURE_PLAN.md`
+(`labels.py` entry and status banner updated).
+
+### Status
+Accepted. M2-001 through M2-004's numeric results are superseded by
+M2-005 (a different label = a different, non-comparable target); their
+qualitative findings (pooled beats per-district, isotonic/Platt beat
+stacked XGBoost for Stage 2, F-beta thresholds beat a naive 0.5 cutoff)
+remain valid. A district-specific/variance-adaptive `k` is flagged as an
+open follow-up, not implemented this round.
+
+---
+
+## 2026-07-28 - Module 2 Stage 2 Risk Thresholds Implemented and Run (Decision 024, M2-004)
+
+### Module
+Module 2
+
+### Change
+Implemented `src/module2_classification/risk_thresholds.py` per Decision
+024's design and ran it end to end. Added `fbeta_score()` and
+`threshold_scan()` to `src/module2_classification/evaluate.py`; added risk-
+threshold path constants to `src/config.py`; wired `stage2_risk_thresholds`
+into `src/module2_classification/main.py`'s `PIPELINE_STAGES` as the final
+stage. Completes Decision 022's deferred risk-tier item.
+
+Selected an **F2-optimal alert threshold (0.170)** and an **F0.5-optimal
+high-confidence tier boundary (0.570)**, chosen purely from the official
+Stage 2 architecture's validation-fold rows (folds 2-13), holdout reserved
+for the final check. On the untouched holdout block, switching from the
+naive 0.5 cutoff to 0.170 nearly doubles recall (39.9% -> 68.6%) at the
+expected precision cost, improving F2 from 0.437 to 0.574. Risk-tier
+empirical separation is strong and monotonic on both splits: observed
+outbreak rate 2.6% (low) -> 22.0% (medium) -> 76.7% (high) on holdout.
+
+### Reason
+The naive 0.5 cutoff used throughout Stage 1/2 benchmarking was always
+documented as an untuned diagnostic, not a real decision threshold. An
+early-warning system should weight recall over precision (F2) for its
+primary alert, and precision over recall (F0.5) for a "high confidence"
+label - one consistent F-beta framework at two operating points, avoiding
+an arbitrary rule and staying consistent with Decision 022's earlier
+rejection of quantile-based cutoffs.
+
+### Impact
+New file `src/module2_classification/risk_thresholds.py`. New outputs:
+`data/processed/module2/stage2_risk_tier_predictions.csv`,
+`outputs/metrics/module2/{risk_threshold_scan,
+risk_threshold_holdout_comparison}.csv`. Updated
+`module_2_classification/MODULE_CONTEXT.md` ("Target Direction" fully
+resolved, new "Risk Thresholds" subsection), `module_2_classification/
+EXPERIMENT_LOG.md` (new entry M2-004), `research_context/
+RESEARCH_DECISIONS.md` (new Decision 024), `research_context/
+PIPELINE_ARCHITECTURE_PLAN.md` (new `risk_thresholds.py` entry).
+
+### Status
+Accepted. Module 2's "Target Direction" ambiguity (calibrated probability
+vs. risk tier vs. binary alert) is now fully resolved with concrete,
+holdout-evaluated artifacts for all three.
+
+---
+
+## 2026-07-28 - Module 2 Stage 1 XGBoost Hyperparameters Tuned via Optuna, Adopted; Stage 2 Rerun (Decision 023, M2-003)
+
+### Module
+Module 2
+
+### Change
+Added a standalone `scripts/tune_stage1_xgboost.py` (Optuna TPE search, 60
+trials, 13-fold median PR-AUC objective, holdout-gated adopt/reject
+verdict) and an optional `xgb_params` override parameter to
+`baseline_classifier.fit_and_predict`. Ran the search; holdout PR-AUC
+improved 0.5380 -> 0.5577 (+0.0198) and holdout ROC-AUC improved 0.8978 ->
+0.9109 under the tuned hyperparameters versus Decision 021's hand-picked
+defaults - **adopted**, `XGB_BASE_PARAMS` in `baseline_classifier.py`
+updated permanently. Reran Stage 1 and Stage 2 end to end with `--force`.
+
+XGBoost remained Stage 1's selected model and pooled remained the winning
+architecture, as expected. Unexpectedly, **Stage 2's official architecture
+flipped from Platt scaling to isotonic regression** (median Brier Skill
+Score 0.166 vs. Platt's 0.145) purely as a consequence of Stage 1's
+reshaped probability distribution - no Stage 2 code changed. Isotonic
+mildly regresses PR-AUC vs. Stage 1 raw (flagged automatically by the
+existing Decision 022 gating check, not blocked, since BSS is the primary
+metric).
+
+### Reason
+Following M2-002's finding that Stage 2 recalibration cannot itself improve
+discrimination (by construction, for monotonic methods), the team asked
+whether Stage 1's own discrimination could be improved before considering a
+larger Module 2 redesign. Hand-picked hyperparameters (Decision 021) were
+never claimed optimal, only conservative; a holdout-gated Optuna search
+(not gated on the same fold-median metric already used for model-type
+selection, to avoid compounding a second round of the same mild selection
+bias) is the correct way to test that.
+
+### Impact
+`src/module2_classification/baseline_classifier.py`'s `fit_and_predict` gained
+an optional `xgb_params` parameter; `XGB_BASE_PARAMS` permanently updated.
+New files: `scripts/tune_stage1_xgboost.py`,
+`outputs/metrics/module2/{xgboost_tuning_trials,
+xgboost_tuning_holdout_comparison}.csv`. Regenerated:
+`data/processed/module2/{baseline_classifier_predictions,
+stage2_compensated_predictions}.csv` and all dependent metrics/model
+artifacts. Updated `module_2_classification/MODULE_CONTEXT.md` (Stage 1 and
+Stage 2 Implementation Status sections), `module_2_classification/
+EXPERIMENT_LOG.md` (new entry M2-003; M2-002 marked superseded),
+`research_context/RESEARCH_DECISIONS.md` (new Decision 023; Decision 022's
+status corrected), `research_context/PIPELINE_ARCHITECTURE_PLAN.md`
+(tuned-params note).
+
+### Status
+Accepted. M2-002's specific numeric results (Platt selected, exact BSS/
+PR-AUC values) are superseded by M2-003; M2-002's qualitative findings
+(stacked XGBoost underperforms, pooled beats per-district) remain valid.
+
+---
+
+## 2026-07-28 - Module 2 Stage 2 Compensation Model Implemented and Run (M2-002)
+
+### Module
+Module 2
+
+### Change
+Implemented `src/module2_classification/compensation_model.py` per Decision
+022's design and ran it end to end. Added `brier_skill_score()` and
+`reliability_curve()` to `src/module2_classification/evaluate.py`; added
+Stage 2 path constants to `src/config.py`; wired `stage2_compensation` into
+`src/module2_classification/main.py`'s `PIPELINE_STAGES`.
+
+**Platt scaling selected** as the official Stage 2 architecture: median
+Brier Skill Score improved from -0.043 (Stage 1 raw) to +0.130 on the 12
+trainable validation folds, and from -0.080 to +0.292 on the untouched
+holdout block. PR-AUC/ROC-AUC are numerically *identical* to Stage 1 raw in
+both splits, confirming Decision 022's "no discrimination regression" gate
+holds exactly (Platt scaling is a strictly monotonic transform, so ranking
+cannot change by construction). Isotonic regression also improved
+calibration substantially but is not selected (lower median BSS than
+Platt). Stacked XGBoost did not improve calibration (median BSS still
+negative, -0.074) - a genuine negative result attributed to its own
+per-fold `scale_pos_weight` likely reintroducing a similar probability-scale
+distortion to Stage 1's. Pooled-vs-per-district was re-validated
+empirically for Stage 2 (stacked-XGBoost arbiter) and again favors pooled,
+mirroring Decision 021's Stage-1 finding. Reliability diagrams confirm Stage
+1 was systematically overconfident (not underconfident) across most of the
+probability range, and Platt scaling pulls both the validation and holdout
+curves close to the diagonal.
+
+### Reason
+Stage 1's negative Brier skill score (M2-001) meant its raw probabilities
+were not usable as real risk estimates despite strong discrimination.
+Benchmarking three well-posed architectures (rather than assuming one)
+produced clear, reproducible evidence for which correction actually works,
+and the exact PR-AUC/ROC-AUC equality for the winning architecture is a
+strong internal-consistency check that the implementation is correct.
+
+### Impact
+New outputs: `data/processed/module2/stage2_compensated_predictions.csv`,
+`outputs/metrics/module2/{stage2_compensation_metrics,
+stage2_pooled_vs_per_district_comparison}.csv`,
+`outputs/figures/module2/reliability_diagram_{validation,holdout}.png`,
+`models/module2/stage2_compensation/`. Updated
+`module_2_classification/MODULE_CONTEXT.md` ("Stage 2 Implementation
+Status" section, Open Question #5 resolved) and
+`module_2_classification/EXPERIMENT_LOG.md` (new entry M2-002).
+
+### Status
+Accepted. The fixed-threshold risk-tier follow-up (deferred in Decision 022)
+is now unblocked, since a real calibrated-probability distribution exists.
+
+---
+
+## 2026-07-28 - Module 2 Stage 2 Design Finalized (Decision 022)
+
+### Module
+Module 2
+
+### Change
+A dedicated planning session (no code written) finalized Module 2 Stage 2's
+design before implementation began. Key outcome: a literal port of Module 1
+Stage 2's `residual = actual - sarima_prediction` formula was examined and
+rejected as statistically ill-posed for a binary label (`label -
+predicted_probability` for a single Bernoulli observation is a
+high-variance, low-information target, with no clean way to keep
+`predicted_probability + predicted_residual` inside `[0, 1]`). Three
+numerically well-posed architectures are benchmarked instead, selected by
+median Brier Skill Score: isotonic regression (pooled, feature-free), Platt
+scaling (pooled, feature-free, logistic regression on
+`logit(predicted_probability)` - not raw `p`), and a stacked XGBoost model
+on `[predicted_probability, contextual features, District,
+probability_residual_lag_1/2]` -> `label`. An XGBoost `base_margin`-warm-
+started variant was considered as the most literal translation of Module
+1's residual metaphor that stays well-posed, but deferred as a future
+ablation rather than built now (the stacked model already covers its
+expected benefit and is more flexible).
+
+Also decided: a Decision-010-style no-leakage rule (fold *k* trains only on
+prior folds' out-of-sample Stage 1 probabilities, fold 1 is a no-op
+passthrough, yielding 12 trainable folds vs. Stage 1's 13); pooled-vs-per-
+district re-validated empirically via the stacked-XGBoost architecture as
+arbiter, not assumed from Decision 021; calibrated probability as the
+primary output with risk-tier labels as a secondary output using fixed (not
+quantile) thresholds, values deferred until the real calibrated
+distribution can be inspected; Module 1 forecast integration deferred again
+as a concrete post-Stage-2 ablation (the two modules' fold boundaries are
+misaligned - 14 folds/`MIN_TRAIN_YEARS=3` vs. 13 folds/`MIN_TRAIN_YEARS=4`
+- so merging requires a dedicated leakage audit, not a simple merge); Open
+Question #8 (consecutive-week trigger) stays deferred.
+
+### Reason
+Working through the design before writing code caught a real statistical
+problem (the ill-posed residual target) that a direct copy of Module 1's
+architecture would have produced. Benchmarking three architectures rather
+than picking one a priori follows the same evidentiary standard already
+used for Stage 1's model selection (Decision 021).
+
+### Impact
+No code changes yet - implementation follows in a subsequent session.
+Updated `research_context/RESEARCH_DECISIONS.md` (new Decision 022),
+`module_2_classification/MODULE_CONTEXT.md` (Open Questions #5/#6 updated,
+Target Direction resolved, "Possible Stage 2 Models" resolved, new "Stage 2
+Design Status" section), `research_context/FEATURE_ENGINEERING_SPEC.md`
+(new Module 2 Stage 2 feature-group section), and this file.
+
+### Status
+Accepted (design); implementation and results pending.
+
+---
+
 ## 2026-07-28 - Module 2 Stage 1 Baseline Classifier Implemented
 
 ### Module

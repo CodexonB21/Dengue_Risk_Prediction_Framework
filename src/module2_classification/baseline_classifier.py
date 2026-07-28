@@ -128,18 +128,28 @@ RF_PARAMS = dict(
     class_weight="balanced", random_state=42, n_jobs=-1,
 )
 LR_PARAMS = dict(class_weight="balanced", max_iter=2000, random_state=42)
+# Tuned via Optuna (60 trials, 13-fold median PR-AUC objective) and
+# holdout-gated in scripts/tune_stage1_xgboost.py (Decision 023). Adopted:
+# holdout PR-AUC improved 0.5380 -> 0.5577 (+0.0198) and holdout ROC-AUC
+# improved 0.8978 -> 0.9109 over the prior hand-picked defaults. Holdout
+# Brier/BSS got worse under these params, but that is expected and does not
+# block adoption - Stage 1 was never selected or tuned for calibration
+# (Decision 021), and Stage 2's Platt scaling recalibrates whatever Stage 1
+# produces regardless of its raw scale (Decision 022).
 XGB_BASE_PARAMS = dict(
     objective="binary:logistic",
     eval_metric="aucpr",
     tree_method="hist",
     enable_categorical=True,
-    max_depth=4,
-    learning_rate=0.05,
-    n_estimators=300,
-    subsample=0.8,
-    colsample_bytree=0.8,
-    reg_lambda=1.0,
-    min_child_weight=5,
+    max_depth=3,
+    learning_rate=0.012372716856545026,
+    n_estimators=217,
+    subsample=0.6565207665644811,
+    colsample_bytree=0.5962294998146025,
+    reg_lambda=1.0757842716405472,
+    min_child_weight=10,
+    reg_alpha=4.11972811587084,
+    gamma=2.4930165018747936,
     random_state=42,
 )
 
@@ -265,6 +275,7 @@ def build_sklearn_preprocessor(include_scaler: bool) -> ColumnTransformer:
 
 def fit_and_predict(
     model_name: str, train_df: pd.DataFrame, val_df: pd.DataFrame, feature_columns: list[str] | None = None,
+    xgb_params: dict | None = None,
 ):
     """Fit `model_name` on `train_df` (must already be filtered to rows with
     a defined label) and predict probabilities for `val_df`.
@@ -272,6 +283,13 @@ def fit_and_predict(
     `feature_columns` defaults to the full pooled feature set
     (`ALL_FEATURE_COLUMNS`); the pooled-vs-per-district comparison passes
     `NUMERIC_FEATURE_COLUMNS` (no `District`) for its per-district XGBoost runs.
+
+    `xgb_params` (XGBoost only) overrides `XGB_BASE_PARAMS` when given -
+    added for `scripts/tune_stage1_xgboost.py`'s Optuna search (Decision
+    023), so the walk-forward loop can be reused unchanged to score
+    candidate hyperparameter sets. `scale_pos_weight` is still always
+    computed fresh from the fold's own training labels, never overridable -
+    it is a leakage-safety property of the fold, not a tunable hyperparameter.
 
     Returns `(predicted_probability: np.ndarray, fitted_model)`.
     """
@@ -289,7 +307,7 @@ def fit_and_predict(
         n_pos = int(y_train.sum())
         n_neg = len(y_train) - n_pos
         scale_pos_weight = (n_neg / n_pos) if n_pos > 0 else 1.0
-        model = xgb.XGBClassifier(**XGB_BASE_PARAMS, scale_pos_weight=scale_pos_weight)
+        model = xgb.XGBClassifier(**(xgb_params or XGB_BASE_PARAMS), scale_pos_weight=scale_pos_weight)
         model.fit(X_train, y_train)
         proba = model.predict_proba(X_val)[:, 1]
         return proba, model
