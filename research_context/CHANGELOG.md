@@ -29,6 +29,76 @@ Accepted / Rejected / Experimental / Superseded
 
 ---
 
+## 2026-07-28 - Module 2 Stage 1 Baseline Classifier Implemented
+
+### Module
+Module 2
+
+### Change
+Implemented `src/module2_classification/evaluate.py` (classification
+metrics: `accuracy`, `precision`, `recall`, `specificity`, `f1`, `roc_auc`,
+`pr_auc`, `brier_score`, `prevalence`, `confusion_counts`, mirroring Module
+1's masked-pure-function style), `src/module2_classification/
+baseline_classifier.py` (the full Stage 1 pipeline), and
+`src/module2_classification/main.py` (idempotent orchestration mirroring
+`module1_forecasting/main.py`'s `PIPELINE_STAGES` pattern). Ran the full
+pipeline end to end.
+
+Stage 1 benchmarks Logistic Regression / Random Forest / XGBoost per
+walk-forward fold, pooled across all 25 districts (`District` as a
+categorical feature). A critical fold-1 fix was found and applied before
+the benchmark could run at all: `validation.py`'s SARIMA-tuned
+`DEFAULT_MIN_TRAIN_YEARS=3` left fold 1's entire training window with
+**zero** rows that have a defined label - the label's own
+3-strictly-prior-years requirement (Decision 019) overlaps exactly with
+that window, for every district simultaneously. A new, Module-2-specific
+`MODULE2_MIN_TRAIN_YEARS=4` (`src/config.py`) fixes this, yielding 13
+walk-forward folds (vs. Module 1's 14). The pooled architecture choice was
+validated **empirically**, not assumed by analogy with Module 1 Stage 2: a
+dedicated XGBoost-only comparison found pooled median PR-AUC (0.500) far
+exceeds per-district median PR-AUC (0.287) across the 13 folds. **XGBoost
+selected** as the official Stage 1 model by median validation PR-AUC (vs.
+Random Forest 0.462, Logistic Regression 0.437); its held-out final-block
+PR-AUC is 0.538. A second correction was made mid-implementation: the
+original premise that "tree-based models handle NaN natively" is only true
+for XGBoost among the three benchmarked models - `sklearn`'s
+`RandomForestClassifier` requires explicit imputation, added via a shared
+`ColumnTransformer` (also used for Logistic Regression).
+
+### Reason
+Module 2's Stage 1 had no code yet, and its fold design needed to be
+verified empirically (not assumed to mirror Module 1's) before any model
+could be honestly benchmarked - the label's own strictly-prior-years
+construction interacts with the walk-forward minimum-training-window
+parameter in a way specific to a classification target, not a regression
+target. The pooled-vs-per-district architecture question was likewise a
+genuine design decision requiring its own evidence, not simply inherited
+from Module 1 Stage 2's precedent (a different target type, and a
+different, coincidental cause of early-fold data thinness).
+
+### Impact
+Added `src/module2_classification/evaluate.py`, `src/module2_classification/
+baseline_classifier.py`, `src/module2_classification/main.py` (all
+previously placeholders). Added `data/processed/module2/
+baseline_classifier_predictions.csv` (58,500 rows), `outputs/metrics/
+module2/{baseline_classifier_metrics, pooled_vs_per_district_comparison,
+baseline_classifier_feature_importance}.csv`, `models/module2/
+baseline_classifier/{fold_1..13, holdout, final_production_model}.json`.
+Updated `src/config.py` (`MODULE2_MIN_TRAIN_YEARS` and 6 new output path
+constants). Updated `research_context/RESEARCH_DECISIONS.md` (new Decision
+021), `module_2_classification/MODULE_CONTEXT.md` (Open Question #4
+resolved, new "Stage 1 Implementation Status" section), `module_2_
+classification/EXPERIMENT_LOG.md` (new entry M2-001),
+`research_context/PIPELINE_ARCHITECTURE_PLAN.md` (Module 2 Layer section
+updated; `labels.py` filename correction), `research_context/
+FEATURE_ENGINEERING_SPEC.md` (baseline classifier probability now
+available for Stage 2).
+
+### Status
+Accepted.
+
+---
+
 ## 2026-07-28 - Module 2 Kickoff: Outbreak Label Definition Decided
 
 ### Module

@@ -450,3 +450,35 @@ A dedicated review of `src/preprocessing/module2_preprocessing.py`'s three Decis
 
 ### Documentation Updated
 `src/preprocessing/module2_preprocessing.py` and `src/module2_classification/feature_engineering.py` docstrings, `research_context/PIPELINE_ARCHITECTURE_PLAN.md`, `module_2_classification/MODULE_CONTEXT.md`, `research_context/CHANGELOG.md`.
+
+---
+
+## Decision 021: Module 2 Stage 1 Baseline Classifier — MIN_TRAIN_YEARS=4 Fix, Pooled Architecture Confirmed Empirically, XGBoost Selected
+
+**Module:** Module 2
+**Status:** Accepted (implemented and validated, 2026-07-28)
+**Date:** 2026-07-28
+
+### Decision
+Implemented `src/module2_classification/baseline_classifier.py` (Stage 1), with four decisions made and confirmed before/during implementation:
+
+1. **New `MODULE2_MIN_TRAIN_YEARS = 4`** (`src/config.py`), a Module-2-specific override of `src/module1_forecasting/validation.py`'s SARIMA-tuned `DEFAULT_MIN_TRAIN_YEARS = 3`. Verified empirically (against the real feature table, for every district) that at the SARIMA-tuned default, walk-forward fold 1's ENTIRE training window has **zero** rows with a defined label — Decision 019's label requires 3 strictly-prior years of history, which overlaps exactly with the 3-year minimum training window itself, for every district simultaneously (a calendar-driven effect, not a per-district data-thinness issue that pooling could rescue, unlike Module 1 Stage 2's analogous but differently-caused fold-1 thinness). Using `min_train_years=4` yields **13 walk-forward folds** (down from Module 1's 14), each with genuinely trainable rows (fold 1: 1,275 pooled trainable rows across 25 districts).
+2. **Pooled model (District as a categorical feature) confirmed empirically, not assumed** — validated via a dedicated `run_pooled_vs_per_district_comparison()` using XGBoost alone as the arbiter (no imputation/encoding confound). Result: pooled median PR-AUC across 13 folds = **0.500**, vs. per-district median PR-AUC = **0.287** (mean 0.433) — pooled clearly and consistently outperforms per-district, most starkly in early folds where per-district training data is thinnest (e.g. fold 1: pooled 0.272 vs. per-district median 0.165). Full per-fold comparison: `outputs/metrics/module2/pooled_vs_per_district_comparison.csv`.
+3. **Correction to the original NaN-handling premise**: `sklearn.ensemble.RandomForestClassifier` does **not** accept NaN natively (unlike XGBoost) — only XGBoost among the three benchmarked models has true native missing-value handling. Random Forest and Logistic Regression both use an identical `ColumnTransformer` (median-impute numeric features, one-hot encode `District` against the fixed `DISTRICTS` list; Logistic Regression additionally standard-scales), fit on each fold's training rows only.
+4. **Model selection**: Logistic Regression, Random Forest, and XGBoost were benchmarked across all 13 folds with `class_weight="balanced"` (LR/RF) / per-fold `scale_pos_weight` (XGBoost) for imbalance (not SMOTE). **XGBoost selected as the official Stage 1 model** by median validation PR-AUC (0.500, vs. Random Forest 0.462 and Logistic Regression 0.437) — used consistently across all folds (not a per-fold winner). Held-out final block (last 2 years, never touched during fold-based selection): XGBoost PR-AUC 0.538, roughly consistent with the validation-aggregate figure. Top feature by gain: `case_anomaly_lag_1` (as expected — conceptually near-identical to the label one week prior, per `FEATURE_ENGINEERING_SPEC.md`'s Group M2-5 leakage note), followed by `case_anomaly_lag_2` and `rolling_mean_cases_4w`.
+
+### Reason
+1. A structural fold-1 problem was caught by direct empirical verification (not assumed to work by analogy with Module 1) before committing to a fold design — training a classifier on a window with zero informative labels would have silently produced meaningless fold-1 output.
+2. Per-district models are much thinner during exactly the early folds where reliable classification matters most for demonstrating walk-forward robustness; confirming pooling empirically (rather than only citing Module 1 Stage 2's precedent) avoids assuming a Module-1-specific finding transfers unchanged to a different target type (classification, not regression) and a different, calendar-driven data-thinness cause.
+3. Assuming "tree-based models handle NaN" without verifying per-library behavior would have caused a runtime failure (or silently wrong behavior) for Random Forest specifically once real is_imputed-masked NaN features reached it.
+4. PR-AUC (not accuracy/F1) is the correct primary metric given the ~14-22% prevalence observed within trainable folds (lower than the unconditional 18.4% pooled rate reported in Decision 019's audit, since `MIN_TRAIN_YEARS=4` reshapes which years are ever scored) — accuracy alone would reward a majority-class classifier.
+
+### Implication
+- New config constants: `MODULE2_MIN_TRAIN_YEARS`, `MODULE2_BASELINE_PREDICTIONS_PATH`, `MODULE2_BASELINE_METRICS_PATH`, `MODULE2_BASELINE_FEATURE_IMPORTANCE_PATH`, `MODULE2_POOLED_VS_DISTRICT_PATH`, `MODULE2_BASELINE_MODELS_DIR`, `MODULE2_BASELINE_FINAL_MODEL_PATH` (`src/config.py`).
+- New files: `src/module2_classification/evaluate.py` (classification metrics: `accuracy`, `precision`, `recall`, `specificity`, `f1`, `roc_auc`, `pr_auc`, `brier_score`, `prevalence`, `confusion_counts`, all mirroring Module 1 `evaluate.py`'s masked-pure-function style), `src/module2_classification/baseline_classifier.py` (full Stage 1 pipeline), `src/module2_classification/main.py` (idempotent orchestration, mirroring `module1_forecasting/main.py`).
+- Threshold-dependent secondary metrics (F1, confusion matrix) use a **fixed, explicitly-untuned 0.5 cutoff** — real threshold/calibration tuning remains deferred to Stage 2 (`compensation_model.py`), per Module 2 Open Question #5.
+- Per-fold model artifacts are saved only for the official model (XGBoost) — `models/module2/baseline_classifier/fold_{1..13}.json`, `holdout.json`, `final_production_model.json`. All 3 models' per-fold and aggregate metrics remain in `outputs/metrics/module2/baseline_classifier_metrics.csv` for the permanent benchmark record.
+- This does **not** resolve Module 2 Open Question #8 (single-week vs. consecutive-week outbreak trigger) — Stage 1 was built against the existing `k=2` single-week label as-is; that refinement remains a candidate follow-up.
+
+### Documentation Updated
+`module_2_classification/MODULE_CONTEXT.md` (Open Question #4 resolved; new "Stage 1 Implementation Status" section), `module_2_classification/EXPERIMENT_LOG.md` (new entry M2-001), `research_context/PIPELINE_ARCHITECTURE_PLAN.md` (Module 2 Layer section updated), `research_context/FEATURE_ENGINEERING_SPEC.md` (baseline-probability feature now available), `research_context/CHANGELOG.md`.

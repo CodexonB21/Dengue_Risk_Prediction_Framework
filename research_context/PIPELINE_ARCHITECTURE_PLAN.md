@@ -24,12 +24,15 @@ expanded from a placeholder into a concrete build plan. Preprocessing, label
 definition, and Stage 1 feature engineering are implemented and have been
 regenerated against the real data after a dedicated preprocessing review
 (Decision 020 — week 53 kept unmerged, `is_imputed` masking made consistent).
-Stage 1/2 modeling scripts remain unimplemented — see
-`module_2_classification/MODULE_CONTEXT.md` "Implementation Plan" for current
-status.
+**Module 2 Stage 1 (`baseline_classifier.py`) is now also implemented and
+run end to end** (Decision 021 — new `MODULE2_MIN_TRAIN_YEARS=4`, 13
+walk-forward folds, pooled architecture confirmed empirically, XGBoost
+selected as the official model). Stage 2 modeling script remains
+unimplemented — see `module_2_classification/MODULE_CONTEXT.md` "Stage 1
+Implementation Status" for full results.
 
 ## Last Updated
-2026-07-28 (Module 2 preprocessing review — Decision 020: week 53 unmerged, is_imputed masking consistency fix)
+2026-07-28 (Module 2 Stage 1 baseline classifier implemented — Decision 021)
 
 ---
 
@@ -268,8 +271,9 @@ per `FEATURE_ENGINEERING_SPEC.md`, writes to `data/features/module1/`.
 
 Label definition is now settled (Decision 019, fold-aware epidemic-threshold
 method) — this section is no longer a placeholder for the preprocessing/label
-steps below, though the Stage 1/2 modeling scripts remain unimplemented as of
-this writing.
+steps below. Stage 1 (`baseline_classifier.py`) is implemented (Decision
+021); Stage 2 (`compensation_model.py`) remains unimplemented as of this
+writing.
 
 ## `src/preprocessing/module2_preprocessing.py` (revised 2026-07-28 — Decision 020)
 
@@ -300,7 +304,7 @@ began, revising two of the three original kickoff defaults:
    *before* the epidemic threshold is computed, which can (a) spuriously
    trip the outbreak threshold from merge arithmetic alone, and (b)
    contaminates week 52's cross-year `historical_mean`/`SD` (used by
-   `label_definition.py`) for every year, not just the four merged ones.
+   `labels.py`) for every year, not just the four merged ones.
    Kept unmerged, week 53 will almost always get an undefined label (only 4
    total occurrences, short of the 3-strictly-prior-years rule) — honest, not
    a defect. Requires a Module-2-local `MODULE2_MONSOON_WEEKS_NE` override
@@ -315,9 +319,11 @@ began, revising two of the three original kickoff defaults:
    52 weeks/year except 53 for `{2009, 2016, 2019, 2021}`, 102 rows flagged
    `is_imputed`.
 
-## `src/module2_classification/label_definition.py`
+## `src/module2_classification/labels.py`
 
-Implements Decision 019's fold-aware epidemic-threshold label:
+(Note: named `labels.py`, not `label_definition.py` as earlier drafts of
+this plan called it — corrected 2026-07-28.) Implements Decision 019's
+fold-aware epidemic-threshold label:
 `outbreak = 1 if Number_of_Cases > historical_mean(District, Week) +
 k * historical_SD(District, Week)`, where the historical mean/SD for any row
 uses **only strictly-prior years** for that `(District, Week)` — never the
@@ -350,13 +356,37 @@ real leakage risk caught and fixed during the review (see
 Decision 020 (week-53 unmerged, `is_imputed` masking consistency fix) —
 53 columns, 32 fold-agnostic model features.
 
-## `src/module2_classification/baseline_classifier.py` (Stage 1, not yet implemented)
+## `src/module2_classification/baseline_classifier.py` (Stage 1 — implemented 2026-07-28, Decision 021)
 
 Benchmarks Logistic Regression / Random Forest / XGBoost per walk-forward
-fold; pooled-vs-per-district is validated empirically rather than assumed.
-Uses `class_weight="balanced"`/`scale_pos_weight` for imbalance — explicitly
+fold, pooled across all 25 districts (`District` as a categorical feature).
+Uses a new Module-2-specific `MODULE2_MIN_TRAIN_YEARS = 4` (`src/config.py`)
+instead of `validation.py`'s SARIMA-tuned `DEFAULT_MIN_TRAIN_YEARS = 3` —
+verified empirically that the SARIMA-tuned default leaves fold 1's entire
+training window with zero rows that have a defined label, since the
+label's own 3-strictly-prior-years requirement (Decision 019) exactly
+overlaps that window for every district simultaneously. Yields 13
+walk-forward folds (vs. Module 1's 14) plus the same 2-year final holdout.
+
+Pooled-vs-per-district is validated **empirically**, via a dedicated
+`run_pooled_vs_per_district_comparison()` using XGBoost alone as the
+arbiter (no imputation/encoding confound) — result: pooled median PR-AUC
+0.500 vs. per-district median 0.287 across the 13 folds, confirming the
+pooled choice. Uses `class_weight="balanced"` (Logistic Regression, Random
+Forest) / per-fold `scale_pos_weight` (XGBoost) for imbalance — explicitly
 not SMOTE, since synthetic oversampling before/across a temporal split risks
-fabricating points that blur the fold boundary.
+fabricating points that blur the fold boundary. Logistic Regression/Random
+Forest use an identical `ColumnTransformer` (median-impute + one-hot
+`District`, fit on training rows only per fold) — corrects the original
+premise that "tree-based models handle NaN natively" (only true for
+XGBoost among these three; `RandomForestClassifier` requires imputation).
+**XGBoost selected** as the official model by median validation PR-AUC.
+Outputs: `data/processed/module2/baseline_classifier_predictions.csv`,
+`outputs/metrics/module2/{baseline_classifier_metrics,
+pooled_vs_per_district_comparison, baseline_classifier_feature_importance}.csv`,
+`models/module2/baseline_classifier/`. Full results:
+`module_2_classification/MODULE_CONTEXT.md` "Stage 1 Implementation
+Status", `module_2_classification/EXPERIMENT_LOG.md` M2-001.
 
 ## `src/module2_classification/compensation_model.py` (Stage 2, not yet implemented)
 

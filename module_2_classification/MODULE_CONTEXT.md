@@ -38,6 +38,11 @@ See `research_context/PIPELINE_ARCHITECTURE_PLAN.md` for the full layered pipeli
 - Logistic Regression baseline
 - Gradient Boosting
 
+**RESOLVED (2026-07-28, Decision 021).** All three of Random Forest, XGBoost,
+and Logistic Regression were benchmarked; **XGBoost selected** as the
+official Stage 1 model by median validation PR-AUC. See "Stage 1
+Implementation Status" below.
+
 ---
 
 ## Possible Stage 2 Models
@@ -85,8 +90,11 @@ implementation):
   after review, conceptually similar to Module 1's `residual_lag`; safe to
   compute globally (see spec's leakage-guard architecture note)
 - `District` (categorical, pooled-model support)
-- Baseline classifier probability (Stage 2 input — added once Stage 1 exists)
-- Probability residual lags (Stage 2 input — added once Stage 1 exists)
+- **Now available (2026-07-28, Decision 021)**: baseline classifier
+  probability — `data/processed/module2/baseline_classifier_predictions.csv`'s
+  `predicted_probability` column (official model = XGBoost) — Stage 2's
+  primary input once Stage 2 is built.
+- Probability residual lags (Stage 2 input — still to be added once Stage 2 exists)
 
 **Explicitly excluded from the model feature matrix** (leakage/metadata
 guard found during this review, fixed before any Stage 1 code was written):
@@ -113,14 +121,11 @@ list."
 3. **RESOLVED (2026-07-28, Decision 019).** Which threshold definition is most
    defensible? The epidemic-threshold (mean + k*SD) method over a single fixed
    count — see Decision 019's Reason section.
-4. **Open, informed by an empirical audit before finalizing.** How should
-   class imbalance be handled? Current plan: `class_weight="balanced"` /
-   `scale_pos_weight` at the model level (Logistic Regression / Random Forest /
-   XGBoost), **not SMOTE** — synthetic oversampling before/across a temporal
-   walk-forward split risks fabricating points that blur the fold boundary and
-   distort genuinely rare-event-in-time structure. `scripts/data_audit_module2.py`
-   will quantify the actual imbalance per district across candidate `k` values
-   before this is treated as final.
+4. **RESOLVED (2026-07-28, Decision 021).** How should class imbalance be
+   handled? Implemented and validated: `class_weight="balanced"` (Logistic
+   Regression, Random Forest) / per-fold `scale_pos_weight` (XGBoost) — not
+   SMOTE. See "Stage 1 Implementation Status" below for the full benchmark
+   result.
 5. Should probability calibration be included? Planned for Stage 2
    (`compensation_model.py`) — isotonic/Platt recalibration as a baseline,
    benchmarked against an XGBoost-based probability-error compensation model.
@@ -188,7 +193,9 @@ Full technical detail lives in `research_context/PIPELINE_ARCHITECTURE_PLAN.md`
    reads `data/processed/shared/*.csv`, applies Module 2's own (independently
    decided, per Decision 013) missing-week/`weather_code`/week-53 policies,
    writes `data/processed/module2/weekly_modeling_table.csv`.
-3. **Label definition** (`src/module2_classification/label_definition.py`):
+3. **Label definition** (`src/module2_classification/labels.py` — note: the
+   actual filename is `labels.py`, not `label_definition.py` as earlier
+   drafts of this plan named it):
    fold-aware epidemic-threshold labeling — the historical mean/SD for any
    `(District, Week)` only ever uses strictly-prior years, never the full
    series (Decision 019's leakage guard, distinct from Module 1's
@@ -196,15 +203,74 @@ Full technical detail lives in `research_context/PIPELINE_ARCHITECTURE_PLAN.md`
 4. **Feature engineering** (`src/module2_classification/feature_engineering.py`):
    case lags/rolling trend, seasonal/monsoon indicators, fold-aware climate
    anomalies (reusing Module 1's proven leakage-safe pattern).
-5. **Stage 1** (`src/module2_classification/baseline_classifier.py`):
+5. **COMPLETE (2026-07-28, Decision 021)** — **Stage 1**
+   (`src/module2_classification/baseline_classifier.py`):
    Logistic Regression / Random Forest / XGBoost benchmark, pooled model with
    `District` as a categorical feature (validated empirically, not assumed),
-   class-weighting for imbalance, PR-AUC/F1 as primary metrics.
+   class-weighting for imbalance, PR-AUC as the primary metric. See "Stage 1
+   Implementation Status" below for full results.
 6. **Stage 2** (`src/module2_classification/compensation_model.py`):
    probability/classification-error compensation using climate-anomaly and
-   contextual features.
-7. **Evaluation + orchestration** (`evaluate.py`, `main.py`), mirroring
-   Module 1's idempotent `main.py` pattern.
+   contextual features. Not yet started.
+7. **Evaluation + orchestration** (`evaluate.py`, `main.py`) — **evaluate.py
+   and main.py's Stage 1 wiring are COMPLETE**; `main.py` mirrors Module 1's
+   idempotent `PIPELINE_STAGES` pattern exactly. Stage 2's wiring remains.
+
+---
+
+## Stage 1 Implementation Status (2026-07-28, Decision 021)
+
+Implemented and run end to end: `src/module2_classification/evaluate.py`,
+`src/module2_classification/baseline_classifier.py`,
+`src/module2_classification/main.py`. Full narrative in
+`module_2_classification/EXPERIMENT_LOG.md` entry M2-001; full decision
+record in `research_context/RESEARCH_DECISIONS.md` Decision 021.
+
+**Fold design**: `MODULE2_MIN_TRAIN_YEARS = 4` (new, Module-2-specific;
+Module 1's `DEFAULT_MIN_TRAIN_YEARS = 3` left fold 1 with zero trainable
+rows for every district) → **13 walk-forward folds** (vs. Module 1's 14),
+plus the same `DEFAULT_HOLDOUT_YEARS = 2` final holdout block.
+
+**Pooled vs. per-district (XGBoost arbiter)**: pooled median PR-AUC across
+13 folds = **0.500**, per-district median PR-AUC = **0.287** (mean 0.433) —
+pooled clearly wins, confirming the architecture choice empirically rather
+than by analogy with Module 1 Stage 2. Full table:
+`outputs/metrics/module2/pooled_vs_per_district_comparison.csv`.
+
+**3-model benchmark** (median PR-AUC / ROC-AUC / F1 across 13 validation
+folds, fixed 0.5 cutoff for F1):
+
+| Model | PR-AUC | ROC-AUC | F1 | Brier |
+|---|---|---|---|---|
+| Logistic Regression | 0.437 | 0.799 | 0.397 | 0.141 |
+| Random Forest | 0.462 | 0.815 | 0.454 | 0.133 |
+| **XGBoost (selected)** | **0.500** | 0.816 | 0.437 | 0.117 |
+
+**Held-out final block** (never touched during fold-based selection):
+XGBoost PR-AUC = 0.538, ROC-AUC = 0.898, F1 = 0.491 (prevalence 7.2%,
+lower than the validation folds' 14.4% pooled prevalence — later years
+skew toward fewer high-relative-threshold outbreak weeks in the label's
+own construction).
+
+**Top feature importance** (official XGBoost model, gain): `case_anomaly_lag_1`
+(312.9) ≫ `case_anomaly_lag_2` (155.6) > `rolling_mean_cases_4w` (44.1) >
+`monsoon_indicator_SW` (35.3) > `cos_week` (31.5) > `District` (30.7). The
+dominance of `case_anomaly_lag_1` is expected, not a leakage red flag — it
+is conceptually near-identical to the label one week prior (documented in
+`FEATURE_ENGINEERING_SPEC.md`'s Group M2-5 leakage note).
+
+**Artifacts**: `data/processed/module2/baseline_classifier_predictions.csv`
+(58,500 rows), `outputs/metrics/module2/baseline_classifier_metrics.csv`,
+`outputs/metrics/module2/pooled_vs_per_district_comparison.csv`,
+`outputs/metrics/module2/baseline_classifier_feature_importance.csv`,
+`models/module2/baseline_classifier/{fold_1..13,holdout,
+final_production_model}.json`.
+
+**Not yet addressed** (flagged, not silently skipped): Open Question #5
+(probability calibration) and #8 (single-week vs. consecutive-week outbreak
+trigger) both remain open — Stage 1 was built against the label and
+threshold-free probability output as-is; calibration is explicitly deferred
+to Stage 2.
 
 ## Documentation Rule
 

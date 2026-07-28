@@ -96,3 +96,24 @@ MONSOON_WEEKS_NE = list(range(44, 53)) + list(range(1, 9))  # weeks 44-52, 1-8
 # choice - see Module 2 Open Question #8 (seasonal-peak-vs-anomaly caveat).
 EPIDEMIC_THRESHOLD_K = 2.0
 EPIDEMIC_THRESHOLD_MIN_PRIOR_YEARS = 3
+
+# Module 2 Stage 1 baseline classifier (Decision 021,
+# research_context/RESEARCH_DECISIONS.md). Module-2-specific override of
+# src/module1_forecasting/validation.py's DEFAULT_MIN_TRAIN_YEARS=3, which was
+# tuned for SARIMA's seasonal-cycle needs, not for this label's own
+# 3-strictly-prior-years history requirement (EPIDEMIC_THRESHOLD_MIN_PRIOR_YEARS
+# above). The two 3-year windows overlap exactly, so at the SARIMA-tuned
+# default, fold 1's ENTIRE training window has zero rows with a defined label,
+# for every district simultaneously (a calendar-driven effect that pooling
+# across districts cannot rescue). min_train_years=4 guarantees fold 1's
+# training window contains at least one year of genuinely trainable rows.
+# Verified empirically: 13 walk-forward folds result (vs Module 1's 14).
+MODULE2_MIN_TRAIN_YEARS = 4
+
+# --- Module 2 Stage 1 (baseline classifier; src/module2_classification/baseline_classifier.py) ---
+MODULE2_BASELINE_PREDICTIONS_PATH = MODULE2_PROCESSED_DIR / "baseline_classifier_predictions.csv"
+MODULE2_BASELINE_METRICS_PATH = MODULE2_METRICS_DIR / "baseline_classifier_metrics.csv"
+MODULE2_BASELINE_FEATURE_IMPORTANCE_PATH = MODULE2_METRICS_DIR / "baseline_classifier_feature_importance.csv"
+MODULE2_POOLED_VS_DISTRICT_PATH = MODULE2_METRICS_DIR / "pooled_vs_per_district_comparison.csv"
+MODULE2_BASELINE_MODELS_DIR = MODULE2_MODELS_DIR / "baseline_classifier"
+MODULE2_BASELINE_FINAL_MODEL_PATH = MODULE2_BASELINE_MODELS_DIR / "final_production_model"

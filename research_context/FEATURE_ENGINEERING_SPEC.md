@@ -388,8 +388,12 @@ first implementation pass.
 
 ### Not Yet Included (deferred, tracked as open questions)
 
-- Baseline outbreak probability (Stage 1 model output — added once Stage 1 exists)
-- Probability/classification-error lags (Stage 2 input — added once Stage 1 exists)
+- **Now available (2026-07-28, Decision 021)**: baseline outbreak probability
+  — Stage 1's `predicted_probability` column
+  (`data/processed/module2/baseline_classifier_predictions.csv`, official
+  model = XGBoost), ready to be consumed as a Stage 2 input feature.
+- Probability/classification-error lags (Stage 2 input — still to be added
+  once Stage 2 itself is built)
 - A "weeks currently above threshold" streak/momentum feature — deliberately
   deferred until Module 2 Open Question #8 (single-week vs. consecutive-week
   outbreak trigger) is resolved, to avoid coupling two undecided design
