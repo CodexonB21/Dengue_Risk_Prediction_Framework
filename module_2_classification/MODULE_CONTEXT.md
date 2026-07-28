@@ -126,9 +126,14 @@ list."
    Regression, Random Forest) / per-fold `scale_pos_weight` (XGBoost) — not
    SMOTE. See "Stage 1 Implementation Status" below for the full benchmark
    result.
-5. Should probability calibration be included? Planned for Stage 2
+5. **Elevated from "planned" to a load-bearing prerequisite (2026-07-28,
+   Stage 1 calibration diagnostic).** Should probability calibration be
+   included? Yes, necessarily — Stage 1's official model has a *negative*
+   Brier skill score in 8/14 folds+holdout (worse-than-climatology
+   calibration despite strong PR-AUC discrimination). Planned for Stage 2
    (`compensation_model.py`) — isotonic/Platt recalibration as a baseline,
-   benchmarked against an XGBoost-based probability-error compensation model.
+   benchmarked against an XGBoost-based probability-error compensation
+   model. See "Discrimination-vs-Calibration Diagnostic" below.
 6. **Deferred, not abandoned (2026-07-28, Decision 019).** How will Module 1
    forecasts feed into Module 2? Module 2's Stage 1 is being built
    independently of Module 1 for now (own case-count/climate features only).
@@ -271,6 +276,44 @@ final_production_model}.json`.
 trigger) both remain open — Stage 1 was built against the label and
 threshold-free probability output as-is; calibration is explicitly deferred
 to Stage 2.
+
+### Discrimination-vs-Calibration Diagnostic (2026-07-28)
+
+"Success" for Stage 1 has two independent dimensions — **discrimination**
+(can it rank outbreak-risk weeks correctly?) and **calibration** (are the
+probability *values* themselves trustworthy?) — and they turned out to tell
+different stories. Computed via `scripts/stage1_calibration_diagnostic.py`
+(read-only, derives from the existing metrics CSV; full table:
+`outputs/metrics/module2/baseline_classifier_calibration_diagnostic.csv`),
+for the official XGBoost model:
+
+- **Discrimination — strong.** PR-AUC beats the correct no-skill reference
+  (`prevalence` itself, not 0) in **every one of the 13 validation folds
+  and the holdout**, median uplift **3.65x** (range 1.2x–13.2x). A naive
+  accuracy reading would be misleading, though: accuracy is actually
+  *below* a majority-class ("always predict no outbreak") baseline in
+  **8/13 validation folds** — expected, and exactly why PR-AUC (not
+  accuracy) is the primary metric (Decision 021), but worth flagging
+  explicitly against a casual reading of the metrics CSV.
+- **Calibration — poor, by design, not yet fixed.** Brier skill score
+  (skill relative to always predicting the fold's own base rate) is
+  **negative in 8 of 14 folds+holdout** (median **-0.11**, as low as
+  -0.93). The model's raw predicted probabilities are, in most folds, LESS
+  accurate than a trivial base-rate forecast — despite strong PR-AUC in
+  those same folds. This is a known effect of `scale_pos_weight`-based
+  imbalance correction (improves ranking under a reweighted loss, distorts
+  the output probability scale) and is the concrete evidence that Stage
+  2's planned probability recalibration (Open Question #5) is a load-bearing
+  prerequisite, not optional polish, before `predicted_probability` can be
+  treated as a real risk estimate.
+- **Independent sanity check on the label itself**: the two most
+  extreme-prevalence folds map onto real, verifiable epidemiological
+  events — fold 7 (prevalence 78.9%) covers **2016–2017**, Sri Lanka's
+  worst recorded dengue epidemic year; fold 11 (prevalence 2.5%) covers
+  **2020–2021**, plausibly consistent with COVID-era mobility suppression.
+  Not label-construction noise.
+
+Full narrative: `module_2_classification/EXPERIMENT_LOG.md` M2-001 addendum.
 
 ## Documentation Rule
 
