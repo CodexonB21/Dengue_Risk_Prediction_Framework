@@ -72,7 +72,7 @@ Master table output: `data/processed/module3/master_table.csv`.
   |---|---|---|---|---|
   | Peak (also SW monsoon) | 2017 Wk29 | 0.728 | 0.001 | Yes |
   | Low | 2007 Wk13 | 0.735 | 0.001 | Yes |
-  | NE monsoon | 2021 Wk1 | 0.031 | 0.285 | **No** |
+  | NE monsoon | 2021 Wk1 | 0.031 | 0.279 | **No** |
 
   2017 Wk29 is the documented peak of Sri Lanka's worst recorded dengue
   outbreak (2017, ~186,000 national cases), which is also why it doubles

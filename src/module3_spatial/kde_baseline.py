@@ -46,6 +46,8 @@ from src.config import (  # noqa: E402
     MODULE3_BASELINE_RISK_PATH,
     MODULE3_FEATURES_DIR,
     MODULE3_MASTER_TABLE_PATH,
+    MODULE3_METRICS_DIR,
+    MODULE3_MORANS_I_METRICS_PATH,
     MONSOON_WEEKS_NE,
     MONSOON_WEEKS_SW,
 )
@@ -67,6 +69,15 @@ GADM_NAME_FIXES = {"Moneragala": "Monaragala"}
 
 MORAN_PERMUTATIONS = 999
 MORAN_SIGNIFICANCE_LEVEL = 0.05
+# esda.Moran's permutation test draws from numpy's global RNG and has no
+# seed parameter of its own (verified: Moran.__init__ signature has no
+# `seed`/`random_state` argument) - without seeding that RNG here, `p_sim`
+# drifts slightly between runs (observed: NE-monsoon check moved from
+# p_sim=0.2850 to 0.2860 across two unseeded runs on identical data). The I
+# statistic itself is a closed-form calculation and is NOT affected by this -
+# only p_sim is. Seeding makes the whole script's output byte-for-byte
+# reproducible, which the persisted metrics CSV below depends on.
+MORAN_RANDOM_SEED = 13
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +280,12 @@ def compute_moransI_for_week(w: Queen, kde_baseline: pd.DataFrame, year: int, we
 
 def run_kde_baseline() -> pd.DataFrame:
     MODULE3_FEATURES_DIR.mkdir(parents=True, exist_ok=True)
+    MODULE3_METRICS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Seeded once, up front, so both the aggregated and every per-week Moran's
+    # I permutation test below are byte-for-byte reproducible across runs
+    # (see MORAN_RANDOM_SEED's comment for the drift this fixes).
+    np.random.seed(MORAN_RANDOM_SEED)
 
     master = load_master_table()
     boundaries = load_district_boundaries()
@@ -294,8 +311,20 @@ def run_kde_baseline() -> pd.DataFrame:
         f"{'YES' if significant else 'NO'}"
     )
 
+    metrics_rows = [
+        {
+            "check": "aggregated",
+            "Year": None,
+            "Week": None,
+            "I": moran.I,
+            "p_sim": moran.p_sim,
+            "significant": significant,
+        }
+    ]
+
     # Secondary, non-aggregated stability check (see select_representative_weeks
-    # docstring) - logged separately from the primary aggregated result above.
+    # docstring) - logged separately from the primary aggregated result above,
+    # and captured in the same metrics CSV so it's reproducible on disk too.
     representative_weeks = select_representative_weeks(kde_baseline)
     for label, (year, week) in representative_weeks.items():
         week_moran = compute_moransI_for_week(w, kde_baseline, year, week)
@@ -305,10 +334,24 @@ def run_kde_baseline() -> pd.DataFrame:
             "significant=%s",
             label, year, week, week_moran.I, week_moran.p_sim, week_significant,
         )
+        metrics_rows.append(
+            {
+                "check": label,
+                "Year": year,
+                "Week": week,
+                "I": week_moran.I,
+                "p_sim": week_moran.p_sim,
+                "significant": week_significant,
+            }
+        )
+
+    pd.DataFrame(metrics_rows).to_csv(MODULE3_MORANS_I_METRICS_PATH, index=False)
 
     logger.info(
-        "KDE baseline complete: %d rows written to %s. Moran's I=%.4f, p_sim=%.4f.",
+        "KDE baseline complete: %d rows written to %s. Moran's I=%.4f, p_sim=%.4f. "
+        "Full Moran's I validation (aggregated + representative weeks) written to %s.",
         len(kde_baseline), MODULE3_BASELINE_RISK_PATH, moran.I, moran.p_sim,
+        MODULE3_MORANS_I_METRICS_PATH,
     )
     return kde_baseline
 

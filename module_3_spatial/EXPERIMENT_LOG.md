@@ -101,7 +101,7 @@ zero-variance weeks (Moran's I is undefined for a constant vector).
   |---|---|---|---|---|
   | Peak / SW monsoon | 2017 Wk29 | 0.728 | 0.001 | Yes |
   | Low | 2007 Wk13 | 0.735 | 0.001 | Yes |
-  | NE monsoon | 2021 Wk1 | 0.031 | 0.285 | **No** |
+  | NE monsoon | 2021 Wk1 | 0.031 | 0.279 | **No** |
 
   (The peak week and SW-monsoon representative week coincide: 2017 Wk29
   falls within `MONSOON_WEEKS_SW` and is also the single highest-case week
@@ -144,3 +144,41 @@ ask. **Proceed** to Stage 2 (Random Forest residual compensation,
 - `requirements.txt` (added `libpysal`, `esda`).
 - Added `src/preprocessing/module3_preprocessing.py` and
   `src/module3_spatial/kde_baseline.py` (both previously placeholders).
+
+### Addendum (2026-07-28): Self-Verification Before Stage 2
+
+A full pre-Stage-2 self-check confirmed `master_table.csv` (25,348 rows,
+125 dropped for climate coverage → 25,223) and `baseline_risk.csv` (25,223
+rows, all 25 districts, zero NaN, zero negative `KDE_baseline`) both match
+their documented figures exactly, and that the `9d21fe5` commit was
+present in git log and already on `origin/module-03-stage-01`.
+
+It also caught a real gap: **Moran's I was only ever printed/logged to the
+console, never persisted to disk** - re-running the script with no seed
+confirmed `p_sim` genuinely drifts run-to-run (`esda.Moran` draws its
+permutation test from numpy's global RNG and has no `seed` parameter of
+its own; the `I` statistic itself is closed-form and unaffected). Two
+unseeded reruns produced `NE monsoon` p_sim = 0.2850, then 0.2860.
+
+Fixed by adding `MORAN_RANDOM_SEED = 13` (seeded once, up front, in
+`run_kde_baseline()`) and writing every Moran's I result (aggregated +
+all 4 representative weeks) to a new persisted metrics file,
+`outputs/metrics/module3/morans_i_validation.csv` (`MODULE3_MORANS_I_METRICS_PATH`
+in `config.py`) - matching Module 1/2's convention of a real metrics CSV
+rather than console-only output. Verified byte-for-byte reproducible: two
+consecutive seeded runs produced an identical CSV (`diff` clean).
+
+With the seed fixed, `NE monsoon`'s authoritative, reproducible p_sim is
+**0.279** (corrected from the originally-documented, unseeded 0.285/0.286
+above and in `MODULE_CONTEXT.md`) - the significance conclusion (not
+significant) is unchanged; only the exact p-value moved, as expected for
+a permutation test.
+
+#### Documentation Updated (addendum)
+- `module_3_spatial/EXPERIMENT_LOG.md` (this addendum; corrected NE
+  monsoon p_sim in the Results table above).
+- `module_3_spatial/MODULE_CONTEXT.md` (corrected NE monsoon p_sim).
+- `src/config.py` (added `MODULE3_METRICS_DIR`, `MODULE3_MORANS_I_METRICS_PATH`).
+- `src/module3_spatial/kde_baseline.py` (seeded RNG, writes
+  `morans_i_validation.csv`).
+- Added `outputs/metrics/module3/morans_i_validation.csv`.
