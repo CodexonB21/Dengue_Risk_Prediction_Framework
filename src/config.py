@@ -144,3 +144,7 @@ MODULE2_FIGURES_DIR = OUTPUTS_DIR / "figures" / "module2"
 MODULE2_RISK_TIER_PREDICTIONS_PATH = MODULE2_PROCESSED_DIR / "stage2_risk_tier_predictions.csv"
 MODULE2_RISK_THRESHOLD_SCAN_PATH = MODULE2_METRICS_DIR / "risk_threshold_scan.csv"
 MODULE2_RISK_THRESHOLD_HOLDOUT_COMPARISON_PATH = MODULE2_METRICS_DIR / "risk_threshold_holdout_comparison.csv"
+
+# --- Module 2 live/production scoring (genuinely new incoming weeks, for
+# dashboard consumption; src/module2_classification/live_scoring.py) ---
+MODULE2_LIVE_RISK_PREDICTIONS_PATH = MODULE2_PROCESSED_DIR / "live_risk_predictions.csv"

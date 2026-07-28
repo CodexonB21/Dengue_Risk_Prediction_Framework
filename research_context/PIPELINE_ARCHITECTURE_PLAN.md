@@ -58,6 +58,19 @@ sample mean/SD (kept in the codebase, marked superseded, for audit/
 comparison). `k` was re-audited `2.0` → `3.0` for the new estimator. The
 threshold FORMULA and leakage guard are unchanged. `feature_engineering.py`
 was updated to match (Group M2-5 reuses the same estimator as the label).
+
+**Implementation status (2026-07-28, new):** a new standalone script,
+`src/module2_classification/live_scoring.py`, was added on top of the
+training/evaluation pipeline above (not wired into `main.py`'s
+`PIPELINE_STAGES`, same precedent as Module 1's `forecast_future.py`). It
+recomputes Stage 1 features fresh from the current
+`weekly_modeling_table.csv` and scores the most recent N weeks per district
+through the frozen Stage 1/2 final-production models + persisted risk
+thresholds, for dashboard consumption without a full pipeline rerun. Surfaced
+a new finding while building it: Module 2 shares Module 1's Open Question
+#16 climate-currency gap (see `module_2_classification/MODULE_CONTEXT.md`
+Open Question #10) — the shared climate pipeline is 4 weeks behind case-count
+data as of this writing.
 Pooled outbreak prevalence dropped 18.4% → 8.6%; undefined-label rate
 improved 16.0% → 10.7%. **Important correction found during this work**:
 the motivating example (Colombo 2025 Wk15) was already correctly labeled
@@ -535,6 +548,41 @@ the label itself changed. Outputs:
 all architectures/splits, for audit),
 `outputs/metrics/module2/{risk_threshold_scan,
 risk_threshold_holdout_comparison}.csv`.
+
+## `src/module2_classification/live_scoring.py` (new, standalone — not a `main.py` stage)
+
+Answers a question none of the stages above do: "what does the fully-trained
+pipeline predict for the MOST RECENT weeks right now" — as opposed to
+walk-forward validation/holdout, which only ever score against data already
+in the dataset, held back from training/selection. Mirrors Module 1's
+`forecast_future.py` in spirit but needs none of its recursive multi-step
+machinery: every Stage 1 feature here is a lag of a prior week or that week's
+own already-reported climate, never that week's own case count, so as long as
+`weekly_modeling_table.csv` covers the target week, every feature is a real
+observation.
+
+Recomputes `feature_engineering.build_module2_feature_table()` fresh (not the
+persisted `stage1_feature_table.csv`), attaches climate anomalies over the
+FULL available history (`baseline_classifier.attach_fold_anomalies` with an
+all-True mask — same construction `train_final_production_model` uses), takes
+the most recent `n_recent_weeks` per district (default 8), and scores them
+through the frozen Stage 1 + Stage 2 `final_production_model.*` files.
+Stage 1 model type and Stage 2 architecture are read dynamically from
+`baseline_classifier_metrics.csv`/`stage2_compensation_metrics.csv`'s
+`selected` column (never hardcoded — survives future model-selection flips
+like Decision 025's). Risk thresholds are re-derived from the persisted
+`risk_threshold_scan.csv` via `risk_thresholds.select_thresholds` rather than
+duplicated. Output: `data/processed/module2/live_risk_predictions.csv`
+(adds `already_scored_in_pipeline`, flagging whether each row was already
+part of an honest out-of-sample walk-forward fold/holdout, vs. genuinely new
+since the last full pipeline run — the former must never be cited as
+additional validation evidence, since the final-production models were
+trained on it).
+
+Surfaced a new finding while building/testing it: Module 2 shares Module 1's
+Open Question #16 climate-currency gap (same upstream shared climate
+pipeline) — see `module_2_classification/MODULE_CONTEXT.md` Open Question
+#10.
 
 ## Independent of Module 1 (Decision 019)
 

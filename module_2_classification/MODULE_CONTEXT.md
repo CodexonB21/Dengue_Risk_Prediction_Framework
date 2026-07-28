@@ -239,6 +239,22 @@ list."
    see Data Pipeline Note above), `is_imputed` masking was made consistent
    across all case-derived features (a real bug fix, not just a design
    choice), and `weather_code` exclusion was reconfirmed unchanged.
+10. **New (2026-07-28, discovered while building `live_scoring.py`).** Module
+    2 has its own instance of Module 1's Open Question #16 climate-currency
+    gap — they share the same upstream climate pipeline. `weekly_modeling_table
+    .csv`'s case counts extend through 2026 Wk25 but every climate column stops
+    4 weeks earlier, at 2026 Wk21, for all 25 districts. Consequence:
+    `current_rainfall/temperature/humidity`, the near-term climate lags
+    (`rainfall/temperature/humidity_lag_1/2/3`), and `rainfall/temperature/
+    humidity_anomaly` are genuinely `NaN` for the most recent ~4 weeks —
+    verified via `live_scoring.py`'s `feature_completeness_pct`, which drops
+    from 100% to 60% over exactly that window. The official Random Forest
+    model copes numerically (median imputation, per its
+    `build_sklearn_preprocessor`), so live-scoring output is not blocked, but
+    the most recent ~4 weeks' risk read is measurably less climate-informed
+    than older weeks. **Action needed** (shared with Module 1's Open Question
+    #16, not a separate fix): re-run the shared climate preprocessing
+    pipeline (Open-Meteo fetch) to close this gap.
 
 ---
 
@@ -362,10 +378,13 @@ label.
 `outputs/metrics/module2/pooled_vs_per_district_comparison.csv`,
 `outputs/metrics/module2/baseline_classifier_feature_importance.csv`,
 `models/module2/baseline_classifier/{fold_1..13,holdout,
-final_production_model}.json`. Tuning-specific artifacts (historical, not
-rerun this round): `scripts/tune_stage1_xgboost.py`,
-`outputs/metrics/module2/{xgboost_tuning_trials,
-xgboost_tuning_holdout_comparison}.csv`.
+final_production_model}.joblib` (Random Forest, per Decision 025 - the `.json`
+files of the same names still on disk are stale leftovers from the
+pre-Decision-025 XGBoost-official run and are ignored by anything reading
+`baseline_classifier_metrics.csv`'s `selected` column, e.g. `live_scoring.py`).
+Tuning-specific artifacts (historical, not rerun this round):
+`scripts/tune_stage1_xgboost.py`, `outputs/metrics/module2/
+{xgboost_tuning_trials,xgboost_tuning_holdout_comparison}.csv`.
 
 **Resolved since original write-up**: Open Question #5 (probability
 calibration — Stage 2), #5b (hyperparameter tuning — Decision 023), and #8
@@ -493,6 +512,66 @@ values below, which measured a different, since-superseded label):
 0.170, high-confidence boundary 0.570; holdout recall improved 39.9% → 68.6% (F2 0.437 →
 0.574) switching from naive 0.5; tier separation 3.2%/27.3%/83.2% (validation) and
 2.6%/22.0%/76.7% (holdout). See `EXPERIMENT_LOG.md` M2-004 for the full original write-up.
+
+## Live/Production Risk Scoring (2026-07-28, new)
+
+`src/module2_classification/live_scoring.py` (new) closes the gap between the
+evaluation pipeline above (which only ever scores against data already inside
+the dataset - walk-forward folds, the holdout block) and actual dashboard use:
+"what risk tier does the fully-trained pipeline assign to the MOST RECENT
+weeks right now." Standalone, NOT wired into `main.py`'s idempotent
+`PIPELINE_STAGES` - same precedent as Module 1's `forecast_future.py`.
+
+### Why no SARIMA-style recursive extrapolation is needed here
+
+Every Stage 1 feature is either a lag of a PRIOR week's case count/climate or
+that week's OWN already-reported climate - never that week's own case count
+(Decision 019's leakage guard). As long as `weekly_modeling_table.csv` already
+has real data through the target week, every feature is a real observation,
+never a recursively-fed prior prediction - no horizon-decay story the way
+Module 1's forward forecast has one.
+
+### Method
+1. Recompute Stage 1's feature table fresh from the CURRENT
+   `weekly_modeling_table.csv` (not the possibly-stale persisted feature CSV).
+2. Attach climate anomalies using the FULL available history as the training
+   window - the same maximal-data construction
+   `baseline_classifier.train_final_production_model` already uses.
+3. Score the most recent `n_recent_weeks` (default 8) per district through
+   the FROZEN Stage 1 + Stage 2 final-production models - model/architecture
+   type read dynamically from `baseline_classifier_metrics.csv`/
+   `stage2_compensation_metrics.csv`'s `selected` column, never hardcoded.
+4. Apply the same alert/high-confidence thresholds `risk_thresholds.py`
+   already selected, re-derived from the persisted `risk_threshold_scan.csv`.
+
+### Honest limitations (flagged, not hidden)
+- The final-production models are trained on ALL available data (including
+  whatever portion of the scored weeks already fell inside the holdout/
+  walk-forward folds) - correct for a live checkpoint, but means this
+  script's numbers must NEVER be quoted as additional validation/holdout
+  evidence; `EXPERIMENT_LOG.md`/`RESEARCH_DECISIONS.md`'s existing figures
+  remain the only honest skill estimates. Each row is flagged
+  `already_scored_in_pipeline`.
+- **Discovered while building this script**: Module 2 shares Module 1's Open
+  Question #16 climate-currency gap - see Open Question #10 above.
+- Live scoring for the `stacked_xgboost` Stage 2 architecture is not
+  implemented (raises `NotImplementedError`) - isotonic/Platt are the only
+  architectures that have ever won Stage 2 selection, so this was not built
+  speculatively.
+
+### First real-world spot check (2026-07-28, current data through 2026 Wk25)
+Scoring the last 8 weeks x 25 districts (200 rows, 0 genuinely new since the
+last full pipeline run - 2026 Wk25 already sits inside the holdout block)
+correctly flags **9 districts `high` and 6 `medium` at Wk25**, including
+`Colombo` (calibrated 0.500) and `Gampaha` (calibrated 0.567) - the two
+districts already independently confirmed as a real, ongoing 2026 outbreak in
+`module_1_forecasting/MODULE_CONTEXT.md` Open Question #16 - plus `Galle`,
+`Hambantota`, `Kurunegala`, `Matara`, `Monaragala`, `Nuwara Eliya`, and
+`Ratnapura`. Not a substitute for the honest holdout PR-AUC/recall figures
+above (see limitations), but a reassuring qualitative sanity check that the
+live-scoring path reproduces a real, known outbreak signal.
+
+**Output**: `data/processed/module2/live_risk_predictions.csv`.
 
 ## Documentation Rule
 

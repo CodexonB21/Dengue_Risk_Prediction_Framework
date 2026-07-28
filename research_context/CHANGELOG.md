@@ -29,6 +29,59 @@ Accepted / Rejected / Experimental / Superseded
 
 ---
 
+## 2026-07-28 - Module 2 Live/Production Risk Scoring Added; New Climate-Currency-Gap Finding
+
+### Module
+Module 2
+
+### Change
+Added `src/module2_classification/live_scoring.py` (new, standalone - not
+wired into `main.py`'s idempotent `PIPELINE_STAGES`, same precedent as Module
+1's `forecast_future.py`). Recomputes Stage 1's feature table fresh from the
+current `weekly_modeling_table.csv`, attaches full-history climate anomalies,
+scores the most recent N weeks per district (default 8) through the frozen
+Stage 1 + Stage 2 final-production models (model/architecture type read
+dynamically from each stage's metrics CSV `selected` column, never
+hardcoded), and applies the persisted alert/high-confidence risk thresholds.
+Outputs `data/processed/module2/live_risk_predictions.csv`.
+
+While building/testing this script, discovered that Module 2 shares Module
+1's Open Question #16 climate-currency gap: `weekly_modeling_table.csv`'s
+case counts extend through 2026 Wk25 but every climate column stops 4 weeks
+earlier (2026 Wk21) for all 25 districts, since both modules consume the same
+shared climate pipeline. `feature_completeness_pct` drops from 100% to 60%
+over the most recent 4 scored weeks as a result.
+
+### Reason
+Module 2's training/evaluation pipeline (Stage 1 -> Stage 2 -> risk
+thresholds) only ever scores against data already inside the dataset
+(walk-forward folds, the 2-year holdout). There was no way to produce a risk
+classification for the dashboard's actual use case - "what does the model say
+about the most recent real weeks, right now" - without manually rerunning the
+entire walk-forward benchmark. Unlike Module 1, no SARIMA-style recursive
+multi-step extrapolation is needed: every Stage 1 feature is a lag of a prior
+week or that week's own already-reported climate, never that week's own case
+count, so as long as the raw data already covers the target week, every
+feature is a real observation.
+
+### Impact
+New: `src/module2_classification/live_scoring.py`,
+`data/processed/module2/live_risk_predictions.csv`. Config: added
+`MODULE2_LIVE_RISK_PREDICTIONS_PATH` to `src/config.py`. Documentation:
+`module_2_classification/MODULE_CONTEXT.md` new "Live/Production Risk
+Scoring" section and new Open Question #10 (climate-currency gap). No
+production training/evaluation code changed.
+
+### Status
+Accepted. First real-world spot check (current data through 2026 Wk25)
+correctly flags 9 districts `high` and 6 `medium`, including `Colombo` and
+`Gampaha` - the same two districts already independently confirmed as a real,
+ongoing 2026 outbreak in `module_1_forecasting/MODULE_CONTEXT.md`. The
+climate-currency-gap finding remains open (shared fix with Module 1's Open
+Question #16: rerun the shared climate preprocessing/Open-Meteo fetch).
+
+---
+
 ## 2026-07-28 - Module 2 SMOTENC Oversampling Audited and Rejected; Decision 021 Reconfirmed (Decision 026, M2-006)
 
 ### Module
