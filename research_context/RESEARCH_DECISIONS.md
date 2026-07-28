@@ -364,6 +364,45 @@ While investigating a real-world question (whether Module 1 should be able to fo
 
 ---
 
+## Decision 019: Module 2 Outbreak Label — Fold-Aware Epidemic-Threshold Method, Built Independently of Module 1
+
+**Module:** Module 2
+**Status:** Accepted (kickoff decision; `k` explicitly flagged as tunable pending the empirical class-balance audit)
+**Date:** 2026-07-28
+
+### Decision
+Module 2's Stage 1 classification target is defined as a binary **epidemic threshold** label, not the previously-unresolved fixed count in `src/config.py`'s `OUTBREAK_THRESHOLD` placeholder (which this decision retires):
+
+```text
+outbreak(District, Year, Week) = 1 if Number_of_Cases > historical_mean + k * historical_SD
+                                = 0 otherwise
+```
+
+where `historical_mean`/`historical_SD` are computed **per `(District, Week)`**, using only that district-week's case counts from **strictly earlier years** (an expanding window, never the full series) — this is a WHO/CDC-style statistical epidemic threshold, not an arbitrary global cutoff.
+
+`k = 2` is adopted as a literature-standard starting point (a common epidemic-threshold multiplier), but is explicitly **not final** — it is pending confirmation against `scripts/data_audit_module2.py`'s empirical class-balance audit across candidate values (e.g. 1.5, 2, 2.5) before being locked in for Stage 1 training. A minimum history depth of 3 strictly-prior years is required before a `(District, Week)` can receive a defined label (mirroring `validation.py`'s `DEFAULT_MIN_TRAIN_YEARS`); rows without enough prior history have an undefined label and must be excluded from training/scoring, not defaulted to 0.
+
+**`k` finalized as `k = 2` (2026-07-28, audit run against `data/processed/shared/epidemiological_weekly.csv`, 25,348 rows).** No district was degenerate (outside a [2%, 40%] outbreak-rate sanity band) at `k ∈ {1.5, 2.0, 2.5}`. At `k=2`: 84.3% of rows receive a defined label (15.7% undefined for insufficient — under-3-years — history, concentrated in each district's earliest years); pooled outbreak rate among defined labels is 18.4%, ranging from `Anuradhapura` (12.6%) to `Galle` (25.2%) per district. `k=2` is chosen over `1.5` (pooled 22.7%, more weeks flagged) and `2.5` (pooled 15.5%, tighter but not meaningfully different in shape) as a reasonable middle default; the choice among these three is not highly sensitive per the per-district ordering being nearly identical at all three `k` values. Full per-district, per-`k` numbers: `outputs/metrics/module2/label_balance_audit.csv`.
+
+**Methodological caveat, flagged rather than silently accepted:** an 18-25%-of-weeks "outbreak" rate is considerably higher than what WHO/CDC-style epidemic alerting typically intends (often single-digit % of weeks) — this single-week `mean + k*SD` threshold is likely flagging much of each district's normal seasonal peak (monsoon-driven case increases), not only genuinely anomalous spikes above that seasonal pattern. This is an accepted starting point for Module 2's kickoff, not a validated final label definition — see Module 2 Open Question #8 (new) for the follow-up needed (e.g. requiring the threshold to be exceeded for >=2 consecutive weeks before labeling an "outbreak", matching how WHO epidemic alerts are typically operationalized, or detrending/deseasonalizing before computing the anomaly).
+
+Separately: Module 2's Stage 1 will be built **independently of Module 1** for now — it does not consume Module 1's SARIMA/XGBoost forecast output as an input feature. This is a deliberate sequencing choice, not a rejection of the idea (see Module 2 Open Question #6).
+
+### Reason
+An arbitrary fixed count threshold (the retired placeholder) is not defensible across 25 districts with wildly different baseline incidence (per `DATA_DICTIONARY.md`'s zero-inflation findings, e.g. `Colombo` at 0.5% zero-weeks vs `Mullaitivu` at 52.8%) — the same count means "business as usual" in one district and "extreme outlier" in another. A per-district-week statistical threshold is naturally district-specific (resolves Module 2 Open Question #2) and has a defensible epidemiological basis (resolves Open Question #3), unlike a single global cutoff.
+
+Building Module 2 independently of Module 1 first avoids compounding two sets of unresolved design choices (Module 2's own label/feature/model decisions, plus however well or poorly Module 1's forecast transfers as a classification feature) into one experiment, and keeps Module 2 usable/evaluable even if Module 1's forecast integration is revisited later.
+
+### Implication — leakage risk distinct from anything Module 1 solved
+Module 1's climate-anomaly leakage guard (Decision 003) only had to protect a *feature*. Here, the **label itself** would leak future information if `historical_mean`/`historical_SD` were computed once over each district's entire series — every fold would then "know" about outbreak years that haven't happened yet relative to that fold's training cutoff. `src/module2_classification/label_definition.py` must therefore compute the threshold per walk-forward fold (or at minimum, per row, using only that row's strictly-prior years), the same structurally-hard-to-misuse design principle as `validation.py`'s `fit_window()`. This is a new construct, not a reuse of Module 1's fold-aware anomaly code (which protects a feature, not the target itself).
+
+Because Module 2 is built independently of Module 1 (this decision's second half), its own missing-week, `weather_code`, and week-53 policies must also be decided independently per Decision 013 — tracked in `src/preprocessing/module2_preprocessing.py`'s implementation, not inherited by default.
+
+### Documentation Updated
+`module_2_classification/MODULE_CONTEXT.md` (Open Questions #1-3 resolved, #6 annotated deferred, new open question for `k` calibration), `research_context/FEATURE_ENGINEERING_SPEC.md` (Module 2 label formula made concrete), `research_context/PIPELINE_ARCHITECTURE_PLAN.md` (Module 2 Layer section expanded from placeholder), `research_context/CHANGELOG.md`.
+
+---
+
 ## Decision 018: Forward Production Forecasting Uses Recursive Multi-Step Feature Substitution, Kept Separate From the Validated Pipeline
 
 **Module:** Module 1
@@ -381,3 +420,65 @@ Directly prompted by the user asking whether Module 1's testing is "done" and wh
 - `feature_completeness_pct` declines from 56.2% (horizon step 1) to 43.8% (steps 5-8) across all districts — an honest, quantified confidence signal rather than an implicit one.
 - For the two real-outbreak districts: `Colombo`'s forecast rises from its pre-spike ~300-500/week baseline to a ~460-470/week plateau; `Gampaha`'s rises from ~200-500/week to a ~1,360-1,370/week plateau — both substantially elevated relative to baseline but not simply repeating the single week-25 spike value, consistent with (not proof of) the model correctly discounting what may be a partly reporting-lag-driven outlier (Open Question #16).
 - Does **not** close Open Question #16's climate-data-currency gap, and does **not** substitute for the still-not-built rolling 1-week-ahead re-evaluation — both remain open, higher-rigor follow-ups. This script's numbers must never be cited alongside holdout MASE/DM-test results as if equivalently validated.
+
+---
+
+## Decision 020: Module 2 Preprocessing Review — Week 53 Kept Unmerged; is_imputed Masking Made Consistent Across All Case-Derived Features
+
+**Module:** Module 2
+**Status:** Accepted (implemented, 2026-07-28)
+**Date:** 2026-07-28
+
+### Decision
+A dedicated review of `src/preprocessing/module2_preprocessing.py`'s three Decision-013-independent choices (week 53, missing-week imputation, `weather_code`), requested before proceeding to Stage 1 modeling, produced two changes and one confirmation:
+
+1. **Week 53 is no longer merged into week 52.** Reverses the kickoff-default implementation (Decision 019's mention of a "week-53 policy... tracked in module2_preprocessing.py"). Week 53 (2009, 2016, 2019, 2021) now passes through as its own `(District, Year, Week=53)` row.
+2. **`is_imputed` rows are now masked to `NaN` before deriving `cases_lag_1-4`, `rolling_mean_cases_4w`, `rolling_std_cases_4w`, `rate_of_change`, and `momentum_vs_rolling_mean`** (`src/module2_classification/feature_engineering.py`), not just `case_anomaly_lag_1/2` as originally implemented.
+3. **`weather_code` exclusion is reconfirmed** as-is (same reasoning as Module 1's Decision 008) — no change.
+
+### Reason
+1. **Week 53 merge risked contaminating the label itself, not just a feature.** Summing two real weeks' case counts into one "week 52" bucket (a) could spuriously push that bucket's case count over the epidemic threshold purely from merge arithmetic, and (b) contaminates `historical_mean`/`historical_SD` for week 52 **across every year**, not just the four merged ones, since `label_definition.py`'s expanding-window statistic is computed cross-year per `(District, Week)`. Module 1 never had this exposure because SARIMA only depends on total magnitude, not a per-week threshold-crossing semantic. Kept unmerged, week 53 will almost always have an undefined label (only 4 total occurrences, short of the 3-strictly-prior-years rule) — an honest "insufficient history" outcome, not a code defect. `sin_week`/`cos_week` require no special-casing (`sin(2*pi*53/52) = sin(2*pi*1/52)` by periodicity, i.e. week 53 naturally lands adjacent to week 1's value, matching its real calendar position); a Module-2-local `MODULE2_MONSOON_WEEKS_NE` (`= MONSOON_WEEKS_NE + [53]`) was added since week 53 falls in late December (NE monsoon) and the shared `MONSOON_WEEKS_NE` constant assumes Module 1's already-merged 52-week structure.
+   - Note that a gap-free weekly series is still required for `.shift()`-based lag features to stay correctly aligned (this part of the original imputation rationale does generalize to Module 2, just via a different mechanism than SARIMA's).
+2. **The `is_imputed` masking gap was a genuine inconsistency, found during this review.** `case_anomaly_lag_1/2` and the label already excluded fabricated seasonal-naive case counts from contributing to any statistic computed from them — but the plain case-trend features (`cases_lag_*`, rolling stats) did not, meaning a fabricated value could silently flow into a neighboring real week's feature. Fixed for consistency; verified post-fix that `cases_lag_1` for the week immediately following an imputed week is now `NaN` rather than the fabricated value (previously it silently absorbed it).
+3. `weather_code`'s redundancy with the continuous climate variables (Module 1's original reasoning) applies equally to a classification target; no Module-2-specific reason to reconsider was found.
+
+### Implication
+- `data/processed/module2/weekly_modeling_table.csv` regenerated: 25,450 rows (up from a merged-week-53 count), 102 rows flagged `is_imputed` (was ~100), week counts are 52/year except 53 for `{2009, 2016, 2019, 2021}` (`validate_weekly_modeling_table` updated accordingly).
+- `data/features/module2/stage1_feature_table.csv` regenerated with the masking fix; downstream Stage 1/2 code must be trained/evaluated against this regenerated table.
+- The `k=2` label-balance audit (Decision 019) required **no rerun**: `scripts/data_audit_module2.py` already read the unmerged shared table directly and grouped by `(District, Week)`, so it was never exposed to the now-reversed week-53 merge in the first place.
+- `research_context/PIPELINE_ARCHITECTURE_PLAN.md`'s Module 2 Layer section, `module_2_classification/MODULE_CONTEXT.md`, and `research_context/FEATURE_ENGINEERING_SPEC.md` updated to describe the current (not the original kickoff-default) preprocessing behavior.
+
+### Documentation Updated
+`src/preprocessing/module2_preprocessing.py` and `src/module2_classification/feature_engineering.py` docstrings, `research_context/PIPELINE_ARCHITECTURE_PLAN.md`, `module_2_classification/MODULE_CONTEXT.md`, `research_context/CHANGELOG.md`.
+
+---
+
+## Decision 021: Module 2 Stage 1 Baseline Classifier — MIN_TRAIN_YEARS=4 Fix, Pooled Architecture Confirmed Empirically, XGBoost Selected
+
+**Module:** Module 2
+**Status:** Accepted (implemented and validated, 2026-07-28)
+**Date:** 2026-07-28
+
+### Decision
+Implemented `src/module2_classification/baseline_classifier.py` (Stage 1), with four decisions made and confirmed before/during implementation:
+
+1. **New `MODULE2_MIN_TRAIN_YEARS = 4`** (`src/config.py`), a Module-2-specific override of `src/module1_forecasting/validation.py`'s SARIMA-tuned `DEFAULT_MIN_TRAIN_YEARS = 3`. Verified empirically (against the real feature table, for every district) that at the SARIMA-tuned default, walk-forward fold 1's ENTIRE training window has **zero** rows with a defined label — Decision 019's label requires 3 strictly-prior years of history, which overlaps exactly with the 3-year minimum training window itself, for every district simultaneously (a calendar-driven effect, not a per-district data-thinness issue that pooling could rescue, unlike Module 1 Stage 2's analogous but differently-caused fold-1 thinness). Using `min_train_years=4` yields **13 walk-forward folds** (down from Module 1's 14), each with genuinely trainable rows (fold 1: 1,275 pooled trainable rows across 25 districts).
+2. **Pooled model (District as a categorical feature) confirmed empirically, not assumed** — validated via a dedicated `run_pooled_vs_per_district_comparison()` using XGBoost alone as the arbiter (no imputation/encoding confound). Result: pooled median PR-AUC across 13 folds = **0.500**, vs. per-district median PR-AUC = **0.287** (mean 0.433) — pooled clearly and consistently outperforms per-district, most starkly in early folds where per-district training data is thinnest (e.g. fold 1: pooled 0.272 vs. per-district median 0.165). Full per-fold comparison: `outputs/metrics/module2/pooled_vs_per_district_comparison.csv`.
+3. **Correction to the original NaN-handling premise**: `sklearn.ensemble.RandomForestClassifier` does **not** accept NaN natively (unlike XGBoost) — only XGBoost among the three benchmarked models has true native missing-value handling. Random Forest and Logistic Regression both use an identical `ColumnTransformer` (median-impute numeric features, one-hot encode `District` against the fixed `DISTRICTS` list; Logistic Regression additionally standard-scales), fit on each fold's training rows only.
+4. **Model selection**: Logistic Regression, Random Forest, and XGBoost were benchmarked across all 13 folds with `class_weight="balanced"` (LR/RF) / per-fold `scale_pos_weight` (XGBoost) for imbalance (not SMOTE). **XGBoost selected as the official Stage 1 model** by median validation PR-AUC (0.500, vs. Random Forest 0.462 and Logistic Regression 0.437) — used consistently across all folds (not a per-fold winner). Held-out final block (last 2 years, never touched during fold-based selection): XGBoost PR-AUC 0.538, roughly consistent with the validation-aggregate figure. Top feature by gain: `case_anomaly_lag_1` (as expected — conceptually near-identical to the label one week prior, per `FEATURE_ENGINEERING_SPEC.md`'s Group M2-5 leakage note), followed by `case_anomaly_lag_2` and `rolling_mean_cases_4w`.
+
+### Reason
+1. A structural fold-1 problem was caught by direct empirical verification (not assumed to work by analogy with Module 1) before committing to a fold design — training a classifier on a window with zero informative labels would have silently produced meaningless fold-1 output.
+2. Per-district models are much thinner during exactly the early folds where reliable classification matters most for demonstrating walk-forward robustness; confirming pooling empirically (rather than only citing Module 1 Stage 2's precedent) avoids assuming a Module-1-specific finding transfers unchanged to a different target type (classification, not regression) and a different, calendar-driven data-thinness cause.
+3. Assuming "tree-based models handle NaN" without verifying per-library behavior would have caused a runtime failure (or silently wrong behavior) for Random Forest specifically once real is_imputed-masked NaN features reached it.
+4. PR-AUC (not accuracy/F1) is the correct primary metric given the ~14-22% prevalence observed within trainable folds (lower than the unconditional 18.4% pooled rate reported in Decision 019's audit, since `MIN_TRAIN_YEARS=4` reshapes which years are ever scored) — accuracy alone would reward a majority-class classifier.
+
+### Implication
+- New config constants: `MODULE2_MIN_TRAIN_YEARS`, `MODULE2_BASELINE_PREDICTIONS_PATH`, `MODULE2_BASELINE_METRICS_PATH`, `MODULE2_BASELINE_FEATURE_IMPORTANCE_PATH`, `MODULE2_POOLED_VS_DISTRICT_PATH`, `MODULE2_BASELINE_MODELS_DIR`, `MODULE2_BASELINE_FINAL_MODEL_PATH` (`src/config.py`).
+- New files: `src/module2_classification/evaluate.py` (classification metrics: `accuracy`, `precision`, `recall`, `specificity`, `f1`, `roc_auc`, `pr_auc`, `brier_score`, `prevalence`, `confusion_counts`, all mirroring Module 1 `evaluate.py`'s masked-pure-function style), `src/module2_classification/baseline_classifier.py` (full Stage 1 pipeline), `src/module2_classification/main.py` (idempotent orchestration, mirroring `module1_forecasting/main.py`).
+- Threshold-dependent secondary metrics (F1, confusion matrix) use a **fixed, explicitly-untuned 0.5 cutoff** — real threshold/calibration tuning remains deferred to Stage 2 (`compensation_model.py`), per Module 2 Open Question #5.
+- Per-fold model artifacts are saved only for the official model (XGBoost) — `models/module2/baseline_classifier/fold_{1..13}.json`, `holdout.json`, `final_production_model.json`. All 3 models' per-fold and aggregate metrics remain in `outputs/metrics/module2/baseline_classifier_metrics.csv` for the permanent benchmark record.
+- This does **not** resolve Module 2 Open Question #8 (single-week vs. consecutive-week outbreak trigger) — Stage 1 was built against the existing `k=2` single-week label as-is; that refinement remains a candidate follow-up.
+
+### Documentation Updated
+`module_2_classification/MODULE_CONTEXT.md` (Open Question #4 resolved; new "Stage 1 Implementation Status" section), `module_2_classification/EXPERIMENT_LOG.md` (new entry M2-001), `research_context/PIPELINE_ARCHITECTURE_PLAN.md` (Module 2 Layer section updated), `research_context/FEATURE_ENGINEERING_SPEC.md` (baseline-probability feature now available), `research_context/CHANGELOG.md`.

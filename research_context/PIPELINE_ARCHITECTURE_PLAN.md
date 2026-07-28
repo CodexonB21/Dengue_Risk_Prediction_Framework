@@ -18,8 +18,21 @@ below. Module 1's Stage 1/2 modeling scripts (`baseline_sarima.py` onward)
 remain unimplemented pending resolution of the open SARIMA/log-transform
 questions.
 
+**Implementation status (2026-07-28):** Module 2's label definition is now
+settled (Decision 019) and its "Module 2 Layer" section below has been
+expanded from a placeholder into a concrete build plan. Preprocessing, label
+definition, and Stage 1 feature engineering are implemented and have been
+regenerated against the real data after a dedicated preprocessing review
+(Decision 020 — week 53 kept unmerged, `is_imputed` masking made consistent).
+**Module 2 Stage 1 (`baseline_classifier.py`) is now also implemented and
+run end to end** (Decision 021 — new `MODULE2_MIN_TRAIN_YEARS=4`, 13
+walk-forward folds, pooled architecture confirmed empirically, XGBoost
+selected as the official model). Stage 2 modeling script remains
+unimplemented — see `module_2_classification/MODULE_CONTEXT.md` "Stage 1
+Implementation Status" for full results.
+
 ## Last Updated
-2026-07-27 (raw epidemiological date corrections completed and re-verified)
+2026-07-28 (Module 2 Stage 1 baseline classifier implemented — Decision 021)
 
 ---
 
@@ -254,16 +267,139 @@ per `FEATURE_ENGINEERING_SPEC.md`, writes to `data/features/module1/`.
 
 ---
 
-# Module 2 Layer (placeholder — expand when Module 2 development starts)
+# Module 2 Layer (kickoff started 2026-07-28 — see Decision 019)
 
-- Reads from `data/processed/shared/` — the same Kalmunai-merged, calendar-aligned
-  base tables Module 1 uses.
-- Does **not** inherit Module 1's week-53 merge or imputation. Module 2 must decide
-  its own missing-week policy (e.g., drop vs. impute) once its label definition is
-  settled — see open questions in `module_2_classification/MODULE_CONTEXT.md`.
-- Does **not** inherit Module 1's `weather_code` exclusion by default — re-evaluate
-  independently.
-- Writes to `data/processed/module2/` and `data/features/module2/`.
+Label definition is now settled (Decision 019, fold-aware epidemic-threshold
+method) — this section is no longer a placeholder for the preprocessing/label
+steps below. Stage 1 (`baseline_classifier.py`) is implemented (Decision
+021); Stage 2 (`compensation_model.py`) remains unimplemented as of this
+writing.
+
+## `src/preprocessing/module2_preprocessing.py` (revised 2026-07-28 — Decision 020)
+
+Reads `data/processed/shared/*.csv` — the same Kalmunai-merged, calendar-aligned
+base tables Module 1 uses. Applies Module 2's **own** temporal-adjustment
+decisions (Decision 013 — these are independent of, and may coincidentally
+match, Module 1's choices, but must not be silently inherited). A dedicated
+preprocessing review (Decision 020) finalized these before Stage 1 modeling
+began, revising two of the three original kickoff defaults:
+
+1. **Missing weeks**: reuse the same seasonal-naive imputation + `is_imputed`
+   flag as Module 1 — still required even without SARIMA's algorithmic
+   constraint, because Stage 1's `.shift()`-based lag features would otherwise
+   silently misalign across a gap. Rows flagged `is_imputed` are excluded from
+   serving as a **label target**, AND (Decision 020 fix) masked to `NaN`
+   *consistently* before deriving any case-derived feature that could see them
+   (`cases_lag_*`, rolling stats, `case_anomaly_lag_*`) — the first
+   implementation pass only masked `case_anomaly_lag_*` and the label,
+   letting a fabricated case count silently flow into plain lag/rolling
+   features for neighboring real weeks.
+2. **`weather_code`**: excluded by default (same reasoning as Decision 008 —
+   redundant with continuous climate variables); reconfirmed unchanged during
+   the Decision 020 review.
+3. **Week 53** (**REVERSED**, Decision 020): kept as its own week, NOT merged
+   into week 52. The original kickoff default merged it (matching Decision
+   007's rule) "for implementation simplicity" — but unlike Module 1, where
+   only total magnitude matters, merging here sums two real weeks' cases
+   *before* the epidemic threshold is computed, which can (a) spuriously
+   trip the outbreak threshold from merge arithmetic alone, and (b)
+   contaminates week 52's cross-year `historical_mean`/`SD` (used by
+   `labels.py`) for every year, not just the four merged ones.
+   Kept unmerged, week 53 will almost always get an undefined label (only 4
+   total occurrences, short of the 3-strictly-prior-years rule) — honest, not
+   a defect. Requires a Module-2-local `MODULE2_MONSOON_WEEKS_NE` override
+   (`= MONSOON_WEEKS_NE + [53]`, week 53 falls in late December/NE monsoon)
+   since the shared constant assumes Module 1's merged 52-week structure;
+   `sin_week`/`cos_week` need no special-casing (periodicity already makes
+   week 53's value equal week 1's).
+4. Merge in climate (`climate_weekly.csv`) and population
+   (`population_annual.csv`) exactly as Module 1 does; compute `cases_per_100k`
+   as a reporting-layer column (Decision 006).
+5. Output: `data/processed/module2/weekly_modeling_table.csv` — 25,450 rows,
+   52 weeks/year except 53 for `{2009, 2016, 2019, 2021}`, 102 rows flagged
+   `is_imputed`.
+
+## `src/module2_classification/labels.py`
+
+(Note: named `labels.py`, not `label_definition.py` as earlier drafts of
+this plan called it — corrected 2026-07-28.) Implements Decision 019's
+fold-aware epidemic-threshold label:
+`outbreak = 1 if Number_of_Cases > historical_mean(District, Week) +
+k * historical_SD(District, Week)`, where the historical mean/SD for any row
+uses **only strictly-prior years** for that `(District, Week)` — never the
+full series. Requires >= 3 strictly-prior years of history before a label is
+defined (rows without enough history are excluded, not defaulted to 0). This
+is a **label**-leakage guard, distinct in kind from Module 1's
+feature-leakage guard (`compute_fold_climate_anomalies`) — reuses
+`src/module1_forecasting/validation.py`'s `generate_walk_forward_folds_by_district`
+directly (already module-agnostic) rather than duplicating fold-generation logic.
+
+## `src/module2_classification/feature_engineering.py` (implemented 2026-07-28)
+
+Reads `data/processed/module2/weekly_modeling_table.csv`, builds Stage 1
+features per `FEATURE_ENGINEERING_SPEC.md`'s Module 2 section (finalized
+after a dedicated feature-engineering review, not just the original
+placeholder bullet list): case lags/rolling trend/rate-of-change/momentum,
+lagged climate (`rainfall_lag_2-8`/`temperature_lag_1-4`/`humidity_lag_1-4`,
+added after review to capture dengue's transmission delay), current-week raw
+climate, `sin_week`/`cos_week`/monsoon indicators, and case-level seasonal
+anomaly lags (`case_anomaly_lag_1/2`, added after review) — all fold-agnostic,
+enumerated in `FOLD_AGNOSTIC_FEATURE_COLUMNS`. Fold-aware climate anomalies
+are reused unchanged from Module 1's `compute_fold_climate_anomalies`. Does
+**not** include baseline-probability or probability-error-lag features yet —
+those are added once Stage 1 exists, mirroring how Module 1 added
+`sarima_prediction`/`residual_lag_1/2` only after Stage 1 was built.
+`Number_of_Cases`/`cases_per_100k`/raw `Year` are present in the output table
+(for merging/reporting) but explicitly excluded from the feature list — a
+real leakage risk caught and fixed during the review (see
+`research_context/CHANGELOG.md`'s 2026-07-28 entry). Regenerated again after
+Decision 020 (week-53 unmerged, `is_imputed` masking consistency fix) —
+53 columns, 32 fold-agnostic model features.
+
+## `src/module2_classification/baseline_classifier.py` (Stage 1 — implemented 2026-07-28, Decision 021)
+
+Benchmarks Logistic Regression / Random Forest / XGBoost per walk-forward
+fold, pooled across all 25 districts (`District` as a categorical feature).
+Uses a new Module-2-specific `MODULE2_MIN_TRAIN_YEARS = 4` (`src/config.py`)
+instead of `validation.py`'s SARIMA-tuned `DEFAULT_MIN_TRAIN_YEARS = 3` —
+verified empirically that the SARIMA-tuned default leaves fold 1's entire
+training window with zero rows that have a defined label, since the
+label's own 3-strictly-prior-years requirement (Decision 019) exactly
+overlaps that window for every district simultaneously. Yields 13
+walk-forward folds (vs. Module 1's 14) plus the same 2-year final holdout.
+
+Pooled-vs-per-district is validated **empirically**, via a dedicated
+`run_pooled_vs_per_district_comparison()` using XGBoost alone as the
+arbiter (no imputation/encoding confound) — result: pooled median PR-AUC
+0.500 vs. per-district median 0.287 across the 13 folds, confirming the
+pooled choice. Uses `class_weight="balanced"` (Logistic Regression, Random
+Forest) / per-fold `scale_pos_weight` (XGBoost) for imbalance — explicitly
+not SMOTE, since synthetic oversampling before/across a temporal split risks
+fabricating points that blur the fold boundary. Logistic Regression/Random
+Forest use an identical `ColumnTransformer` (median-impute + one-hot
+`District`, fit on training rows only per fold) — corrects the original
+premise that "tree-based models handle NaN natively" (only true for
+XGBoost among these three; `RandomForestClassifier` requires imputation).
+**XGBoost selected** as the official model by median validation PR-AUC.
+Outputs: `data/processed/module2/baseline_classifier_predictions.csv`,
+`outputs/metrics/module2/{baseline_classifier_metrics,
+pooled_vs_per_district_comparison, baseline_classifier_feature_importance}.csv`,
+`models/module2/baseline_classifier/`. Full results:
+`module_2_classification/MODULE_CONTEXT.md` "Stage 1 Implementation
+Status", `module_2_classification/EXPERIMENT_LOG.md` M2-001.
+
+## `src/module2_classification/compensation_model.py` (Stage 2, not yet implemented)
+
+Probability/classification-error compensation using climate-anomaly and
+contextual features; benchmarks isotonic/Platt recalibration against an
+XGBoost-based error-compensation model.
+
+## Independent of Module 1 (Decision 019)
+
+Module 2's Stage 1 does not consume Module 1's forecast output for this
+kickoff phase — deferred to a future Stage 2 feature candidate.
+
+Writes to `data/processed/module2/` and `data/features/module2/`.
 
 # Module 3 Layer (placeholder — expand when Module 3 development starts)
 
