@@ -4,7 +4,8 @@ Orchestrates the pipeline end to end:
 
 ```text
 shared preprocessing -> module2 preprocessing -> feature engineering
-    -> Stage 1 (baseline classifier)
+    -> Stage 1 (baseline classifier) -> Stage 2 (compensation model)
+    -> Stage 2 risk thresholds (alert flag + low/medium/high tiers)
 ```
 
 Idempotent by default, mirroring `src/module1_forecasting/main.py`: each
@@ -25,7 +26,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.config import (  # noqa: E402
     MODULE2_BASELINE_PREDICTIONS_PATH,
+    MODULE2_RISK_TIER_PREDICTIONS_PATH,
     MODULE2_STAGE1_FEATURE_TABLE_PATH,
+    MODULE2_STAGE2_PREDICTIONS_PATH,
     MODULE2_WEEKLY_MODELING_TABLE_PATH,
     SHARED_EPIDEMIOLOGICAL_WEEKLY_PATH,
 )
@@ -57,6 +60,18 @@ def _run_stage1_baseline_classifier() -> None:
     run_stage1_pipeline()
 
 
+def _run_stage2_compensation() -> None:
+    from src.module2_classification.compensation_model import run_stage2_pipeline
+
+    run_stage2_pipeline()
+
+
+def _run_stage2_risk_thresholds() -> None:
+    from src.module2_classification.risk_thresholds import run_risk_threshold_pipeline
+
+    run_risk_threshold_pipeline()
+
+
 # Ordered (name, output-file-to-check, run-function) - each stage's output is
 # what the NEXT stage reads, so running a later stage without an earlier
 # stage's output already on disk will simply fail naturally with a clear
@@ -66,6 +81,8 @@ PIPELINE_STAGES: list[tuple[str, Path, callable]] = [
     ("module2_preprocessing", MODULE2_WEEKLY_MODELING_TABLE_PATH, _run_module2_preprocessing),
     ("feature_engineering", MODULE2_STAGE1_FEATURE_TABLE_PATH, _run_feature_engineering),
     ("stage1_baseline_classifier", MODULE2_BASELINE_PREDICTIONS_PATH, _run_stage1_baseline_classifier),
+    ("stage2_compensation", MODULE2_STAGE2_PREDICTIONS_PATH, _run_stage2_compensation),
+    ("stage2_risk_thresholds", MODULE2_RISK_TIER_PREDICTIONS_PATH, _run_stage2_risk_thresholds),
 ]
 
 STAGE_NAMES = [name for name, _, _ in PIPELINE_STAGES]

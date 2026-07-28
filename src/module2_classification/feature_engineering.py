@@ -45,13 +45,16 @@ leakage-safe, but via genuinely different constructions:
 - Climate anomaly: a single `(District, Week)` mean **frozen at each
   walk-forward fold's training-window cutoff** - MUST be recomputed per fold
   (`compute_fold_climate_anomalies`), never written to this global file.
-- Case-anomaly lag: `historical_mean`/`historical_sd` computed **per row**,
-  using only years strictly before that row's own calendar year (reused
-  directly from `labels.compute_historical_stats`, the same construction the
-  label itself uses). Because any walk-forward fold's validation year `V`
-  only ever needs years `< V` - exactly what the per-row expanding
-  construction already provides for any row whose year equals `V` - this one
-  IS safe to compute once, globally, unlike the climate anomaly above.
+- Case-anomaly lag: `historical_mean`/`historical_sd` computed using only
+  years strictly before that row's own calendar year (reused directly from
+  `labels.compute_historical_stats_harmonic`, the same construction the
+  label itself uses as of Decision 025 - a per-district harmonic-regression
+  seasonal curve, refit expanding per year; superseded the original exact-
+  per-week `compute_historical_stats` estimator). Because any walk-forward
+  fold's validation year `V` only ever needs years `< V` - exactly what the
+  expanding-per-year construction already provides for any row whose year
+  equals `V` - this one IS safe to compute once, globally, unlike the
+  climate anomaly above.
 
 `weather_code` is excluded from the output feature table - Module 2's own
 independent choice (same reasoning as Module 1's Decision 008), not an
@@ -95,7 +98,7 @@ from src.config import (  # noqa: E402
 from src.module1_forecasting.feature_engineering import (  # noqa: E402
     compute_fold_climate_anomalies,
 )
-from src.module2_classification.labels import compute_historical_stats  # noqa: E402
+from src.module2_classification.labels import compute_historical_stats_harmonic  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -257,7 +260,7 @@ def compute_case_anomaly_lags(df: pd.DataFrame) -> pd.DataFrame:
     useful features. Rows whose lagged week was itself `is_imputed` get
     `NaN` (a fabricated case count is not a real anomaly observation).
     """
-    stats = compute_historical_stats(df)
+    stats = compute_historical_stats_harmonic(df)
     stats = stats.sort_values(["District", "Year", "Week"]).reset_index(drop=True)
 
     case_zscore = (stats["Number_of_Cases"] - stats["historical_mean"]) / stats["historical_sd"]

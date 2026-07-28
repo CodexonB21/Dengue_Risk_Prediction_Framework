@@ -27,12 +27,54 @@ regenerated against the real data after a dedicated preprocessing review
 **Module 2 Stage 1 (`baseline_classifier.py`) is now also implemented and
 run end to end** (Decision 021 — new `MODULE2_MIN_TRAIN_YEARS=4`, 13
 walk-forward folds, pooled architecture confirmed empirically, XGBoost
-selected as the official model). Stage 2 modeling script remains
-unimplemented — see `module_2_classification/MODULE_CONTEXT.md` "Stage 1
-Implementation Status" for full results.
+selected as the official model).
+
+**Module 2 Stage 2 (`compensation_model.py`) is now also implemented and run
+end to end** (Decision 022 — three well-posed architectures benchmarked by
+Brier Skill Score, not a literal residual regression; Platt scaling
+originally selected — see M2-002, since superseded).
+
+**Implementation status (2026-07-28, Decision 023/024):** Module 2 Stage 1's
+XGBoost hyperparameters were tuned via a holdout-gated Optuna search
+(`scripts/tune_stage1_xgboost.py`) and adopted — `XGB_BASE_PARAMS` in
+`baseline_classifier.py` updated permanently (holdout PR-AUC 0.538 → 0.558).
+Stage 1 + Stage 2 were rerun with `--force`; **Stage 2's official
+architecture flipped from Platt scaling to isotonic regression** (median BSS
+0.166, holdout BSS 0.320) as a downstream consequence of Stage 1's changed
+probability distribution — see M2-003. A new permanent pipeline stage,
+`src/module2_classification/risk_thresholds.py`, was also added
+(`stage2_risk_thresholds` in `main.py`), selecting an F2-optimal alert
+threshold (0.170) and F0.5-optimal high-confidence tier boundary (0.570) —
+completing Decision 022's deferred risk-tier item. See
+`module_2_classification/MODULE_CONTEXT.md` "Stage 1/Stage 2 Implementation
+Status" and `EXPERIMENT_LOG.md` M2-003/M2-004 for full results.
+
+**Implementation status (2026-07-28, Decision 025/M2-005):** Module 2's
+label `historical_mean`/`historical_sd` ESTIMATOR (`src/module2_classification
+/labels.py`) was replaced — a per-district harmonic-regression seasonal
+curve (`compute_historical_stats_harmonic`, `n_harmonics=1`) now supplies
+these quantities instead of Decision 019's exact-per-(District, Week)
+sample mean/SD (kept in the codebase, marked superseded, for audit/
+comparison). `k` was re-audited `2.0` → `3.0` for the new estimator. The
+threshold FORMULA and leakage guard are unchanged. `feature_engineering.py`
+was updated to match (Group M2-5 reuses the same estimator as the label).
+Pooled outbreak prevalence dropped 18.4% → 8.6%; undefined-label rate
+improved 16.0% → 10.7%. **Important correction found during this work**:
+the motivating example (Colombo 2025 Wk15) was already correctly labeled
+under the OLD estimator — the real issue there was a Stage 2 calibration
+near-miss, not a label defect; adopting the new estimator+k actually flips
+that specific row's label (an accepted, documented trade-off of fixing the
+aggregate-prevalence problem with one global `k`). Full pipeline (feature
+engineering through risk thresholds) rerun with `--force`; Stage 1's
+official model flipped to Random Forest, Stage 2 remains isotonic
+regression (now a much closer contest with Platt), risk thresholds
+recalibrated lower (alert 0.170 → 0.140, high-confidence 0.570 → 0.350).
+See `module_2_classification/MODULE_CONTEXT.md` Open Question #8 and
+"Stage 1/Stage 2 Implementation Status", `EXPERIMENT_LOG.md` M2-005, and
+`RESEARCH_DECISIONS.md` Decision 025 for full results.
 
 ## Last Updated
-2026-07-28 (Module 2 Stage 1 baseline classifier implemented — Decision 021)
+2026-07-28 (Module 2 label mean/SD estimator replaced with harmonic regression, k re-audited to 3.0, full pipeline rerun — Decision 025, M2-005)
 
 ---
 
@@ -71,23 +113,27 @@ data/processed/module1/   data/processed/module2/    data/processed/module3/
    |                          |                            |
    v                          v                            v
 Stage 1 baseline           Stage 1 baseline            Stage 1 baseline
-(SARIMA per district)      (classifier, TBD)           (KDE / Moran's I, TBD)
+(SARIMA per district)      (classifier — DONE)         (KDE / Moran's I, TBD)
    |                          |                            |
    v                          v                            v
 feature_engineering.py    feature_engineering.py      feature_engineering.py
-(Module 1)                (Module 2, TBD)              (Module 3, TBD)
+(Module 1)                (Module 2 — DONE)             (Module 3, TBD)
    |                          |                            |
    v                          v                            v
 data/features/module1/    data/features/module2/      data/features/module3/
    |                          |                            |
    v                          v                            v
 Stage 2 compensation       Stage 2 compensation        Stage 2 compensation
-(XGBoost on residuals)     model (TBD)                  model (TBD)
+(XGBoost on residuals)     model (isotonic — DONE)      model (TBD)
+   |                          |
+   v                          v
+                           risk_thresholds.py
+                           (alert flag + tiers — DONE)
 ```
 
-Only Module 1's path is detailed below (it's the only module with an accepted design
-ready to implement). Module 2 and Module 3 sections are placeholders to be filled in
-when those modules are actively built — they must not be skipped, just deferred.
+Module 1 and Module 2's paths are both detailed below (both have implemented, run
+pipelines). Module 3's section remains a placeholder to be filled in when that module
+is actively built — it must not be skipped, just deferred.
 
 ---
 
@@ -271,9 +317,10 @@ per `FEATURE_ENGINEERING_SPEC.md`, writes to `data/features/module1/`.
 
 Label definition is now settled (Decision 019, fold-aware epidemic-threshold
 method) — this section is no longer a placeholder for the preprocessing/label
-steps below. Stage 1 (`baseline_classifier.py`) is implemented (Decision
-021); Stage 2 (`compensation_model.py`) remains unimplemented as of this
-writing.
+steps below. Stage 1 (`baseline_classifier.py`) is implemented (Decision 021,
+hyperparameters tuned by Decision 023); Stage 2 (`compensation_model.py`,
+Decision 022) and the risk-threshold follow-up (`risk_thresholds.py`,
+Decision 024) are both implemented and run end to end.
 
 ## `src/preprocessing/module2_preprocessing.py` (revised 2026-07-28 — Decision 020)
 
@@ -324,15 +371,33 @@ began, revising two of the three original kickoff defaults:
 (Note: named `labels.py`, not `label_definition.py` as earlier drafts of
 this plan called it — corrected 2026-07-28.) Implements Decision 019's
 fold-aware epidemic-threshold label:
-`outbreak = 1 if Number_of_Cases > historical_mean(District, Week) +
-k * historical_SD(District, Week)`, where the historical mean/SD for any row
-uses **only strictly-prior years** for that `(District, Week)` — never the
-full series. Requires >= 3 strictly-prior years of history before a label is
-defined (rows without enough history are excluded, not defaulted to 0). This
-is a **label**-leakage guard, distinct in kind from Module 1's
-feature-leakage guard (`compute_fold_climate_anomalies`) — reuses
-`src/module1_forecasting/validation.py`'s `generate_walk_forward_folds_by_district`
-directly (already module-agnostic) rather than duplicating fold-generation logic.
+`outbreak = 1 if Number_of_Cases > historical_mean + k * historical_SD`,
+where the historical mean/SD for any row uses **only strictly-prior years**
+— never the full series. Requires >= 3 strictly-prior years of history
+before a label is defined (rows without enough history are excluded, not
+defaulted to 0). This is a **label**-leakage guard, distinct in kind from
+Module 1's feature-leakage guard (`compute_fold_climate_anomalies`) —
+reuses `src/module1_forecasting/validation.py`'s
+`generate_walk_forward_folds_by_district` directly (already module-agnostic)
+rather than duplicating fold-generation logic.
+
+**`historical_mean`/`historical_SD` estimator (updated 2026-07-28, Decision 025)**:
+`compute_historical_stats_harmonic` (per-district harmonic-regression seasonal
+curve, `n_harmonics=1`, refit expanding per year on strictly-prior real data)
+is now the official estimator `compute_epidemic_threshold_labels` calls,
+replacing the original exact-per-`(District, Week)` sample mean/SD
+(`compute_historical_stats`, kept in the file, marked superseded, for
+audit/comparison via `scripts/audit_label_stabilization.py`). `k` changed
+`2.0` → `3.0` alongside this (re-audited for the new estimator's different
+SD semantics, not carried over). Motivation: the exact-week estimator was
+too noisy from small per-week samples (18-25% pooled outbreak prevalence);
+harmonic regression pools an entire season per district-year, reducing
+prevalence to 8.6% while also lowering the undefined-label rate. See
+`RESEARCH_DECISIONS.md` Decision 025 for full audit results, including the
+important finding that the motivating "Colombo under-flagged" example was
+actually already correctly labeled under the old estimator (a Stage 2
+calibration issue, not a label issue) and the honest trade-off that the new
+`k=3.0` flips that specific row's label the other way.
 
 ## `src/module2_classification/feature_engineering.py` (implemented 2026-07-28)
 
@@ -356,7 +421,7 @@ real leakage risk caught and fixed during the review (see
 Decision 020 (week-53 unmerged, `is_imputed` masking consistency fix) —
 53 columns, 32 fold-agnostic model features.
 
-## `src/module2_classification/baseline_classifier.py` (Stage 1 — implemented 2026-07-28, Decision 021)
+## `src/module2_classification/baseline_classifier.py` (Stage 1 — implemented 2026-07-28, Decision 021; hyperparameters tuned 2026-07-28, Decision 023; label re-estimated 2026-07-28, Decision 025 — official model now Random Forest)
 
 Benchmarks Logistic Regression / Random Forest / XGBoost per walk-forward
 fold, pooled across all 25 districts (`District` as a categorical feature).
@@ -381,18 +446,95 @@ Forest use an identical `ColumnTransformer` (median-impute + one-hot
 premise that "tree-based models handle NaN natively" (only true for
 XGBoost among these three; `RandomForestClassifier` requires imputation).
 **XGBoost selected** as the official model by median validation PR-AUC.
+**Hyperparameters tuned via Optuna (Decision 023, `scripts/
+tune_stage1_xgboost.py`)**: 60-trial TPE search, objective = median PR-AUC
+across the 13 validation folds, adopt/reject decided purely on the untouched
+holdout block (never gated on the search's own objective, to avoid
+compounding the mild selection bias already accepted for model-TYPE
+selection). Adopted: holdout PR-AUC 0.538 → 0.558, ROC-AUC 0.898 → 0.911.
+Current production `XGB_BASE_PARAMS`: `max_depth=3, learning_rate=0.01237,
+n_estimators=217, subsample=0.6565, colsample_bytree=0.5962,
+reg_lambda=1.0758, min_child_weight=10, reg_alpha=4.1197, gamma=2.4930`.
+`fit_and_predict` gained an optional `xgb_params` override parameter (XGBoost
+only; `scale_pos_weight` always recomputed per-fold regardless, never
+overridable) so the tuning script can reuse the walk-forward loop unchanged.
 Outputs: `data/processed/module2/baseline_classifier_predictions.csv`,
 `outputs/metrics/module2/{baseline_classifier_metrics,
 pooled_vs_per_district_comparison, baseline_classifier_feature_importance}.csv`,
-`models/module2/baseline_classifier/`. Full results:
+`models/module2/baseline_classifier/`; tuning-specific:
+`outputs/metrics/module2/{xgboost_tuning_trials,
+xgboost_tuning_holdout_comparison}.csv` (not part of the production
+pipeline — standalone research script only). **Model selection FLIPPED to
+Random Forest after Decision 025's label re-estimation** (median validation
+PR-AUC 0.377 vs. XGBoost's 0.373 under the new, much lower-prevalence
+label) — `XGB_BASE_PARAMS` themselves were not re-tuned, only the label
+changed underneath the existing 3-model benchmark. Full results:
 `module_2_classification/MODULE_CONTEXT.md` "Stage 1 Implementation
-Status", `module_2_classification/EXPERIMENT_LOG.md` M2-001.
+Status", `module_2_classification/EXPERIMENT_LOG.md` M2-001 (original,
+superseded)/M2-003 (post-tuning, superseded)/M2-005 (current, post-label-
+re-estimation).
 
-## `src/module2_classification/compensation_model.py` (Stage 2, not yet implemented)
+## `src/module2_classification/compensation_model.py` (Stage 2 — implemented 2026-07-28, Decision 022; rerun 2026-07-28 after Stage 1 retuning, Decision 023; rerun again 2026-07-28 after label re-estimation, Decision 025 — isotonic remains official)
 
-Probability/classification-error compensation using climate-anomaly and
-contextual features; benchmarks isotonic/Platt recalibration against an
-XGBoost-based error-compensation model.
+Benchmarks three numerically well-posed architectures per walk-forward fold
+(a literal `label - predicted_probability` residual regression was
+considered and rejected as ill-posed for a binary target — see Decision
+022's Reason): **isotonic regression** and **Platt scaling** (both pooled,
+feature-free, applied directly to Stage 1's `predicted_probability`/
+`logit(predicted_probability)`), and a **stacked XGBoost** model on
+`[predicted_probability, contextual features, District,
+probability_residual_lag_1/2]` → `label`. Selected by median **Brier Skill
+Score** across 12 trainable folds (fold 1 is a no-op passthrough — no prior
+out-of-sample Stage 1 probabilities exist yet), gated by a check that
+PR-AUC/ROC-AUC don't regress vs. Stage 1's raw probability.
+
+No-leakage rule (Decision-010-style, adapted): fold *k* (`k = 2..13`) trains
+only on the official Stage 1 model's out-of-sample `predicted_probability`/
+`label` from folds `1..k-1`, never fold *k* itself. Pooled-vs-per-district
+is re-validated empirically (stacked-XGBoost arbiter), not assumed from
+Decision 021. **Isotonic regression is the current official architecture**
+(median BSS 0.166; originally Platt scaling won pre-Stage-1-retuning, see
+M2-002 — the flip is a downstream consequence of Decision 023's Stage 1
+retuning, not a Stage 2 code change). Outputs:
+`data/processed/module2/stage2_compensated_predictions.csv`,
+`outputs/metrics/module2/{stage2_compensation_metrics,
+stage2_pooled_vs_per_district_comparison}.csv`,
+`outputs/figures/module2/reliability_diagram_{validation,holdout}.png`,
+`models/module2/stage2_compensation/`. Module 1 forecast integration remains
+deliberately deferred (Decision 022); risk-tier thresholds are now
+implemented separately — see `risk_thresholds.py` below.
+
+## `src/module2_classification/risk_thresholds.py` (Stage 2 follow-up — implemented 2026-07-28, Decision 024; recalibrated 2026-07-28, Decision 025)
+
+Permanent pipeline stage (`stage2_risk_thresholds` in `main.py`, unlike
+Decision 023's one-off tuning script) completing Decision 022's deferred
+risk-tier item. Reads `stage2_compensated_predictions.csv`; selects an
+**F2-optimal alert threshold** (recall-weighted — early-warning framing) and
+an **F0.5-optimal high-confidence tier boundary** (precision-weighted,
+clipped to `>= alert_threshold`) purely from the official architecture's
+validation-fold rows (folds 2-13 — fold 1's `architecture="none"`
+passthrough never carries the official architecture's rows, so no separate
+fold check is needed), holdout reserved for the final evaluation. New
+`evaluate.py` functions: `fbeta_score(y_true, y_pred_label, beta, mask=None)`
+(generalizes `f1`), `threshold_scan(y_true, y_prob, thresholds=..., mask=None)`
+(99-cutoff scan, columns `precision/recall/f1/f2/f0_5/accuracy`).
+
+**Current (post-Decision-025) selected values**: `alert_threshold = 0.140`,
+`high_confidence_threshold = 0.350` — recalibrated lower after the label
+re-estimation reduced overall prevalence. Holdout evidence: F2-optimal
+0.140 gives recall 60.0%/F2 0.519 (vs. naive 0.5's recall 45.0%/F2 0.459).
+Empirical tier separation (observed outbreak rate): 0.6%/13.3%/48.8%
+(low/medium/high) on holdout, 1.3%/26.2%/71.1% on validation folds 2-13.
+**Historical (pre-Decision-025) values, superseded**: `alert_threshold =
+0.170`, `high_confidence_threshold = 0.570`; holdout recall 39.9% → 68.6%,
+F2 0.437 → 0.574; tier separation 2.6%/22.0%/76.7% (holdout),
+3.2%/27.3%/83.2% (validation) — not comparable to the current values since
+the label itself changed. Outputs:
+`data/processed/module2/stage2_risk_tier_predictions.csv` (adds
+`alert_flag`/`risk_tier` to every row of `stage2_compensated_predictions.csv`,
+all architectures/splits, for audit),
+`outputs/metrics/module2/{risk_threshold_scan,
+risk_threshold_holdout_comparison}.csv`.
 
 ## Independent of Module 1 (Decision 019)
 

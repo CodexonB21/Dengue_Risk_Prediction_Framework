@@ -205,31 +205,51 @@ Detailed specification should be maintained inside:
 module_2_classification/MODULE_CONTEXT.md
 ```
 
-## Label Definition (added 2026-07-28, Decision 019)
+## Label Definition (added 2026-07-28, Decision 019; mean/SD ESTIMATOR superseded 2026-07-28, Decision 025)
 
 ```text
-outbreak(District, Year, Week) = 1 if Number_of_Cases > threshold(District, Week)
+outbreak(District, Year, Week) = 1 if Number_of_Cases > threshold(District, Week, Year)
                                 = 0 otherwise
 
-threshold(District, Week) = historical_mean(District, Week) + k * historical_SD(District, Week)
+threshold(District, Week, Year) = historical_mean + k * historical_SD
 ```
 
-- `historical_mean`/`historical_SD` are computed per `(District, Week)` using
-  **only strictly-prior years'** case counts for that same district-week — an
-  expanding window, never the full series.
-- `k = 2` is the current default (literature-standard epidemic-threshold
-  multiplier), pending confirmation via `scripts/data_audit_module2.py`'s
-  class-balance audit.
-- A `(District, Week)` needs at least 3 strictly-prior years of history before
-  a label is defined (mirroring `validation.py`'s `DEFAULT_MIN_TRAIN_YEARS`);
-  rows without enough history have an **undefined** label (not defaulted to
-  0) and are excluded from training/scoring.
+The threshold **formula** and leakage guard are unchanged since Decision 019. What changed
+(Decision 025) is HOW `historical_mean`/`historical_SD` are estimated:
+
+- **Original estimator (Decision 019, superseded but kept in the codebase for
+  audit/comparison — `labels.compute_historical_stats`)**: an exact per-`(District, Week)`
+  sample mean/SD, using only that exact week number's case counts from strictly-prior years.
+  Found (Open Question #8; `scripts/audit_label_stabilization.py`) to be too noisy from small
+  per-week sample sizes (3-15 strictly-prior years) — pooled outbreak prevalence was 18-25%
+  of weeks, well above WHO/CDC's typical single-digit-percent epidemic-alert norm.
+- **Current official estimator (Decision 025 — `labels.compute_historical_stats_harmonic`)**:
+  per-district, per-year OLS regression of `Number_of_Cases` on `EPIDEMIC_THRESHOLD_N_HARMONICS`
+  (= 1) harmonics of week-of-year (`sin`/`cos(2*pi*Week/52)`), refit expanding each year using
+  only that district's REAL, strictly-prior-year rows. `historical_mean` = the fitted seasonal
+  curve evaluated at the row's own `Week`; `historical_sd` = the fit's residual standard error
+  (one value shared across every week of that district-year, unlike the old per-exact-week SD).
+  Pools information across an ENTIRE season instead of one exact week number, directly
+  addressing the small-sample-noise root cause. Reduces pooled prevalence to 8.6% while also
+  reducing the undefined-label rate (16.0% → 10.7%).
+- `k = 3.0` is the current default (was `k = 2.0` under the old estimator — re-audited, not
+  carried over unchanged, since the new estimator's SD quantity has a different meaning),
+  confirmed via `scripts/audit_label_stabilization.py`'s class-balance audit.
+- A `(District, Year)` needs at least 3 strictly-prior years of history before a label is
+  defined for any week of that year (mirroring `validation.py`'s `DEFAULT_MIN_TRAIN_YEARS`);
+  rows without enough history have an **undefined** label (not defaulted to 0) and are
+  excluded from training/scoring.
+- **Important documented limitation (Decision 025)**: raising `k` to fix the aggregate
+  prevalence problem also raises the threshold in high-variance districts (e.g. Colombo,
+  whose harmonic-fit residual SD is much larger than its old per-exact-week SD) — this can
+  flip individual high-magnitude-spike weeks from labeled `1` to `0` even as the aggregate
+  label quality improves. A district-specific/variance-adaptive `k` is a flagged, not yet
+  implemented, future refinement.
 
 **Leakage note:** this is a *label*-leakage risk, not a feature-leakage risk
 like Module 1's climate anomalies (Group 3 below) — computing the threshold
 once globally would let every fold "see" future outbreak years. This is
-implemented in `src/module2_classification/label_definition.py`, a new
-construct distinct from Module 1's `compute_fold_climate_anomalies`.
+implemented in `src/module2_classification/labels.py`.
 
 ## Feature Groups (finalized 2026-07-28, kickoff feature-engineering review)
 
@@ -322,7 +342,7 @@ in late December, squarely inside the NE monsoon window) — the shared
 `MONSOON_WEEKS_NE` constant assumes Module 1's already-merged 52-week
 structure and must not be mutated for Module 2's sake.
 
-### Group M2-5: Case-Level Seasonal Anomaly Lags (new 2026-07-28)
+### Group M2-5: Case-Level Seasonal Anomaly Lags (new 2026-07-28; estimator updated 2026-07-28, Decision 025)
 
 ```text
 case_anomaly_lag_1
@@ -334,17 +354,21 @@ case_zscore(District, Year, Week) = (Number_of_Cases - historical_mean) / histor
 case_anomaly_lag_N = case_zscore shifted N weeks within the district's chronological series
 ```
 
-`historical_mean`/`historical_sd` are the SAME per-`(District, Week)`,
-strictly-prior-years quantities `src/module2_classification/labels.py`
-computes for the label itself (Decision 019) — reused directly, not
-recomputed. `case_zscore` for the CURRENT row must never be used as a feature
-(at `k=2` it is almost exactly the label itself, `zscore > k`) — only its
-**lagged** versions are safe and exposed. Rows where the lagged week was
-itself `is_imputed` get `NaN` (a fabricated case count is not a real
-observation to compute an anomaly from).
+`historical_mean`/`historical_sd` are the SAME strictly-prior-years quantities
+`src/module2_classification/labels.py` computes for the label itself — as of Decision 025,
+this means `labels.compute_historical_stats_harmonic` (the per-district harmonic-regression
+estimator), not the original per-exact-`(District, Week)` estimator
+(`labels.compute_historical_stats`, superseded but kept for audit/comparison). This
+consistency requirement — Group M2-5 must always use whichever estimator the label currently
+uses — is why `feature_engineering.py`'s import was switched alongside `labels.py`'s change,
+not left pointing at the old function. `case_zscore` for the CURRENT row must never be used
+as a feature (at `k=EPIDEMIC_THRESHOLD_K` it is almost exactly the label itself,
+`zscore > k`) — only its **lagged** versions are safe and exposed. Rows where the lagged week
+was itself `is_imputed` get `NaN` (a fabricated case count is not a real observation to
+compute an anomaly from).
 
 **Important leakage-guard distinction from Group M2-3's climate anomaly**:
-because `historical_mean`/`historical_sd` are computed per-ROW using only
+because `historical_mean`/`historical_sd` are computed using only
 years strictly before that row's own calendar year (not per-fold using a
 frozen training-window average), this construction is safe to compute ONCE,
 globally — every possible walk-forward fold's validation year `V` only ever
@@ -392,18 +416,94 @@ first implementation pass.
   — Stage 1's `predicted_probability` column
   (`data/processed/module2/baseline_classifier_predictions.csv`, official
   model = XGBoost), ready to be consumed as a Stage 2 input feature.
-- Probability/classification-error lags (Stage 2 input — still to be added
-  once Stage 2 itself is built)
 - A "weeks currently above threshold" streak/momentum feature — deliberately
   deferred until Module 2 Open Question #8 (single-week vs. consecutive-week
   outbreak trigger) is resolved, to avoid coupling two undecided design
   questions.
 
-## Explicitly Independent of Module 1 (Decision 019)
+## Explicitly Independent of Module 1 (Decision 019, reaffirmed Decision 022)
 
 Module 2's Stage 1 does **not** consume Module 1's SARIMA/XGBoost forecast
-output as an input feature for this kickoff phase — deferred to a future
-Stage 2 feature candidate (Module 2 Open Question #6), not implemented now.
+output as an input feature. Stage 2 also defers this (Decision 022) — Module
+1 (14 folds, `MIN_TRAIN_YEARS=3`) and Module 2 Stage 1 (13 folds,
+`MIN_TRAIN_YEARS=4`) have misaligned fold boundaries, so merging Module 1's
+`final_prediction` in requires a dedicated fold-alignment leakage audit, not
+a simple merge. Planned as an optional post-Stage-2 ablation, not
+implemented now.
+
+---
+
+# Module 2 Stage 2: Probability/Classification-Error Compensation
+
+## Target
+
+Three candidate architectures are benchmarked (Decision 022) rather than a
+single predetermined target, because a literal port of Module 1 Stage 2's
+`residual = actual - sarima_prediction` formula is statistically ill-posed
+for a binary label (`label - predicted_probability` for one Bernoulli
+observation is a high-variance, low-information regression target, and
+there is no clean way to keep `predicted_probability + predicted_residual`
+inside `[0, 1]` without ad hoc clipping):
+
+```text
+isotonic:        IsotonicRegression(predicted_probability) -> calibrated_probability
+platt:           sigmoid(LogisticRegression(logit(predicted_probability))) -> calibrated_probability
+stacked_xgboost: XGBClassifier([predicted_probability, contextual features,
+                                 District, probability_residual_lag_1/2]) -> calibrated_probability
+```
+
+Selected by median Brier Skill Score across the 12 trainable walk-forward
+folds (2-13; fold 1 is a no-op passthrough — no prior out-of-sample Stage 1
+probabilities exist yet), gated by a check that PR-AUC/ROC-AUC don't regress
+relative to Stage 1's raw probability.
+
+## Feature Group M2-S2-1: Reused Stage 1 Contextual Features
+
+All of `FOLD_AGNOSTIC_FEATURE_COLUMNS` (Groups M2-1 through M2-5) plus the
+fold-aware climate anomalies (Group M2-3's `rainfall_anomaly`/
+`temperature_anomaly`/`humidity_anomaly`) plus `District` — used only by the
+`stacked_xgboost` architecture, not by isotonic/Platt (which are feature-free
+by design). The anomaly value attached to each historical training row is
+the one computed from **that row's own originating Stage 1 fold's training
+window** (reusing a genuinely-already-known, correctly-scoped value as a
+Stage 2 input is not leakage — the same reasoning Module 1's
+`compensation_model.build_fold_scoped_anomalies` already established).
+
+## Feature Group M2-S2-2: Stage 1 Probability Signal
+
+```text
+predicted_probability   - Stage 1's own out-of-sample outbreak probability
+                           (official model = XGBoost), the primary input
+                           every Stage 2 architecture corrects
+probability_residual_lag_1
+probability_residual_lag_2
+```
+
+```text
+probability_residual(District, Year, Week) = label - predicted_probability
+                                              (out-of-sample rows only)
+probability_residual_lag_N = probability_residual shifted N weeks within
+                              the district's chronological series
+```
+
+Built via the same **full-calendar-reindex-then-shift** construction as
+Module 1's `residual_lag_1/2` (Decision 015) — reindexing onto every
+`(Year, Week)` row (not just the sparse out-of-sample rows) before taking
+`shift(1)/shift(2)`, so `NaN`s correctly appear at each district's series
+start and across any structural gap, rather than silently pulling in a
+stale value. Used only by `stacked_xgboost` (isotonic/Platt take no
+features beyond `predicted_probability` itself).
+
+## Not Yet Included (deferred, tracked as an open question)
+
+- An XGBoost variant with `base_margin = logit(predicted_probability)`
+  (trees learn only an additive correction in logit space) — the most
+  literal translation of Module 1's residual-compensation metaphor that
+  stays numerically well-posed. Considered during Decision 022's design but
+  deferred as a future ablation, not built in the initial benchmark.
+- Module 1's `final_prediction` (or its own anomaly) as a Stage 2 feature —
+  deferred as a post-Stage-2 ablation (Decision 022), pending a
+  fold-alignment audit between the two modules' differing fold structures.
 
 ---
 
@@ -442,3 +542,5 @@ Record major feature changes here or in `CHANGELOG.md`.
 | 2026-07-27 | Module 1 | `residual_lag_1/2` construction specified as full-calendar reindex + shift, not a naive concatenated-rows shift | A real ~26-week per-district gap between the last walk-forward fold and the holdout block would otherwise leak a stale value | Accepted (Decision 015) |
 | 2026-07-28 | Module 2 | Outbreak label made concrete: fold-aware epidemic-threshold method (`mean + k*SD` per District+Week, strictly-prior-years only) | Defensible, district-specific statistical threshold; retires the arbitrary `OUTBREAK_THRESHOLD` placeholder | Accepted (Decision 019); `k` value pending empirical audit |
 | 2026-07-28 | Module 2 | Preprocessing review: week 53 kept unmerged (reverses kickoff default); `is_imputed` masking made consistent across all case-derived features (Groups M2-1, M2-5) | Merging week 53 risked spuriously tripping/contaminating the week-52 threshold across all years; masking gap let a fabricated case count silently flow into neighboring weeks' features | Accepted (Decision 020) |
+| 2026-07-28 | Module 2 | Stage 2 feature groups defined: reused Stage 1 contextual features + `predicted_probability` + `probability_residual_lag_1/2` (full-calendar-reindex-then-shift construction, Decision-015-style) | A literal residual-regression target (`label - predicted_probability`) is ill-posed for a binary label; three well-posed architectures benchmarked instead, only one of which (`stacked_xgboost`) uses contextual features | Accepted (Decision 022); implementation pending |
+| 2026-07-28 | Module 2 | Label/Group-M2-5 `historical_mean`/`historical_sd` estimator replaced: per-exact-`(District, Week)` sample mean/SD -> per-district harmonic-regression seasonal curve (`n_harmonics=1`); `k` re-audited `2.0` -> `3.0` | Exact-per-week estimator was too noisy from small samples (18-25% pooled outbreak prevalence, well above WHO/CDC single-digit norm); harmonic regression pools a whole season's data, reducing prevalence to 8.6% while also lowering the undefined-label rate | Accepted (Decision 025); old estimator kept, not deleted, for audit/comparison |

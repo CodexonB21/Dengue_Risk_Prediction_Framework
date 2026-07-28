@@ -97,6 +97,66 @@ def f1(y_true, y_pred_label, mask: np.ndarray | None = None) -> float:
     return float(2 * p * r / (p + r))
 
 
+def fbeta_score(y_true, y_pred_label, beta: float, mask: np.ndarray | None = None) -> float:
+    """F-beta score - generalizes `f1` (`beta=1`) to weight recall `beta`
+    times as heavily as precision. `beta > 1` (e.g. F2) favors recall, the
+    natural choice for an outbreak EARLY-WARNING alert threshold where
+    missing a real outbreak is costlier than a false alarm; `beta < 1` (e.g.
+    F0.5) favors precision, the natural choice for a "high confidence" risk
+    tier (Decision 024) where a false positive at the top tier is more
+    costly to credibility than at the alert tier.
+
+        F_beta = (1 + beta^2) * P * R / (beta^2 * P + R)
+    """
+    p = precision(y_true, y_pred_label, mask=mask)
+    r = recall(y_true, y_pred_label, mask=mask)
+    if np.isnan(p) or np.isnan(r):
+        return float("nan")
+    denom = (beta**2 * p) + r
+    if denom == 0:
+        return float("nan")
+    return float((1 + beta**2) * p * r / denom)
+
+
+def threshold_scan(
+    y_true, y_prob, thresholds: np.ndarray | None = None, mask: np.ndarray | None = None,
+) -> "pd.DataFrame":
+    """Score `y_prob` at every cutoff in `thresholds` (default: 99 cutoffs
+    from 0.01 to 0.99), returning `precision`/`recall`/`f1`/`f2`/`f0_5`/
+    `accuracy` per threshold.
+
+    Used by `risk_thresholds.py` (Decision 024) to pick a real decision
+    threshold for the calibrated probability Stage 2 now produces, instead
+    of the fixed, explicitly-untuned 0.5 cutoff used as a diagnostic
+    throughout Stage 1/2's own benchmarking (`SECONDARY_THRESHOLD` in
+    `baseline_classifier.py`/`compensation_model.py`).
+    """
+    import pandas as pd
+
+    if thresholds is None:
+        thresholds = np.linspace(0.01, 0.99, 99)
+
+    yt, yp = _apply_mask(y_true, y_prob, mask=mask)
+    if yt.size == 0:
+        return pd.DataFrame(columns=["threshold", "precision", "recall", "f1", "f2", "f0_5", "accuracy"])
+
+    rows = []
+    for t in thresholds:
+        pred_label = (yp >= t).astype(float)
+        rows.append(
+            {
+                "threshold": float(t),
+                "precision": precision(yt, pred_label),
+                "recall": recall(yt, pred_label),
+                "f1": f1(yt, pred_label),
+                "f2": fbeta_score(yt, pred_label, beta=2.0),
+                "f0_5": fbeta_score(yt, pred_label, beta=0.5),
+                "accuracy": accuracy(yt, pred_label),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def roc_auc(y_true, y_prob, mask: np.ndarray | None = None) -> float:
     yt, yp = _apply_mask(y_true, y_prob, mask=mask)
     if yt.size == 0 or len(np.unique(yt)) < 2:
@@ -136,3 +196,76 @@ def prevalence(y_true, mask: np.ndarray | None = None) -> float:
     if yt.size == 0:
         return float("nan")
     return float(np.mean(yt))
+
+
+def brier_skill_score(y_true, y_prob, mask: np.ndarray | None = None) -> float:
+    """Brier Skill Score relative to a climatology forecast - "always predict
+    this fold's own base rate (prevalence)". `reference_brier = prevalence *
+    (1 - prevalence)` is exactly that climatology forecast's Brier score (the
+    variance of a Bernoulli(prevalence) variable). Positive means the model's
+    probabilities are better calibrated than climatology; negative means
+    worse - despite potentially strong discrimination (PR-AUC/ROC-AUC), since
+    those measure ranking, not calibration.
+
+    Promoted here (Decision 022) from the one-off
+    `scripts/stage1_calibration_diagnostic.py` into a first-class, reusable
+    metric - this is Stage 2's PRIMARY architecture-selection metric, the
+    same role `pr_auc` played for Stage 1 (Decision 021).
+    """
+    yt, yp = _apply_mask(y_true, y_prob, mask=mask)
+    if yt.size == 0:
+        return float("nan")
+    p = float(np.mean(yt))
+    reference_brier = p * (1 - p)
+    if reference_brier == 0:
+        # Degenerate fold (all-one-class after masking) - climatology itself
+        # would be a perfect (zero-Brier) forecast, so skill is undefined
+        # rather than a spurious +-inf.
+        return float("nan")
+    model_brier = float(np.mean((yp - yt) ** 2))
+    return float(1 - model_brier / reference_brier)
+
+
+def reliability_curve(
+    y_true, y_prob, n_bins: int = 10, mask: np.ndarray | None = None
+) -> "pd.DataFrame":
+    """Bin predicted probabilities into `n_bins` equal-width bins over
+    `[0, 1]` and return, per non-empty bin, the mean predicted probability
+    vs. the mean observed outcome (the two curves a reliability diagram
+    plots against each other) plus the bin's observation count.
+
+    A perfectly calibrated model has `mean_observed == mean_predicted` in
+    every bin. Used by `compensation_model.plot_reliability_diagrams` for
+    Stage 1-raw vs. Stage 2-calibrated comparison plots (Decision 022) - the
+    one `MODULE_CONTEXT.md` Evaluation Metrics item ("calibration plots")
+    never implemented before Stage 2.
+    """
+    import pandas as pd  # local import - keeps this module's other pure
+    # functions dependency-light (numpy/sklearn only) for anything that
+    # doesn't need a DataFrame return type.
+
+    yt, yp = _apply_mask(y_true, y_prob, mask=mask)
+    if yt.size == 0:
+        return pd.DataFrame(columns=["bin_lower", "bin_upper", "mean_predicted", "mean_observed", "n"])
+
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    # Rightmost edge inclusive, matching np.digitize's default half-open
+    # bins [edges[i], edges[i+1]) except the last bin which includes 1.0.
+    bin_idx = np.clip(np.digitize(yp, edges[1:-1], right=False), 0, n_bins - 1)
+
+    rows = []
+    for b in range(n_bins):
+        in_bin = bin_idx == b
+        n = int(np.sum(in_bin))
+        if n == 0:
+            continue
+        rows.append(
+            {
+                "bin_lower": float(edges[b]),
+                "bin_upper": float(edges[b + 1]),
+                "mean_predicted": float(np.mean(yp[in_bin])),
+                "mean_observed": float(np.mean(yt[in_bin])),
+                "n": n,
+            }
+        )
+    return pd.DataFrame(rows)
