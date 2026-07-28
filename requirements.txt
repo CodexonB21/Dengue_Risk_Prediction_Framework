@@ -14,3 +14,5 @@ rasterio
 xarray
 shapely
 folium
+libpysal
+esda
