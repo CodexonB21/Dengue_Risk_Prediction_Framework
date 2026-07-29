@@ -164,7 +164,7 @@ This design yields district- and season-aware labels that respect cross-district
 
 #### Stage 1: baseline classifier
 
-Stage 1 constructs a pooled XGBoost classifier with district as a categorical feature. Candidate baselines (Logistic Regression, Random Forest, and XGBoost) were benchmarked under walk-forward validation; XGBoost was selected by median validation PR-AUC. Hyperparameters were subsequently tuned under a holdout-gated search.
+Stage 1 constructs a pooled Random Forest classifier with district as a categorical feature. Candidate baselines (Logistic Regression, Random Forest, and XGBoost) were benchmarked under walk-forward validation; **Random Forest** was selected by median validation PR-AUC under the current epidemic-threshold label (Decision 025 / M2-005). Earlier interim selection of XGBoost applied to a superseded label definition and is not the current production Stage 1 model.
 
 Stage 1 features include:
 
@@ -174,7 +174,7 @@ Stage 1 features include:
 - seasonal encodings and monsoon indicators
 - case-anomaly lags
 
-Unlike Module 1 Stage 1, Module 2 Stage 1 intentionally includes climate features because the task is direct outbreak-risk discrimination. Class imbalance is handled through class reweighting / `scale_pos_weight`. Synthetic oversampling (SMOTE-family methods) was audited and not adopted as the production strategy.
+Unlike Module 1 Stage 1, Module 2 Stage 1 intentionally includes climate features because the task is direct outbreak-risk discrimination. Class imbalance is handled through class reweighting. Synthetic oversampling (SMOTE-family methods) was audited and not adopted as the production strategy.
 
 Module 2 uses a Module-specific minimum training-history setting for walk-forward folds so that early folds contain enough defined labels to train. A final untouched holdout block is reserved for reporting.
 
@@ -190,7 +190,7 @@ From the calibrated probability, fixed absolute thresholds produce:
 These thresholds were selected for early-warning utility and are reported with empirical risk separation in the evaluation chapter. A literal residual target of the form `label − predicted_probability` was rejected as ill-posed for binary outcomes.
 
 **Suggested Figure:**  
-Figure 6.X: Module 2 implementation pipeline (shared tables → Module 2 preprocessing → epidemic-threshold labels → XGBoost → isotonic calibration → alert/risk tier).
+Figure 6.X: Module 2 implementation pipeline (shared tables → Module 2 preprocessing → epidemic-threshold labels → Random Forest → isotonic calibration → alert/risk tier).
 
 **Suggested Table:**  
 Table 6.X: Key Module 1 vs Module 2 preprocessing divergences (week-53 policy, Stage 1 climate use, Stage 2 compensation type).

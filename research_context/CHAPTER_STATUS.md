@@ -60,7 +60,7 @@ Approximate target lengths per chapter (full targets and per-subsection guidance
 | Chapter 4 | Drafting | 4.2.1 / 4.2.2 draft ready (`report_drafts/chapter4_4.2.1_4.2.2.md`); M3 deferred |
 | Chapter 5 | Drafting | 5.3.1 / 5.3.2 draft ready (`report_drafts/chapter5_5.3.1_5.3.2.md`); M3 deferred |
 | Chapter 6 | Drafting | 6.2.1/6.2.2/6.3.1/6.3.2 draft ready (`report_drafts/chapter6_6.2_6.3_m1_m2.md`); M3 deferred |
-| Chapter 7 | Not Started | Evaluation results pending |
+| Chapter 7 | Drafting | M1/M2 evaluation draft ready (`report_drafts/chapter7_m1_m2_evaluation.md`); M3 deferred |
 | Chapter 8 | Not Started | Conclusion and future work pending |
 | Chapter 9 | Not Started | Challenges and limitations pending |
 | References | Not Started | Citation list pending |
@@ -405,18 +405,18 @@ Key corrections vs interim draft:
 
 ## Current Status
 
-Status: Not Started
+Status: Drafting
 
 ## Possible Sections
 
-- 7.1 Introduction
-- 7.2 Evaluation Strategy
-- 7.3 Forecasting Evaluation
-- 7.4 Outbreak Classification Evaluation
-- 7.5 Spatial Hotspot Evaluation
-- 7.6 Comparative Analysis
-- 7.7 Discussion
-- 7.8 Summary
+- 7.1 Introduction — **Draft ready** (reframed from interim progress narrative)
+- 7.2 Evaluation Strategy — **Draft ready**
+- 7.3 Module 1 Forecasting Evaluation — **Draft ready**
+- 7.4 Module 2 Outbreak Classification Evaluation — **Draft ready**
+- 7.5 Comparative Analysis (M2-009) — **Draft ready**
+- 7.6 Discussion of Module 1/2 Results — **Draft ready**
+- 7.7 Summary — **Draft ready**
+- Module 3 evaluation — deferred placeholder
 
 ## Required Content
 
@@ -430,26 +430,29 @@ Status: Not Started
 
 ## Required Figures/Tables
 
-- [ ] Forecast result plots
-- [ ] Actual vs predicted plots
-- [ ] Residual error plots
-- [ ] Classification report table
-- [ ] Confusion matrix
-- [ ] ROC/PR curve, if used
-- [ ] Hotspot map
-- [ ] Model comparison table
+- [x] Draft tables for M1 Stage 1 vs Stage 1+2 / production stack
+- [x] Draft tables for M2 Stage 1/2 / alerts / M2-009
+- [ ] Forecast result plots (from `outputs/figures/module1/`)
+- [ ] Reliability diagrams (from `outputs/figures/module2/`)
+- [ ] Confusion / threshold figures if used
+- [ ] Hotspot map — deferred
 
 ## Missing Items
 
-- [ ] Final Module 1 results
-- [ ] Final Module 2 results
-- [ ] Final Module 3 results
-- [ ] Final comparison table
-- [ ] Evaluation discussion
+- [x] Module 1 results sourced from experiment logs / MODULE_CONTEXT
+- [x] Module 2 results sourced from M2-005 / production confirmation / M2-009
+- [ ] Paste Word figures from outputs/
+- [ ] Module 3 results
 
 ## Notes
 
 Do not invent performance values. Use actual experiment logs only.
+
+Draft location: `research_context/report_drafts/chapter7_m1_m2_evaluation.md`
+
+Interim Chapter 7 “Discussion / Current Progress” should be fully replaced.
+
+Consistency fix applied 2026-07-29: Module 2 Stage 1 official model = **Random Forest** (post M2-005); Chapters 4–6 drafts and Module 2 draw.io label updated accordingly.
 
 ---
 
@@ -587,6 +590,8 @@ Use this section to record major report-related changes.
 - Drafted corrected sections **4.2.1** (Module 1) and **4.2.2** (Module 2) in `research_context/report_drafts/chapter4_4.2.1_4.2.2.md`.
 - Drafted corrected Chapter 6 sections **6.2.1**, **6.2.2**, **6.3.1**, **6.3.2** in `research_context/report_drafts/chapter6_6.2_6.3_m1_m2.md` (Open-Meteo; M1/M2 pipelines; Module 3 deferred).
 - Drafted corrected Chapter 5 sections **5.3.1** and **5.3.2** in `research_context/report_drafts/chapter5_5.3.1_5.3.2.md`; planned Figures 5.4/5.5 in `REPORT_DIAGRAM_PLAN.md`.
+- Drafted Chapter 7 Module 1/2 evaluation in `research_context/report_drafts/chapter7_m1_m2_evaluation.md` (replaces interim progress narrative).
+- Consistency fix: Module 2 Stage 1 official model updated to **Random Forest** in Chapters 4–6 drafts and Module 2 draw.io (aligned to M2-005).
 - Module 3 subsections intentionally deferred.
 
 ## YYYY-MM-DD

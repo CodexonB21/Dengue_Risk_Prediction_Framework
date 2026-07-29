@@ -6,6 +6,25 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-07-29 - Report draft: Chapter 7 Module 1/2 Evaluation
+
+### Module
+Report writing (Chapter 7)
+
+### Change
+Created evaluation-and-results draft for Modules 1 and 2 (strategy, forecasting metrics, classification/calibration, M2-009 redundancy test, limitations). Saved at `research_context/report_drafts/chapter7_m1_m2_evaluation.md`. Updated Chapters 4–6 drafts + Module 2 draw.io so Stage 1 official model is Random Forest (M2-005). Updated `CHAPTER_STATUS.md`.
+
+### Reason
+Interim Chapter 7 was a progress narrative written before M1/M2 experiments were complete; final report needs evidence-based evaluation sections.
+
+### Impact
+Team can replace interim Ch 7 M1/M2 content in Word. Module 3 remains a placeholder. Research vs operational evidence tiers stated explicitly.
+
+### Status
+Drafting
+
+---
+
 ## 2026-07-29 - Report draft: Chapter 5.3.1 / 5.3.2 (Modules 1–2 design)
 
 ### Module

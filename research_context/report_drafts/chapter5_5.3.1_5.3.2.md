@@ -140,7 +140,7 @@ Stage 1 feature construction
   (case history + climate lags/current climate/anomalies
    + seasonality + district)
         ↓
-Stage 1: pooled XGBoost outbreak classifier
+Stage 1: pooled Random Forest outbreak classifier
         ↓
 Stage 1 predicted_probability
         ↓
@@ -165,7 +165,7 @@ Two design decisions distinguish Module 2 from Module 1:
 Outbreak status is defined by a fold-aware epidemic threshold using historical mean and dispersion estimated from strictly prior years. The production design uses a harmonic seasonal estimator for historical mean/dispersion and a tuned multiplier `k`, selected to produce a more stable and epidemiologically plausible outbreak prevalence than a fragile exact-week sample estimator. Undefined labels (insufficient history) are excluded from training and scoring rather than forced to zero.
 
 **Stage 1 classifier design.**  
-Stage 1 is a pooled binary classifier with district as a categorical feature. The accepted Stage 1 model is XGBoost, selected after comparison with Logistic Regression and Random Forest under walk-forward validation. Unlike Module 1 Stage 1, Module 2 Stage 1 is designed to include climate features because the task is direct risk discrimination, not isolation of a pure temporal residual. Class imbalance is handled by class reweighting rather than synthetic oversampling in the production design.
+Stage 1 is a pooled binary classifier with district as a categorical feature. The accepted Stage 1 model is Random Forest, selected after comparison with Logistic Regression and XGBoost under walk-forward validation on the current epidemic-threshold label (Decision 025 / M2-005). Unlike Module 1 Stage 1, Module 2 Stage 1 is designed to include climate features because the task is direct risk discrimination, not isolation of a pure temporal residual. Class imbalance is handled by class reweighting rather than synthetic oversampling in the production design.
 
 **Stage 2 compensation design.**  
 Stage 2 receives the Stage 1 predicted probability and applies a probability-compensation layer. The accepted design uses isotonic regression after benchmarking against Platt scaling and a stacked contextual correction model. In architectural terms, Module 2’s second stage corrects calibration error in the probability space:
@@ -199,7 +199,7 @@ Table 5.X: Design contrast between Module 1 and Module 2 residual-compensation a
 | Design aspect | Module 1 | Module 2 |
 |---|---|---|
 | Prediction target | Weekly case count | Outbreak risk (binary label → probability) |
-| Stage 1 model | Per-district SARIMA | Pooled XGBoost classifier |
+| Stage 1 model | Per-district SARIMA | Pooled Random Forest classifier |
 | Climate in Stage 1 | Excluded | Included |
 | Week-53 policy | Merge into week 52 | Keep unmerged |
 | Stage 2 target | Case residual | Probability calibration |

@@ -95,7 +95,7 @@
         <mxCell id="m2_climate_note" value="Climate included&#xa;in Stage 1" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;darkOpacity=0.05;fillColor=#FEF3C7;strokeColor=#D97706;fontColor=#92400E;fontSize=11;size=14;align=center;" vertex="1" parent="1">
           <mxGeometry x="680" y="525" width="110" height="55" as="geometry" />
         </mxCell>
-        <mxCell id="m2_s1" value="Stage 1: Pooled XGBoost outbreak classifier&#xa;Output: predicted_probability&#xa;(class imbalance via scale_pos_weight)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BFDBFE;strokeColor=#1D4ED8;fontColor=#1E3A8A;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+        <mxCell id="m2_s1" value="Stage 1: Pooled Random Forest outbreak classifier&#xa;Output: predicted_probability&#xa;(class imbalance via class_weight)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BFDBFE;strokeColor=#1D4ED8;fontColor=#1E3A8A;fontSize=12;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="210" y="630" width="400" height="70" as="geometry" />
         </mxCell>
         <mxCell id="m2_s2" value="Stage 2: Isotonic probability calibration&#xa;calibrated_probability = g(predicted_probability)&#xa;(probability compensation — not case-residual regression)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCD34D;strokeColor=#B45309;fontColor=#78350F;fontSize=12;fontStyle=1;" vertex="1" parent="1">

@@ -85,7 +85,7 @@ The historical mean and standard deviation are computed from strictly prior year
 **Process**
 
 **Stage 1 — Baseline outbreak classifier.**  
-Stage 1 uses an XGBoost classifier selected after benchmarking against Logistic Regression and Random Forest under a walk-forward validation scheme. The Stage 1 feature set combines epidemiological history features (case lags, rolling statistics, rate-of-change and related trend descriptors, and case-anomaly lags) with climate and seasonal features. Unlike Module 1 Stage 1, Module 2 Stage 1 intentionally includes climate information because its task is direct outbreak-risk discrimination rather than isolation of a pure temporal residual. Class imbalance is handled through class reweighting (`scale_pos_weight` for XGBoost), rather than synthetic oversampling as the production strategy.
+Stage 1 uses a pooled Random Forest classifier selected after benchmarking against Logistic Regression and XGBoost under a walk-forward validation scheme (current official model after Decision 025 / M2-005 label re-estimation). The Stage 1 feature set combines epidemiological history features (case lags, rolling statistics, rate-of-change and related trend descriptors, and case-anomaly lags) with climate and seasonal features. Unlike Module 1 Stage 1, Module 2 Stage 1 intentionally includes climate information because its task is direct outbreak-risk discrimination rather than isolation of a pure temporal residual. Class imbalance is handled through class reweighting (`class_weight="balanced"` for Random Forest), rather than synthetic oversampling as the production strategy.
 
 **Stage 2 — Probability compensation (calibration).**  
 Stage 2 takes the Stage 1 predicted probability and applies a compensation step designed for binary probability outputs. After benchmarking isotonic regression, Platt scaling, and a stacked contextual XGBoost correction model, **isotonic regression** was selected as the official Stage 2 method based on Brier Skill Score. In the accepted design, Stage 2 is therefore primarily a probability-calibration compensator: it adjusts the baseline probability so that predicted risk better matches observed outbreak frequency. A literal residual-regression formulation of the form `label − predicted_probability` was considered and rejected as ill-posed for a binary outcome.
@@ -104,7 +104,7 @@ These outputs are intended to support early-warning communication. They should b
 District-level health authorities and analysts who need probabilistic outbreak-risk alerts to complement quantitative case forecasts from Module 1.
 
 **Suggested Figure:**  
-Figure 4.X: Two-stage Module 2 workflow (epidemic-threshold labelling → XGBoost baseline probability → isotonic calibration → alert flag and risk tier).
+Figure 4.X: Two-stage Module 2 workflow (epidemic-threshold labelling → Random Forest baseline probability → isotonic calibration → alert flag and risk tier).
 
 **Suggested Table:**  
 Table 4.X: Comparison of Module 1 and Module 2 residual-compensation interpretations (case residual vs probability calibration).
