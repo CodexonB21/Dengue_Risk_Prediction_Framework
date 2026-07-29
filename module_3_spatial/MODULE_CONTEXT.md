@@ -344,6 +344,166 @@ chapter.
 
 ---
 
+## Visualization: Continuous Risk Surface (implemented 2026-07-29)
+
+**Rendering-layer technique only — not a new modeling stage.** Neither the
+choropleth (one flat color per district polygon) nor the original Folium
+heat-cloud tab (25 district centroids run through Leaflet's generic
+`HeatMap` plugin, `radius=45, blur=35`) visually showed the spatial
+blending that Stage 1's KDE baseline already computes numerically — a
+point between two high-risk neighbouring districts (e.g. the
+Colombo/Gampaha border) should read hotter than a point between a
+high-risk and a low-risk district (e.g. Colombo/Kalutara), driven by the
+same kernel math already validated via Moran's I, not by an arbitrary
+Leaflet blur radius.
+
+`src/module3_spatial/risk_surface.py` interpolates the 25 already-computed
+`Risk` scores (`hybrid_risk_map.csv`) onto a fine spatial grid. The grid is
+clipped to Sri Lanka's landmass (`shapely.contains_xy` against the union of
+GADM district polygons) so the surface never colors the ocean/India.
+
+**Interpolation method - three attempts, two rejected, verified
+numerically at each step (not assumed):**
+1. **Nadaraya-Watson kernel average, Stage 1's own
+   `silverman_covariance` bandwidth** (tuned for a country-wide Moran's I
+   clustering TEST). Rejected: on 2017 Wk29 (Colombo 1285 / Gampaha 1296 /
+   Kalutara 1141, a genuine 12% Gampaha-vs-Kalutara gap), the
+   Colombo-Gampaha vs. Colombo-Kalutara midpoints came out only **1.3%**
+   apart - the wide, country-scale bandwidth let half the country's
+   districts dilute the local signal.
+2. **Nadaraya-Watson, per-district bandwidth** (each district's own mean
+   distance to its Queen-contiguous neighbours, reasoning that Sri Lanka's
+   districts vary too much in spacing for one shared bandwidth). Rejected,
+   worse than attempt 1: different districts now had differently-shaped
+   kernels, breaking the symmetry a midpoint calculation depends on - on
+   the same 2017 Wk29 check this **reversed** the expected order
+   (Colombo-Gampaha 860.7 < Colombo-Kalutara 863.0).
+3. **k-nearest-neighbour Inverse Distance Weighting (IDW / Shepard's
+   method), k=4** (chosen): `surface(x) = Σ_{i∈kNN(x)} Risk_i / d(x,i)^power
+   / Σ_{i∈kNN(x)} 1/d(x,i)^power` - only the 4 physically closest districts
+   contribute at all; every other district gets exactly zero weight rather
+   than a diluting tail. `power=2` (the IDW default) already fixed the
+   direction: **1269.8 vs. 1210.7** (4.9% gap, correctly higher for
+   Colombo-Gampaha) - the first result matching the intended "risk points
+   toward whichever neighbour has more cases" behaviour.
+
+**Further narrowed on request (2026-07-30).** Swept `k ∈ {2..5} x power ∈
+{2,3,4,6}` against the same check: the gap grows toward a ~6.4% ceiling
+(the plain 2-district average - the limit as only the nearest district
+matters) as `power` increases, with diminishing returns past ~4.
+`power=4` (adopted; `k` stays 4, avoiding `k∈{2,3}`'s more blocky,
+sharply-faceted look) sits close to that ceiling - **1287.9 vs. 1213.3**
+(6.1% gap) - and, more importantly for "narrowing," steepens the falloff
+away from each district's own centroid, visibly shrinking the hot zone's
+footprint (less bleed into Kegalle/Ratnapura beyond the immediate
+Colombo/Gampaha/Kalutara cluster - compare
+`risk_surface_peak_week.png` before/after in git history).
+
+This stays in `Risk`'s own units - a grid point at a district's own
+centroid comes out ≈ that district's own Risk score - and blends only
+toward the district's nearest few neighbours, not the whole country.
+
+**Is the map "test set"-safe / not overfit-in-sample?** (question raised
+2026-07-30) Yes, by construction, for EVERY week - not just one. Module 3
+has NO temporal train/test split anywhere (unlike Module 1/2's fixed
+104-week / 2-year holdout blocks); its only validation axis is 5-fold
+SPATIAL K-means CV (districts held out, never weeks - see
+`compensation_model.py::build_spatial_folds`/`run_spatial_cv`, reused
+identically inside `iterative_loop.py::out_of_fold_predict`). Every row of
+`hybrid_risk_map.csv` - the file this surface interpolates - already comes
+from a model that never saw that district during training, regardless of
+which (Year, Week) is selected. There is consequently no separate
+"held-out test week" to switch this visualization to: the whole file is
+uniformly out-of-fold in the one sense Module 3 validates. A genuine
+temporal holdout (weeks never touched during training, mirroring Module
+1/2) does not currently exist for Module 3 and would be new methodology,
+not a visualization change, if ever wanted.
+
+Explicitly **not** a revisit of the already-rejected GWR-as-a-model
+decision (see "Rejected approach" below): the kernel here interpolates a
+fixed set of already-computed Stage 2 scores for display; it does not
+re-fit anything, does not feed back into the RF or iterative loop, and
+does not change any committed Stage 1/Stage 2 output.
+
+Two consumers:
+- **Static report figure** — `run_risk_surface()` (CLI:
+  `python -m src.module3_spatial.risk_surface [--year YYYY --week N]`), a
+  1000m-resolution grid rendered via matplotlib `pcolormesh`. Defaults to
+  Stage 1's already-identified peak week (2017 Wk29), saving to
+  `outputs/figures/module3/risk_surface_peak_week.png`; an explicit
+  `--year`/`--week` instead saves to `risk_surface_{year}_wk{week}.png`
+  (never overwrites the canonical figure) - added to let other weeks be
+  spot-checked. Also logs a direct sanity check comparing the
+  Colombo-Gampaha midpoint against the Colombo-Kalutara midpoint (verified
+  under the final kNN-IDW, `k=4, power=4` method: 1287.9 vs. 1213.3 at 2017
+  Wk29 — see the "Interpolation method" numbered list above for the two
+  earlier, rejected Gaussian attempts and the `power` sweep on this same
+  check). Spot-checked on three very different weeks (2026-07-30) and
+  confirmed sensible in each: a near-zero "low" week (2007 Wk13, values
+  auto-scale to a tiny range, no degenerate output); the NE-monsoon
+  representative week (2021 Wk1) - the ONE week Stage 1's own Moran's I
+  check found NOT significantly clustered (I=0.031, p=0.279) - correctly
+  shows the hot zone shift away from the west entirely (to Jaffna/Mannar
+  and the Ampara/Batticaloa coast instead), rather than forcing the same
+  western-cluster story every time; and the latest real week (2026 Wk21),
+  correctly rescaled to its much lower case counts, with Kalutara edging
+  out Gampaha - exactly what that week's real numbers say, not a bug.
+  **Deliberately out of scope**: a genuine FUTURE-week map (beyond 2026
+  Wk21). Module 3 has no forecasting capability of its own - both Stage
+  1's KDE weighting and Stage 2's residual target require a known
+  `Number_of_Cases`, and `hybrid_risk_map.csv` stops at the latest week
+  with real reported data. A future map would require feeding Module 1/2's
+  forecasts in as a hypothetical input - real new cross-module work, not a
+  visualization change - decided not to pursue this (2026-07-30).
+- **Dashboard** — `pages.py::_hybrid_risk_folium_heatmap` renders a
+  1500m-resolution grid as a geographically-anchored raster image
+  (`risk_surface.py::risk_surface_rgba` + `grid_lonlat_bounds`, added via
+  `folium.raster_layers.ImageOverlay`) — **not** Leaflet's point-based
+  `HeatMap` plugin (see the root-cause note below for why that was
+  replaced). District boundaries are drawn on top as a no-fill
+  `folium.GeoJson` outline layer (thick black for the selected district,
+  thin white otherwise) SOLELY so a viewer can see where the borders
+  actually are and confirm the raster color visibly crosses them — the
+  raster itself deliberately ignores district shape entirely.
+
+**Root-caused and fixed (2026-07-29): map rendered totally blank.** The
+Folium map used to sit inside the second panel of `st.tabs(["District
+boundaries (choropleth)", "Heat cloud (Folium)"])`. Streamlit tabs hide
+inactive panels with CSS (`display:none`), they don't skip rendering them
+— so Leaflet initialized inside a zero-width/zero-height hidden container
+on first page load and never recovered its size even after the tab was
+clicked (no `invalidateSize()` call wired up on tab-switch). Fixed by
+dropping the tabs entirely: the choropleth (which was pure duplication of
+what the heat-cloud now shows better, with the added drawback of solid
+flat per-district fill — the opposite of this section's goal) was removed,
+and the Folium map is now the single, always-visible view under "Module 3
+— spatial hotspot map", mounted while visible from the first render.
+`_hybrid_risk_choropleth` was deleted from `pages.py` (was otherwise
+unused after this).
+
+**Root-caused and fixed (2026-07-29): heat-cloud showed separate uniform
+circles ("equal bubbles") instead of a continuous surface, once zoomed in
+close.** The first fix above used Leaflet's `HeatMap` plugin fed with
+~7,000 grid points (one per interpolated grid cell). `HeatMap`'s
+`radius`/`blur` are FIXED SCREEN PIXELS - the real-world distance between
+adjacent grid points covers a different pixel span at every zoom level, so
+there is only one zoom level at which a given radius happens to make
+neighbouring points overlap into a smooth blend. Zoom in further (as a
+user naturally would to inspect a specific area) and the same points stop
+overlapping - the "continuous surface" visibly decomposes into separate
+uniform-looking circles, one per grid cell, which defeats the entire
+point of this feature. Fixed by replacing the point-based `HeatMap` with a
+geographically-anchored raster image
+(`risk_surface.py::risk_surface_rgba` - a transparent-outside-Sri-Lanka
+RGBA array built directly from the interpolated grid via a `YlOrRd`
+colormap, plus `grid_lonlat_bounds` reprojecting the grid's UTM corners to
+lon/lat - added to the map via `folium.raster_layers.ImageOverlay`). An
+image overlay scales with the map like any tile layer, so it stays one
+continuous gradient at every zoom level, not just the one radius/blur
+happened to be tuned for.
+
+---
+
 ## Open Questions — now answered
 
 1. **Are district centroids sufficient, or are finer spatial units needed?** → District centroids (25 units) are sufficient for this scope; sub-district disaggregation is noted as a limitation/future work, not implemented.

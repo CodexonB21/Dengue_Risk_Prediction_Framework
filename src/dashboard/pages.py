@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import folium
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from folium.plugins import HeatMap
+from folium.raster_layers import ImageOverlay
 from streamlit_folium import st_folium
 
 from src.config import (
@@ -22,6 +22,16 @@ from src.config import (
     MODULE2_LIVE_RISK_PREDICTIONS_PATH,
     MODULE3_FEATURE_IMPORTANCE_PLOT_PATH,
     SHARED_CLIMATE_WEEKLY_PATH,
+)
+from src.module3_spatial.kde_baseline import (
+    district_centroid_coords,
+    load_district_boundaries,
+)
+from src.module3_spatial.risk_surface import (
+    build_evaluation_grid,
+    evaluate_risk_surface,
+    grid_lonlat_bounds,
+    risk_surface_rgba,
 )
 from src.dashboard.evidence_data import (
     RELIABILITY_HOLDOUT_FIG,
@@ -226,83 +236,55 @@ def _latest_hybrid_risk(hybrid_risk: pd.DataFrame) -> pd.DataFrame:
     ]
 
 
-def _hybrid_risk_choropleth(
-    geometry: "gpd.GeoDataFrame", latest: pd.DataFrame, district: str, year: int, week: int
-):
-    merged = geometry.merge(latest[["District", "Risk", "Number_of_Cases"]], on="District", how="left")
-    geojson = json.loads(merged.to_json())
-
-    # Highlight the selected district with a thick black outline - same
-    # per-district drill-down concept the M1/M2 tabs use, applied to a map
-    # instead of a time series. Non-selected borders are opaque white (not
-    # a faint black) so district boundaries stay visible across the whole
-    # YlOrRd range - a low-opacity dark border disappears against the dark
-    # red high-risk fills at the top of the scale.
-    line_widths = [5 if d == district else 1 for d in merged["District"]]
-    line_colors = ["#0b0b0b" if d == district else "#ffffff" for d in merged["District"]]
-
-    fig = px.choropleth(
-        merged,
-        geojson=geojson,
-        locations="District",
-        featureidkey="properties.District",
-        color="Risk",
-        color_continuous_scale="YlOrRd",  # standard epidemiological risk-map convention
-    )
-    fig.update_traces(
-        marker_line_width=line_widths,
-        marker_line_color=line_colors,
-        customdata=merged[["District", "Number_of_Cases"]],
-        hovertemplate=(
-            "<b>%{customdata[0]}</b><br>"
-            "Hybrid Risk Score: %{z:.1f}<br>"
-            "Actual Cases: %{customdata[1]}"
-            "<extra></extra>"
-        ),
-    )
-    fig.update_geos(fitbounds="locations", visible=False)
-    fig.update_layout(
-        title=dict(
-            text=f"Dengue Hybrid Risk Map — {year} Week {week}",
-            x=0.5,
-            xanchor="center",
-            font=dict(size=20),
-        ),
-        height=700,
-        margin=dict(l=0, r=0, t=70, b=10),
-        coloraxis_colorbar=dict(title=dict(text="Hybrid Risk<br>Score")),
-    )
-    return fig
+# 1500m - finer than the risk_surface.py report figure's 1000m would be
+# overkill for a browser-rendered PNG, but this needs to stay well below
+# any resolution a user could zoom in far enough to visually resolve as
+# separate raster cells (unlike the old point-based Leaflet HeatMap, this
+# is a real image scaled to `bounds`, so higher resolution only costs a
+# larger PNG, not per-zoom-level correctness).
+DASHBOARD_GRID_RESOLUTION_M = 1500.0
 
 
-# Google-Maps-style intensity gradient (blue -> green -> yellow -> orange ->
-# red), distinct in kind from the choropleth's discrete-polygon YlOrRd scale -
-# leaflet.heat expects fractional stop keys as strings.
-HEATMAP_GRADIENT = {"0.2": "blue", "0.4": "lime", "0.6": "yellow", "0.8": "orange", "1.0": "red"}
+@st.cache_data(show_spinner=False)
+def _cached_risk_surface_grid() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """(district_coords, xx, yy, mask), all in the metric CRS (EPSG:32644)
+    risk_surface.py's kernel math uses. This is static geography,
+    independent of the selected Year/Week/District, so it's computed once
+    and reused across every dashboard interaction.
+    """
+    boundaries = load_district_boundaries()
+    district_coords = district_centroid_coords(boundaries)
+    xx, yy, mask, _ = build_evaluation_grid(boundaries, DASHBOARD_GRID_RESOLUTION_M)
+    return district_coords, xx, yy, mask
 
 
 def _hybrid_risk_folium_heatmap(
     geometry: gpd.GeoDataFrame, latest: pd.DataFrame, district: str
 ) -> folium.Map:
-    """Continuous heat-cloud view of Hybrid Risk, centered on each district's
-    centroid (native EPSG:4326, same geometry the choropleth uses) - a
-    plume-style complement to the choropleth's precise district boundaries,
-    not a replacement for it.
+    """Continuous heat-cloud view of Hybrid Risk, interpolated via
+    k-nearest-neighbour Inverse Distance Weighting
+    (`risk_surface.py::evaluate_risk_surface`) - at any point, only the
+    physically closest few districts contribute at all, so risk visibly
+    concentrates toward the border between two high-risk neighbouring
+    districts instead of blobbing solidly around each district's own
+    centroid, or (as a Gaussian-kernel attempt was found to do - see
+    `evaluate_risk_surface`'s docstring) diluting that effect across the
+    whole country.
     """
     merged = geometry.merge(latest[["District", "Risk", "Number_of_Cases"]], on="District", how="left")
     centroids = merged.geometry.centroid
 
-    # leaflet.heat's `max` option defaults to 1.0 - passing raw Risk values
-    # (up to ~1300) unnormalized would saturate every point to full
-    # intensity, collapsing the gradient to solid red. Min-max scaling to
-    # [0, 1] here (rather than relying on an internal default) guarantees
-    # the full blue->red gradient is actually used across the data.
-    max_risk = merged["Risk"].max()
-    heat_data = [
-        [pt.y, pt.x, float(risk) / float(max_risk)]
-        for pt, risk in zip(centroids, merged["Risk"])
-        if pd.notna(risk) and max_risk > 0
-    ]
+    district_coords, xx, yy, mask = _cached_risk_surface_grid()
+    grid_coords = np.column_stack([xx[mask], yy[mask]])
+    # Genuinely-missing districts for this week are treated as 0 risk for
+    # interpolation purposes only (mirrors kde_baseline.py's own 0-weight
+    # treatment of absent (District, Year, Week) cells) - a NaN here would
+    # otherwise poison the weighted average at every grid point, not just
+    # the missing district's own.
+    risk_by_district = merged.set_index("District")["Risk"].reindex(DISTRICTS).fillna(0.0)
+    surface_values = evaluate_risk_surface(
+        grid_coords, district_coords, risk_by_district.to_numpy(dtype=float)
+    )
 
     # A fixed zoom_start, not fit_bounds() - fit_bounds computes its zoom
     # from the EMBEDDING IFRAME's measured width at the moment the map
@@ -315,7 +297,42 @@ def _hybrid_risk_folium_heatmap(
         location=[centroids.y.mean(), centroids.x.mean()], zoom_start=8, tiles="OpenStreetMap"
     )
 
-    HeatMap(heat_data, radius=45, blur=35, max_zoom=8, gradient=HEATMAP_GRADIENT).add_to(fmap)
+    # A geographically-anchored raster image, not Leaflet's point-based
+    # HeatMap plugin: HeatMap's radius/blur are fixed SCREEN pixels, so the
+    # surface only looks continuous at the one zoom level those pixel
+    # values happen to match the grid spacing at - zoom in further and the
+    # grid becomes visible as separate uniform blobs (exactly backwards for
+    # a feature whose whole point is a continuous border-blended surface).
+    # An ImageOverlay scales with the map like any tile layer, so it stays
+    # a smooth gradient at every zoom level.
+    rgba = risk_surface_rgba(xx, yy, mask, surface_values)
+    bounds = grid_lonlat_bounds(xx, yy)
+    ImageOverlay(rgba, bounds=bounds, opacity=0.85).add_to(fmap)
+
+    # District boundary outlines drawn on top of the raster - the surface
+    # itself is continuous and deliberately ignores district borders (that
+    # is the whole point: risk should blend across a border between two
+    # high-risk neighbours, not stop dead at it), but the borders still
+    # need to be VISIBLE so a viewer can actually see the color pushing
+    # past them, e.g. into a neighbouring district. No fill (fillOpacity=0)
+    # - only the raster overlay should contribute color. White for
+    # unselected borders (visible across the whole YlOrRd range, unlike a
+    # low-opacity dark line which disappears against the dark-red high-risk
+    # fills), thick black for the selected district - same convention the
+    # old choropleth used.
+    def _boundary_style(feature: dict) -> dict:
+        is_selected = feature["properties"]["District"] == district
+        return {
+            "fillOpacity": 0,
+            "color": "#0b0b0b" if is_selected else "#ffffff",
+            "weight": 3 if is_selected else 1.2,
+        }
+
+    folium.GeoJson(
+        merged[["District", "geometry"]].to_json(),
+        style_function=_boundary_style,
+        tooltip=folium.GeoJsonTooltip(fields=["District"]),
+    ).add_to(fmap)
 
     for _, row in merged.iterrows():
         pt = row.geometry.centroid
@@ -518,23 +535,15 @@ def render_operational_page(
             f"(selected district **{district}** outlined in black)."
         )
 
-        tab_choropleth, tab_heatmap = st.tabs(
-            ["District boundaries (choropleth)", "Heat cloud (Folium)"]
+        st.caption(
+            "Continuous heat-cloud intensity weighted by Hybrid Risk, interpolated via "
+            "nearest-neighbour distance weighting — risk visibly concentrates toward the "
+            "border between two high-risk neighbouring districts rather than blobbing "
+            "solidly around each district's own centroid. Click a pin for that district's "
+            "exact values."
         )
-
-        with tab_choropleth:
-            fig = _hybrid_risk_choropleth(district_geometry, latest, district, latest_year, latest_week)
-            st.plotly_chart(fig, use_container_width=True)
-
-        with tab_heatmap:
-            st.caption(
-                "Continuous heat-cloud intensity weighted by Hybrid Risk, centered on each "
-                "district's centroid over an OpenStreetMap base layer — complements the "
-                "choropleth's precise district boundaries with a plume-style view of where "
-                "risk clusters spatially. Click a pin for that district's exact values."
-            )
-            heatmap = _hybrid_risk_folium_heatmap(district_geometry, latest, district)
-            st_folium(heatmap, use_container_width=True, height=600, returned_objects=[])
+        heatmap = _hybrid_risk_folium_heatmap(district_geometry, latest, district)
+        st_folium(heatmap, use_container_width=True, height=600, returned_objects=[])
 
         district_row = latest.loc[latest["District"] == district]
         if not district_row.empty:
