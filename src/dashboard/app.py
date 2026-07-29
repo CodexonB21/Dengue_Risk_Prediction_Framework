@@ -1,6 +1,8 @@
 """Sri Lanka dengue early-warning dashboard (Streamlit).
 
-Read-only consumer of frozen model outputs. Run::
+Read-only consumer of frozen model outputs. Observer guide: ``DASHBOARD_GUIDE.md``.
+
+Run::
 
     streamlit run src/dashboard/app.py
 """
@@ -44,8 +46,11 @@ def load_csv(path_str: str, mtime: float | None) -> pd.DataFrame:
     path = Path(path_str)
     if not path.exists():
         return pd.DataFrame()
-    parse_dates = ["Week_Start_Date", "Week_End_Date"] if path.name != "climate_weekly.csv" else []
-    return pd.read_csv(path, parse_dates=parse_dates if parse_dates else None)
+    df = pd.read_csv(path)
+    for col in ("Week_Start_Date", "Week_End_Date"):
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce")
+    return df
 
 
 def _load(path: Path) -> pd.DataFrame:
@@ -83,9 +88,24 @@ def _run_refresh(skip_weather: bool) -> None:
 def main() -> None:
     st.set_page_config(page_title="Dengue Early Warning", layout="wide")
     st.title("Sri Lanka Dengue Early Warning Dashboard")
-    st.caption(
-        "Operational view combining Module 1 case forecasts and Module 2 outbreak risk. "
-        "**Forward outputs are evidence tier: operational — not holdout-validated skill.**"
+
+    live = _load(MODULE2_LIVE_RISK_PREDICTIONS_PATH)
+    future_risk = _load(MODULE2_FUTURE_RISK_PREDICTIONS_PATH)
+    future_cases = _load(MODULE1_FUTURE_FORECAST_PATH)
+    m1_weekly = _load(MODULE1_WEEKLY_MODELING_TABLE_PATH)
+    climate = _load(SHARED_CLIMATE_WEEKLY_PATH)
+    manifest = _load(DASHBOARD_REFRESH_MANIFEST_PATH)
+
+    case_y, case_w = _latest_case_week(m1_weekly)
+    clim_y, clim_w = _latest_climate_week(climate)
+    refresh_ts = manifest["refreshed_at_utc"].iloc[0] if not manifest.empty and "refreshed_at_utc" in manifest.columns else None
+
+    st.info(
+        "**Data freshness:** "
+        f"last case epi-week **{case_y} Wk{case_w}** · "
+        f"last observed climate epi-week **{clim_y} Wk{clim_w}** · "
+        f"last refresh **{refresh_ts or 'unknown'}**. "
+        "Forward views use **operational** outputs — not holdout-validated PR-AUC/BSS."
     )
 
     with st.sidebar:
@@ -94,19 +114,15 @@ def main() -> None:
         skip_weather = st.checkbox("Skip weather fetch", value=False)
         if st.button("Refresh data"):
             _run_refresh(skip_weather)
+            st.rerun()
 
-        manifest = _load(DASHBOARD_REFRESH_MANIFEST_PATH)
-        if not manifest.empty and "refreshed_at_utc" in manifest.columns:
-            st.caption(f"Last refresh: {manifest['refreshed_at_utc'].iloc[0]}")
+        if refresh_ts:
+            st.caption(f"Last refresh (UTC): {refresh_ts}")
 
-    live = _load(MODULE2_LIVE_RISK_PREDICTIONS_PATH)
-    future_risk = _load(MODULE2_FUTURE_RISK_PREDICTIONS_PATH)
-    future_cases = _load(MODULE1_FUTURE_FORECAST_PATH)
-    m1_weekly = _load(MODULE1_WEEKLY_MODELING_TABLE_PATH)
-    climate = _load(SHARED_CLIMATE_WEEKLY_PATH)
-
-    case_y, case_w = _latest_case_week(m1_weekly)
-    clim_y, clim_w = _latest_climate_week(climate)
+    st.caption(
+        "Read-only consumer of frozen model checkpoints. "
+        "Holdout metrics live in experiment logs — never infer skill from this dashboard."
+    )
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Last case epi-week", f"{case_y} Wk{case_w}" if case_y else "—")
@@ -121,6 +137,11 @@ def main() -> None:
     )
 
     st.subheader("National overview")
+    st.warning(
+        "Alert counts below are **operational early-warning signals**. "
+        "Multi-week forward risk compounds Module 1 case-forecast error and "
+        "forecast-climate uncertainty. Do not cite as validation evidence."
+    )
     forward = future_risk.loc[future_risk["prediction_type"] == "forward_week"].copy()
     if not forward.empty:
         latest_forward = forward.loc[forward["horizon_step"] == 1]
@@ -186,6 +207,11 @@ def main() -> None:
             st.caption("Module 1 forward forecast — operational tier, not holdout MASE.")
 
     with tab_forward:
+        st.warning(
+            "**Evidence tier: operational.** Production models trained on all history. "
+            "Horizon ≥ 2 uses Module 1 predicted cases for lag features (`uses_module1_cases`). "
+            "Not holdout PR-AUC/BSS."
+        )
         dfwd = future_risk.loc[future_risk["District"] == district].sort_values("horizon_step")
         if dfwd.empty:
             st.warning("No forward risk predictions.")

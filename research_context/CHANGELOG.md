@@ -29,6 +29,25 @@ Accepted / Rejected / Experimental / Superseded
 
 ---
 
+## 2026-07-29 - Dashboard Observer Guide
+
+### Module
+Integration layer (dashboard)
+
+### Change
+Added `src/dashboard/DASHBOARD_GUIDE.md` — observer/demo guide covering page layout, column definitions, risk tiers, operational vs holdout distinction, walkthrough script, and troubleshooting. Updated `app.py` docstring to reference the guide.
+
+### Reason
+Support thesis demo, viva defense, and stakeholder handoff without relying on chat or ad-hoc explanation.
+
+### Impact
+Documentation only; no pipeline or model changes.
+
+### Status
+Accepted
+
+---
+
 ## 2026-07-29 - Early Warning Dashboard, Climate Refresh, Module 2 Forward Risk (M1-fed)
 
 ### Module

@@ -34,8 +34,17 @@ from src.config import (  # noqa: E402
     MODULE1_FUTURE_FORECAST_PATH,
     MODULE2_FUTURE_RISK_PREDICTIONS_PATH,
     MODULE2_WEEKLY_MODELING_TABLE_PATH,
+    RAW_WEATHER_DIR,
     SHARED_CLIMATE_WEEKLY_PATH,
     SHARED_EPI_WEEK_CALENDAR_PATH,
+)
+from src.preprocessing.shared import (  # noqa: E402
+    CLIMATE_MEAN_COLUMNS,
+    CLIMATE_MODE_COLUMN,
+    CLIMATE_SOURCE_COLUMN,
+    CLIMATE_SUM_COLUMNS,
+    district_from_weather_filename,
+    load_weather_file,
 )
 from src.module2_classification.feature_engineering import (  # noqa: E402
     RAINFALL_COLUMN,
@@ -83,11 +92,54 @@ def _load_m1_forecasts() -> pd.DataFrame:
     return pd.read_csv(MODULE1_FUTURE_FORECAST_PATH)
 
 
+def _aggregate_daily_climate_for_range(
+    daily: pd.DataFrame,
+    week_start: pd.Timestamp,
+    week_end: pd.Timestamp,
+) -> dict:
+    """Aggregate raw daily Open-Meteo rows into one epi-week (forward weeks)."""
+    mask = (daily["time"] >= week_start) & (daily["time"] <= week_end)
+    subset = daily.loc[mask]
+    if subset.empty:
+        return {}
+    row: dict = {}
+    for col in CLIMATE_SUM_COLUMNS:
+        if col in subset.columns:
+            row[col] = subset[col].sum()
+    for col in CLIMATE_MEAN_COLUMNS:
+        if col in subset.columns:
+            row[col] = subset[col].mean()
+    if CLIMATE_MODE_COLUMN in subset.columns:
+        mode = subset[CLIMATE_MODE_COLUMN].mode()
+        row[CLIMATE_MODE_COLUMN] = mode.iloc[0] if not mode.empty else np.nan
+    if CLIMATE_SOURCE_COLUMN in subset.columns:
+        filled = subset[CLIMATE_SOURCE_COLUMN].fillna("observed")
+        counts = filled.value_counts()
+        if len(counts) > 1 and counts.get("forecast", 0) > 0 and counts.get("observed", 0) > 0:
+            row[CLIMATE_SOURCE_COLUMN] = "mixed"
+        else:
+            row[CLIMATE_SOURCE_COLUMN] = counts.idxmax()
+    else:
+        row[CLIMATE_SOURCE_COLUMN] = "observed"
+    return row
+
+
+def _load_district_daily_weather() -> dict[str, pd.DataFrame]:
+    """Cache daily weather per district for forward-week aggregation."""
+    cache: dict[str, pd.DataFrame] = {}
+    for path in sorted(RAW_WEATHER_DIR.glob("open-meteo-*.csv")):
+        district = district_from_weather_filename(path)
+        if district in DISTRICTS:
+            cache[district] = load_weather_file(path)
+    return cache
+
+
 def _extend_with_forward_weeks(
     modeling_df: pd.DataFrame,
     calendar: pd.DataFrame,
     climate_weekly: pd.DataFrame,
     horizon: int,
+    daily_weather: dict[str, pd.DataFrame] | None = None,
 ) -> pd.DataFrame:
     """Append synthetic future epi-week rows (climate only, cases NaN)."""
     extra_rows: list[dict] = []
@@ -131,9 +183,16 @@ def _extend_with_forward_weeks(
                 src = climate_row.iloc[0].get("climate_data_source", "observed")
                 row["climate_data_source"] = src if pd.notna(src) else "observed"
             else:
-                for col in CLIMATE_COLS:
-                    row[col] = np.nan
-                row["climate_data_source"] = "missing"
+                daily = (daily_weather or {}).get(district)
+                if daily is not None:
+                    agg = _aggregate_daily_climate_for_range(daily, week_start, week_end)
+                    for col in CLIMATE_COLS:
+                        row[col] = agg.get(col, np.nan)
+                    row["climate_data_source"] = agg.get(CLIMATE_SOURCE_COLUMN, "missing")
+                else:
+                    for col in CLIMATE_COLS:
+                        row[col] = np.nan
+                    row["climate_data_source"] = "missing"
             extra_rows.append(row)
 
     if not extra_rows:
@@ -173,11 +232,9 @@ def _attach_anomalies(features: pd.DataFrame) -> pd.DataFrame:
 
 
 def _climate_source_label(row: pd.Series) -> str:
-    src = row.get("climate_data_source", "observed")
+    src = row.get("climate_data_source")
     if pd.isna(src) or src in ("", "missing"):
-        if pd.isna(row.get(RAINFALL_COLUMN)):
-            return "missing"
-        return "observed"
+        return "missing"
     src = str(src)
     if src == "forecast":
         return "forecast"
@@ -186,14 +243,15 @@ def _climate_source_label(row: pd.Series) -> str:
     return "mixed"
 
 
-def _cases_source_label(row: pd.Series, m1_keys: set[tuple[str, int, int]]) -> tuple[str, bool]:
+def _cases_source_label(row: pd.Series) -> tuple[str, bool]:
+    """Label case provenance for output rows (not lag-chain internals)."""
     if pd.notna(row["Number_of_Cases"]):
         return "actual", False
-    uses_m1 = row.get("prediction_type") == "forward_week" and int(row["horizon_step"]) >= 2
-    if uses_m1:
-        return "na", True
-    if (row["District"], int(row["Year"]), int(row["Week"])) in m1_keys:
+    horizon = int(row["horizon_step"])
+    if row.get("prediction_type") == "forward_week" and horizon >= 2:
+        # M1 final_prediction feeds the synthetic lag chain from t+2 onward.
         return "module1_forecast", True
+    # t+1: real historical lags only; current-week cases intentionally NaN.
     return "na", False
 
 
@@ -204,9 +262,11 @@ def run_forward_risk(horizon: int = FORECAST_HORIZON_WEEKS) -> pd.DataFrame:
     calendar = pd.read_csv(SHARED_EPI_WEEK_CALENDAR_PATH, parse_dates=["Week_Start_Date", "Week_End_Date"])
     climate_weekly = pd.read_csv(SHARED_CLIMATE_WEEKLY_PATH)
     m1_forecasts = _load_m1_forecasts()
-    m1_keys = set(zip(m1_forecasts["District"], m1_forecasts["Year"].astype(int), m1_forecasts["Week"].astype(int)))
+    daily_weather = _load_district_daily_weather()
 
-    extended = _extend_with_forward_weeks(modeling_df, calendar, climate_weekly, horizon)
+    extended = _extend_with_forward_weeks(
+        modeling_df, calendar, climate_weekly, horizon, daily_weather=daily_weather,
+    )
     cases_for_lags = _cases_for_lags(extended, m1_forecasts)
     features = _build_features_with_case_proxy(extended, cases_for_lags)
     features = _attach_anomalies(features)
@@ -230,6 +290,11 @@ def run_forward_risk(horizon: int = FORECAST_HORIZON_WEEKS) -> pd.DataFrame:
         targets.append(forward)
 
     target_meta = pd.concat(targets, ignore_index=True)
+    meta_output_cols = [
+        "District", "Year", "Week", "Week_Start_Date", "horizon_step", "prediction_type",
+        "Number_of_Cases",
+    ]
+    target_meta_out = target_meta[meta_output_cols]
     feature_subset = features.merge(
         target_meta[["District", "Year", "Week", "horizon_step", "prediction_type"]],
         on=["District", "Year", "Week"],
@@ -244,7 +309,7 @@ def run_forward_risk(horizon: int = FORECAST_HORIZON_WEEKS) -> pd.DataFrame:
     alert_threshold, high_threshold = load_production_thresholds()
     scored = apply_risk_tiers(scored, alert_threshold, high_threshold)
 
-    result = target_meta.merge(
+    result = target_meta_out.merge(
         scored[
             ["District", "Year", "Week", "predicted_probability", "calibrated_probability",
              "alert_flag", "risk_tier", "feature_completeness_pct"]
@@ -256,7 +321,7 @@ def run_forward_risk(horizon: int = FORECAST_HORIZON_WEEKS) -> pd.DataFrame:
         on=["District", "Year", "Week"],
         how="left",
     )
-    cases_info = result.apply(lambda r: _cases_source_label(r, m1_keys), axis=1, result_type="expand")
+    cases_info = result.apply(_cases_source_label, axis=1, result_type="expand")
     result["cases_source"] = cases_info[0]
     result["uses_module1_cases"] = cases_info[1]
     result["climate_source"] = result.apply(_climate_source_label, axis=1)

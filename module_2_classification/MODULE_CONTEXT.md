@@ -569,7 +569,10 @@ live-scoring path reproduces a real, known outbreak signal.
 `src/module2_classification/forecast_future_risk.py` scores horizon 0 (latest
 observed week) plus 8 forward epi-weeks per district. Multi-week-ahead rows
 (`horizon_step >= 2`) use Module 1 `final_prediction` for case-derived lag features
-(`uses_module1_cases=True`). Output: `future_risk_predictions.csv` with
+(`uses_module1_cases=True`; `cases_source=module1_forecast`). Horizon 1 uses real
+historical lags only (`cases_source=na`). Forward epi-weeks beyond
+`climate_weekly.csv` aggregate daily Open-Meteo rows (observed/forecast/mixed
+`climate_source`). Output: `future_risk_predictions.csv` with
 `evidence_tier=operational`. Shared helpers in `scoring_utils.py`.
 
 Module 1 `future_forecast.csv` is now an **operational input** to Module 2 forward
