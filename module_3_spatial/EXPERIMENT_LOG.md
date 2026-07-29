@@ -423,3 +423,179 @@ not the raw Stage 1 output, per the new `MODULE_CONTEXT.md` section.
 - Added `src/module3_spatial/compensation_model.py`.
 - Added `outputs/metrics/module3/rf_stage2_metrics.csv`,
   `rf_feature_importance.csv`, `spatial_cv_folds.csv`.
+
+---
+
+## Experiment ID: M3-004
+
+### Date
+2026-07-29
+
+### Research Question
+Does the iterative refinement loop specified in `MODULE_CONTEXT.md`
+(`Risk_t = Risk_(t-1) + predicted_residual_t`, repeat until dual
+convergence) actually converge under genuinely out-of-fold RF retraining
+- and if the literal formula doesn't, what fix restores it, and how should
+the fix be chosen rather than tuned to produce a "nice" result?
+
+### Spatial Unit
+District-week, same grain as M3-001/002/003. Same 5 spatial K-means CV
+folds as M3-003, re-fit every iteration (folds fixed, only the training
+target changes).
+
+### Baseline Spatial Method
+`Risk_0` = the mass-conserving rescaled `KDE_baseline` from M3-003
+(`compensation_model.py::rescale_kde_baseline()`), NOT Stage 1's raw
+`KDE_baseline` - per `MODULE_CONTEXT.md`'s "KDE_baseline: Two Valid Uses"
+section.
+
+### Stage 2 Model
+`RandomForestRegressor`, same `RF_PARAMS` as M3-003, retrained from
+scratch on all 5 spatial folds every iteration (up to 4 iterations x 5
+folds = up to 20 fits). Two retraining alternatives were considered and
+rejected before writing code - flagged to the user first:
+1. **Frozen single model** (reuse M3-003's already-trained model): cannot
+   work - its inputs (climate/population features) never change between
+   iterations, so it outputs the IDENTICAL `predicted_residual` every
+   iteration regardless of how `Risk_(t-1)` evolves, making convergence
+   structurally impossible.
+2. **In-sample retrain on all districts**: would let the RF substantially
+   overfit its own target each pass, "converging" within 1-2 iterations
+   via memorization, not genuine correction - a hollow result for the
+   module's core novelty claim.
+User confirmed the third option: retrain via the same spatial CV
+structure every iteration, using out-of-fold predictions (a district's
+prediction always comes from a model that never saw it).
+
+### Spatial Features Used
+Same 16 features as M3-003 (`population_density`, `Estimated_Population`,
+`elevation_m` among them - all static per-district, which turned out to
+be the root cause of the divergence below).
+
+### Validation Method
+Dual convergence check per iteration, using `Risk_t` (just computed):
+1. `max(|Risk_t - Risk_(t-1)|) < epsilon` (epsilon = 1% of `Risk_0`'s
+   range, fixed once, not recomputed per iteration).
+2. Aggregated Global Moran's I (queen contiguity, same weights as
+   M3-001), of `Number_of_Cases - Risk_t`, not significant.
+Stop at the first iteration meeting BOTH, or at iteration 4.
+
+### Results
+- **First run (alpha=1.0, the literal spec formula) DIVERGED**:
+
+  | Iteration | Risk range | max_delta | Moran's I | p_sim |
+  |---|---|---|---|---|
+  | 0 (Risk_0) | [0.000, 1298.456] | — | — | — |
+  | 1 | [-83.064, 1252.304] | 192.62 | 0.033 | 0.284 |
+  | 2 | [-237.599, 1367.626] | 275.21 | 0.108 | 0.099 |
+  | 3 | [-685.375, 1624.346] | 485.02 | 0.077 | 0.186 |
+  | 4 | [-1414.361, 2523.706] | 1094.06 | 0.093 | 0.146 |
+
+  `max_delta` grew every iteration (accelerating: +43%, +76%, +126% per
+  step) and `Risk` reached physically nonsensical negative values. Traced
+  the arithmetic carefully - not a code bug. Root cause: `population_density`,
+  `Estimated_Population`, `elevation_m` are static per-district, so
+  out-of-fold prediction for a held-out district is genuine extrapolation
+  with real, non-cancelling error - adding it back at full magnitude
+  compounds each iteration (the exact instability a gradient-boosting
+  learning rate exists to prevent). Flagged to the user before treating
+  this as final.
+- **Fix**: added `alpha` shrinkage,
+  `Risk_t = Risk_(t-1) + alpha * predicted_residual_t`. Empirically tested
+  4 values rather than picking one blind:
+
+  | Alpha | Iteration 1 max_delta | 4-iteration behavior | Converges? |
+  |---|---|---|---|---|
+  | 1.0 | 192.62 | Diverges (→1094.06), Risk → -1414 | No |
+  | 0.3 | 57.79 | Grows steadily (57.8→98.8), decelerating | No |
+  | 0.15 | 28.89 | Grows slowly (28.9→34.1), clearly decelerating | No |
+  | 0.05 | 9.63 | **Converges at iteration 1** | Yes |
+
+  Important pattern across ALL 4 values: aggregated Moran's I of the
+  residual is NEVER significant, even at iteration 1 (p_sim ≥ 0.14
+  throughout). This means the spatial-clustering half of the convergence
+  criterion is essentially always trivially satisfied on this dataset -
+  the real bottleneck is purely the numeric `max_delta < epsilon` bound,
+  which scales almost linearly with alpha (since
+  `max_delta ≈ alpha × raw_max_prediction_error`, and that raw max is
+  dominated by a few extreme district-weeks - almost certainly the 2017
+  outbreak). Flagged this mechanical relationship explicitly to the user
+  before choosing a final alpha, since it means "convergence" at small
+  alpha is largely a consequence of the threshold choice, not evidence of
+  several iterations of genuine refinement.
+- **User chose alpha=0.05** (clean convergence at iteration 1) over
+  alpha=0.15 (runs the full 4-iteration budget, shows a real decelerating
+  trend, never numerically converges) - both were presented as legitimate,
+  defensible options.
+- **Final result**: converged at **iteration 1**. `max_delta = 9.63 <
+  epsilon = 12.98`. Moran's I = -0.158, p_sim = 0.147 (not significant).
+  `data/features/module3/hybrid_risk_map.csv`: 25,123 rows,
+  `corr(Risk, Number_of_Cases) = 0.82`. 216 rows (0.86%) have a small
+  negative `Risk` (min -2.32) - not clipped, flagged as a minor overshoot
+  on near-zero-case district-weeks rather than silently left unmentioned.
+
+### Interpretation
+The divergence was a genuine discovery, not an implementation error -
+catching it via honest out-of-fold evaluation (rather than the in-sample
+retraining that would have hidden it behind apparent fast "convergence")
+is exactly why the earlier retraining-strategy decision mattered. The
+shrinkage fix is a standard, well-understood mechanism (learning rate),
+not an arbitrary patch, but it IS a real deviation from `MODULE_CONTEXT.md`'s
+literal formula - documented prominently rather than silently introduced.
+
+**Why the loop converges in 1 iteration - verified, not assumed.** The
+Moran's I criterion being trivially satisfied at every alpha tested could
+be read two ways: either the RF's single-pass correction removes the
+residual's spatial autocorrelation, or that autocorrelation was already
+gone before the RF ever touched it. These attribute credit to different
+stages and are not interchangeable, so this was checked directly rather
+than left as an inference: computed Moran's I on
+`Number_of_Cases - Risk_0` (the residual against Stage 1's rescaled KDE
+baseline ALONE, zero RF involvement) - **I = -0.166, p_sim = 0.133 (not
+significant)**, essentially identical to the post-RF-correction result
+(I = -0.158, p_sim = 0.147). This confirms the second reading: **Stage
+1's KDE baseline alone already achieves spatial non-significance**,
+consistent with its own Moran's I = 0.70 validation (M3-001) - it
+genuinely captures the spatial clustering structure, leaving nothing
+significant for the RF to decluster further. The RF's actual contribution
+in this loop is therefore district-level burden correction
+(population/climate-driven), not spatial declustering - consistent with,
+and now more precisely attributed than, M3-003's feature importance
+finding (population dominates). The single-iteration convergence means
+this dataset's dynamics don't showcase a dramatic multi-step refinement
+narrative - an honest limitation to state plainly, not oversell.
+
+**Self-correction note**: the first draft of this Interpretation
+attributed the immediate spatial non-significance to "the RF's single-pass
+correction" without having actually tested the pre-RF residual - a
+plausible-sounding but unverified causal claim. Flagged as untested before
+being written into the permanent record, checked directly (the Moran's I
+computation above), and found to need correction: credit belongs to
+Stage 1's KDE baseline, not the RF. Recorded here deliberately, not just
+the corrected conclusion, because the verification step - catching an
+unverified causal claim before it became the documented explanation - is
+itself the methodology worth showing, not only the final number.
+
+### Decision
+**Keep** alpha=0.05 shrinkage as the final formula
+(`Risk_t = Risk_(t-1) + 0.05 * predicted_residual_t`), documented as a
+necessary, empirically-justified deviation from the original spec, not an
+unexplained parameter. **Keep** out-of-fold spatial CV retraining every
+iteration (not frozen, not in-sample). **Do not clip** the small negative
+`Risk` values (216 rows, max magnitude 2.32) - noted as a known minor
+characteristic. Stage 2 is now complete: feature engineering (M3-002),
+single-pass RF + spatial CV (M3-003), and the iterative loop (this entry)
+are all implemented.
+
+### Documentation Updated
+- `module_3_spatial/MODULE_CONTEXT.md` (updated "KDE_baseline: Two Valid
+  Uses" section - loop is no longer "not yet built"; updated Stage 2 spec
+  block with the `alpha` shrinkage term; new "Random Forest compensation
+  model" and "Iterative refinement loop" subsections under "Stage 2
+  Implementation Status").
+- `module_3_spatial/EXPERIMENT_LOG.md` (this entry).
+- `src/config.py` (added `MODULE3_CONVERGENCE_LOG_PATH`,
+  `MODULE3_HYBRID_RISK_MAP_PATH`).
+- Added `src/module3_spatial/iterative_loop.py`.
+- Added `outputs/metrics/module3/iterative_convergence_log.csv`,
+  `data/features/module3/hybrid_risk_map.csv`.

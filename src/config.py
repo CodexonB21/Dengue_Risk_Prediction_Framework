@@ -53,6 +53,8 @@ MODULE3_RF_FINAL_MODEL_PATH = MODULE3_MODELS_DIR / "rf_final_model.joblib"
 MODULE3_RF_METRICS_PATH = MODULE3_METRICS_DIR / "rf_stage2_metrics.csv"
 MODULE3_RF_FEATURE_IMPORTANCE_PATH = MODULE3_METRICS_DIR / "rf_feature_importance.csv"
 MODULE3_SPATIAL_CV_FOLDS_PATH = MODULE3_METRICS_DIR / "spatial_cv_folds.csv"
+MODULE3_CONVERGENCE_LOG_PATH = MODULE3_METRICS_DIR / "iterative_convergence_log.csv"
+MODULE3_HYBRID_RISK_MAP_PATH = MODULE3_FEATURES_DIR / "hybrid_risk_map.csv"
 
 # --- Module 1 layer outputs ---
 MODULE1_PROCESSED_DIR = PROCESSED_DIR / "module1"

@@ -117,10 +117,9 @@ explicitly so it reads that way to a review panel too:
 
 **Same underlying spatial shape, two different valid uses**: a
 scale-invariant clustering test doesn't need (or benefit from) the
-rescale; a subtractable baseline can't work without it. The iterative
-loop (not yet built) must use the RESCALED form as `Risk_0`, not the raw
-one, for `Risk_t = Risk_(t-1) + predicted_residual_t` to stay on a
-consistent scale across iterations.
+rescale; a subtractable baseline can't work without it. The iterative loop
+(`src/module3_spatial/iterative_loop.py`, implemented) uses the RESCALED
+form as `Risk_0`, per this note.
 
 ---
 
@@ -143,8 +142,12 @@ Residual = Actual_case_intensity − Current_Risk
 
 **Iterative loop (novel contribution):**
 ```
-Risk_t = Risk_(t-1) + predicted_residual_t
+Risk_t = Risk_(t-1) + alpha * predicted_residual_t
 ```
+`alpha = 0.05` (shrinkage/learning-rate term, NOT in the original spec -
+discovered necessary during implementation; see "Stage 2 Implementation
+Status" below for why the un-shrunk `alpha=1.0` formula diverges).
+
 Repeat until BOTH:
 1. `max(|Risk_t − Risk_(t-1)|) < ε` (≈1% of initial risk range), AND
 2. Moran's I of the new residual is not statistically significant
@@ -159,8 +162,7 @@ Cap at 4 iterations as a practical safeguard. Log risk values and Moran's I per 
 `src/module3_spatial/feature_engineering.py` merges `master_table.csv` with
 `baseline_risk.csv` on `(District, Year, Week)` and writes
 `data/features/module3/stage2_feature_table.csv` (25,223 rows, 23
-columns). The Random Forest model and iterative loop are **not yet
-built** - this step is feature engineering only.
+columns).
 
 Two column choices the spec above leaves implicit were pinned down:
 - **"Rainfall" / "temperature"** each map to ONE canonical column:
@@ -204,6 +206,83 @@ Design notes:
   per lag depth (2/3/4 weeks × 25 districts) - this is a feature table,
   not a training matrix; drop-vs-impute is deferred to the RF-training
   step, which may want different handling per lag depth.
+
+**Random Forest compensation model, single-pass (implemented 2026-07-28)**
+— `src/module3_spatial/compensation_model.py`. Trains on 25,123 rows
+(after dropping 100 series-start rows lacking full `lag_4` history),
+evaluated under 5-fold spatial K-means CV (whole districts clustered by
+GADM centroid, never split across folds). **Aggregate MAE = 33.12 ± 23.57,
+RMSE = 54.79 ± 29.63** across folds - the spread tracks each fold's case
+volume (folds containing Colombo/Gampaha/Galle/Kalutara have higher
+absolute error). Feature importance dominated by `population_density`
+(0.407) and `Estimated_Population` (0.178) - together 58.5%, sensible
+since the rescaled KDE baseline already captures pure spatial-proximity
+redistribution. Models are `.gitignore`d (not committed - regenerate via
+`python -m src.module3_spatial.compensation_model`); metrics CSVs are
+committed (`outputs/metrics/module3/rf_stage2_metrics.csv`,
+`rf_feature_importance.csv`, `spatial_cv_folds.csv`).
+
+**Iterative refinement loop (implemented 2026-07-28)** —
+`src/module3_spatial/iterative_loop.py`. Retrains every iteration via the
+SAME 5 spatial CV folds, producing out-of-fold `predicted_residual_t` (a
+district's prediction always comes from a model that never saw it) -
+chosen over reusing a frozen model (mathematically cannot converge, since
+its output doesn't depend on the evolving `Risk_(t-1)` state) or in-sample
+retraining (would overfit its own target, "converging" via memorization
+rather than genuine correction).
+
+**Critical finding**: the literal spec's formula
+(`Risk_t = Risk_(t-1) + predicted_residual_t`, no damping) DIVERGES under
+honest out-of-fold evaluation - `max_delta` grew every iteration (192.6 →
+1094.1) and `Risk` reached physically nonsensical negative values (down to
+-1414). Root cause: several features (`population_density`,
+`Estimated_Population`, `elevation_m`) are static per-district, so
+out-of-fold prediction for a held-out district is genuine extrapolation
+with real error - adding that error back at full magnitude compounds
+iteration over iteration (the instability gradient boosting avoids via a
+learning rate). Fixed by adding `alpha = 0.05` shrinkage
+(`Risk_t = Risk_(t-1) + alpha * predicted_residual_t`) - empirically
+tested `alpha ∈ {1.0, 0.3, 0.15, 0.05}`; across every value, aggregated
+Moran's I of the residual was NEVER significant even from iteration 1
+(p_sim ≥ 0.14 throughout), meaning the spatial-clustering convergence
+criterion is essentially always trivially satisfied here - the real
+bottleneck is purely the numeric `max_delta < epsilon` bound, which scales
+almost linearly with alpha. `alpha = 0.05` converges cleanly at
+**iteration 1**: `max_delta = 9.63 < epsilon = 12.98`, Moran's I not
+significant (I = -0.158, p_sim = 0.147). Full alpha comparison and
+rationale: `EXPERIMENT_LOG.md` M3-004.
+
+**Why the loop converges in 1 iteration - verified, not assumed**: the
+spatial-clustering half of the convergence check is satisfied immediately,
+but by **Stage 1's KDE baseline alone, not the RF correction**. Verified
+by computing Moran's I on `Number_of_Cases - Risk_0` directly (zero RF
+involvement): **I = -0.166, p_sim = 0.133 (not significant)** - essentially
+identical to the post-RF-correction result (I = -0.158, p_sim = 0.147).
+The RF's single pass did not remove residual spatial autocorrelation;
+there was no significant autocorrelation left for it to remove - Stage 1's
+KDE baseline already did that job (consistent with its own Moran's
+I = 0.70 finding: the baseline genuinely captures the spatial clustering
+structure). The RF's actual contribution in this loop is therefore
+district-level burden correction (population/climate-driven, per the
+58.5% combined feature importance of `population_density` +
+`Estimated_Population` above), NOT further spatial declustering. This
+distinction was checked empirically (not assumed) after an initial,
+looser causal claim was proposed and found to need correction - see
+`EXPERIMENT_LOG.md` M3-004's "Self-Correction" note. The dual-criterion
+framework remains general: a noisier dataset or a coarser spatial baseline
+that left genuine residual clustering behind would engage the
+spatial-convergence criterion and drive additional iterations.
+
+Output: `data/features/module3/hybrid_risk_map.csv` (25,123 rows,
+`District, Year, Week, Number_of_Cases, Risk, Residual_final,
+n_iterations, converged`) and
+`outputs/metrics/module3/iterative_convergence_log.csv` (per-iteration
+risk range, max_delta, Moran's I, p_sim, significance - one row here,
+since it converged at iteration 1). `corr(Risk, Number_of_Cases) = 0.82`.
+216 rows (0.86%) have a small negative `Risk` (min -2.32) - a minor
+overshoot on near-zero-case district-weeks, not clipped (not requested,
+and small enough not to be a stability concern) - flagged here rather than
+silently left unmentioned.
 
 ---
 
