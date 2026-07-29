@@ -223,15 +223,20 @@ def _latest_hybrid_risk(hybrid_risk: pd.DataFrame) -> pd.DataFrame:
     ]
 
 
-def _hybrid_risk_choropleth(geometry: "gpd.GeoDataFrame", latest: pd.DataFrame, district: str):
-    merged = geometry.merge(latest[["District", "Risk"]], on="District", how="left")
+def _hybrid_risk_choropleth(
+    geometry: "gpd.GeoDataFrame", latest: pd.DataFrame, district: str, year: int, week: int
+):
+    merged = geometry.merge(latest[["District", "Risk", "Number_of_Cases"]], on="District", how="left")
     geojson = json.loads(merged.to_json())
 
-    # Highlight the selected district with a thicker, darker outline - same
+    # Highlight the selected district with a thick black outline - same
     # per-district drill-down concept the M1/M2 tabs use, applied to a map
-    # instead of a time series.
-    line_widths = [4 if d == district else 0.5 for d in merged["District"]]
-    line_colors = ["#0b0b0b" if d == district else "rgba(11,11,11,0.15)" for d in merged["District"]]
+    # instead of a time series. Non-selected borders are opaque white (not
+    # a faint black) so district boundaries stay visible across the whole
+    # YlOrRd range - a low-opacity dark border disappears against the dark
+    # red high-risk fills at the top of the scale.
+    line_widths = [5 if d == district else 1 for d in merged["District"]]
+    line_colors = ["#0b0b0b" if d == district else "#ffffff" for d in merged["District"]]
 
     fig = px.choropleth(
         merged,
@@ -239,13 +244,31 @@ def _hybrid_risk_choropleth(geometry: "gpd.GeoDataFrame", latest: pd.DataFrame, 
         locations="District",
         featureidkey="properties.District",
         color="Risk",
-        color_continuous_scale="Blues",
-        hover_name="District",
-        hover_data={"Risk": ":.1f"},
+        color_continuous_scale="YlOrRd",  # standard epidemiological risk-map convention
     )
-    fig.update_traces(marker_line_width=line_widths, marker_line_color=line_colors)
+    fig.update_traces(
+        marker_line_width=line_widths,
+        marker_line_color=line_colors,
+        customdata=merged[["District", "Number_of_Cases"]],
+        hovertemplate=(
+            "<b>%{customdata[0]}</b><br>"
+            "Hybrid Risk Score: %{z:.1f}<br>"
+            "Actual Cases: %{customdata[1]}"
+            "<extra></extra>"
+        ),
+    )
     fig.update_geos(fitbounds="locations", visible=False)
-    fig.update_layout(margin=dict(l=0, r=0, t=30, b=0))
+    fig.update_layout(
+        title=dict(
+            text=f"Dengue Hybrid Risk Map — {year} Week {week}",
+            x=0.5,
+            xanchor="center",
+            font=dict(size=20),
+        ),
+        height=700,
+        margin=dict(l=0, r=0, t=70, b=10),
+        coloraxis_colorbar=dict(title=dict(text="Hybrid Risk<br>Score")),
+    )
     return fig
 
 
@@ -427,7 +450,7 @@ def render_operational_page(
             f"(selected district **{district}** outlined in black)."
         )
 
-        fig = _hybrid_risk_choropleth(district_geometry, latest, district)
+        fig = _hybrid_risk_choropleth(district_geometry, latest, district, latest_year, latest_week)
         st.plotly_chart(fig, use_container_width=True)
 
         district_row = latest.loc[latest["District"] == district]
