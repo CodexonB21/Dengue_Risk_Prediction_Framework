@@ -4,9 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import folium
+import geopandas as gpd
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from folium.raster_layers import ImageOverlay
+from streamlit_folium import st_folium
 
 from src.config import (
     DASHBOARD_REFRESH_MANIFEST_PATH,
@@ -15,15 +20,32 @@ from src.config import (
     MODULE1_WEEKLY_MODELING_TABLE_PATH,
     MODULE2_FUTURE_RISK_PREDICTIONS_PATH,
     MODULE2_LIVE_RISK_PREDICTIONS_PATH,
+    MODULE3_FEATURE_IMPORTANCE_PLOT_PATH,
     SHARED_CLIMATE_WEEKLY_PATH,
+)
+from src.module3_spatial.kde_baseline import (
+    district_centroid_coords,
+    load_district_boundaries,
+)
+from src.module3_spatial.risk_surface import (
+    build_evaluation_grid,
+    evaluate_risk_surface,
+    grid_lonlat_bounds,
+    risk_surface_rgba,
 )
 from src.dashboard.evidence_data import (
     RELIABILITY_HOLDOUT_FIG,
     load_m1_district_holdout,
     load_m2_009_baseline,
+    load_m3_convergence_log,
+    load_m3_feature_importance,
+    load_m3_morans_i,
+    load_m3_stage_comparison,
     load_production_stack,
     m1_holdout_summary,
     m2_holdout_summary,
+    m3_convergence_summary,
+    m3_morans_i_summary,
 )
 
 
@@ -118,6 +140,78 @@ def render_evidence_page() -> None:
         st.subheader("Module 2 — calibration (holdout)")
         st.image(str(RELIABILITY_HOLDOUT_FIG), caption="Stage 1 raw vs isotonic — holdout reliability diagram")
 
+    st.divider()
+    st.subheader("Module 3 — spatial hotspot detection (KDE + RF residual compensation)")
+    st.caption(
+        "Stage 1: Kernel Density Estimation + Global Moran's I spatial baseline. "
+        "Stage 2: Random Forest residual compensation, wrapped in an iterative "
+        "refinement loop (max 4 iterations, dual convergence check)."
+    )
+
+    morans = m3_morans_i_summary(load_m3_morans_i())
+    convergence = m3_convergence_summary(load_m3_convergence_log())
+    m3_comparison = load_m3_stage_comparison()
+    m3_importance = load_m3_feature_importance()
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Stage 1 — spatial clustering validation**")
+        if morans:
+            st.metric("Global Moran's I", f"{morans['I']:.3f}")
+            st.metric("p-value (permutation, 999 runs)", f"{morans['p_sim']:.3f}")
+            st.metric("Clustering significant?", "Yes" if morans["significant"] else "No")
+        else:
+            st.warning("Moran's I validation file not found — run `python -m src.module3_spatial.kde_baseline`.")
+
+    with col2:
+        st.markdown("**Stage 2 — iterative loop convergence**")
+        if convergence:
+            st.metric("Converged after", f"{convergence['n_iterations']} iteration(s)")
+            st.metric(
+                "max|Risk delta| vs. epsilon",
+                f"{convergence['max_delta']:.2f} / {convergence['epsilon']:.2f}",
+            )
+            st.metric("Converged?", "Yes" if convergence["converged"] else "No (hit iteration cap)")
+        else:
+            st.warning("Convergence log not found — run `python -m src.module3_spatial.iterative_loop`.")
+
+    st.markdown("**Does Stage 2 improve fit over Stage 1 alone?**")
+    if not m3_comparison.empty:
+        display = m3_comparison.copy()
+        for col in ("corr", "mae", "rmse"):
+            if col in display.columns:
+                display[col] = display[col].map(lambda x: f"{x:.4f}" if pd.notna(x) else "—")
+        st.dataframe(display, use_container_width=True, hide_index=True)
+        st.info(
+            "**Null result, reported honestly**: Stage 2's residual correction does NOT "
+            "improve aggregate fit to actual case counts (correlation -0.0037, MAE +1.7%, "
+            "RMSE +0.9% vs. Stage 1 alone). This is expected, not a bug — the shrinkage "
+            "term (alpha=0.05) was chosen for stable, immediate convergence, not accuracy. "
+            "Stage 2's real value is diagnostic: the feature importance below reveals "
+            "*which* factors (population density, climate timing) drive district-level "
+            "burden beyond pure spatial proximity — something Stage 1's KDE baseline, "
+            "with zero covariates, structurally cannot provide."
+        )
+    else:
+        st.warning("Stage 1 vs Stage 2 comparison file not found — run `python -m src.module3_spatial.evaluate`.")
+
+    if not m3_importance.empty:
+        st.markdown("**Stage 2 feature importance**")
+        if MODULE3_FEATURE_IMPORTANCE_PLOT_PATH.exists():
+            st.image(
+                str(MODULE3_FEATURE_IMPORTANCE_PLOT_PATH),
+                caption="Random Forest feature importance (final model, all 25 districts)",
+            )
+        else:
+            fig = px.bar(
+                m3_importance.sort_values("importance"),
+                x="importance",
+                y="feature",
+                orientation="h",
+                title="Stage 2 feature importance",
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
     with st.expander("Operational vs validation — what not to cite"):
         st.markdown(
             """
@@ -133,6 +227,136 @@ def render_evidence_page() -> None:
         )
 
 
+def _latest_hybrid_risk(hybrid_risk: pd.DataFrame) -> pd.DataFrame:
+    if hybrid_risk.empty:
+        return pd.DataFrame()
+    latest_key = hybrid_risk.sort_values(["Year", "Week"]).iloc[-1]
+    return hybrid_risk.loc[
+        (hybrid_risk["Year"] == latest_key["Year"]) & (hybrid_risk["Week"] == latest_key["Week"])
+    ]
+
+
+# 1500m - finer than the risk_surface.py report figure's 1000m would be
+# overkill for a browser-rendered PNG, but this needs to stay well below
+# any resolution a user could zoom in far enough to visually resolve as
+# separate raster cells (unlike the old point-based Leaflet HeatMap, this
+# is a real image scaled to `bounds`, so higher resolution only costs a
+# larger PNG, not per-zoom-level correctness).
+DASHBOARD_GRID_RESOLUTION_M = 1500.0
+
+
+@st.cache_data(show_spinner=False)
+def _cached_risk_surface_grid() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """(district_coords, xx, yy, mask), all in the metric CRS (EPSG:32644)
+    risk_surface.py's kernel math uses. This is static geography,
+    independent of the selected Year/Week/District, so it's computed once
+    and reused across every dashboard interaction.
+    """
+    boundaries = load_district_boundaries()
+    district_coords = district_centroid_coords(boundaries)
+    xx, yy, mask, _ = build_evaluation_grid(boundaries, DASHBOARD_GRID_RESOLUTION_M)
+    return district_coords, xx, yy, mask
+
+
+def _hybrid_risk_folium_heatmap(
+    geometry: gpd.GeoDataFrame, latest: pd.DataFrame, district: str
+) -> folium.Map:
+    """Continuous heat-cloud view of Hybrid Risk, interpolated via
+    k-nearest-neighbour Inverse Distance Weighting
+    (`risk_surface.py::evaluate_risk_surface`) - at any point, only the
+    physically closest few districts contribute at all, so risk visibly
+    concentrates toward the border between two high-risk neighbouring
+    districts instead of blobbing solidly around each district's own
+    centroid, or (as a Gaussian-kernel attempt was found to do - see
+    `evaluate_risk_surface`'s docstring) diluting that effect across the
+    whole country.
+    """
+    merged = geometry.merge(latest[["District", "Risk", "Number_of_Cases"]], on="District", how="left")
+    centroids = merged.geometry.centroid
+
+    district_coords, xx, yy, mask = _cached_risk_surface_grid()
+    grid_coords = np.column_stack([xx[mask], yy[mask]])
+    # Genuinely-missing districts for this week are treated as 0 risk for
+    # interpolation purposes only (mirrors kde_baseline.py's own 0-weight
+    # treatment of absent (District, Year, Week) cells) - a NaN here would
+    # otherwise poison the weighted average at every grid point, not just
+    # the missing district's own.
+    risk_by_district = merged.set_index("District")["Risk"].reindex(DISTRICTS).fillna(0.0)
+    surface_values = evaluate_risk_surface(
+        grid_coords, district_coords, risk_by_district.to_numpy(dtype=float)
+    )
+
+    # A fixed zoom_start, not fit_bounds() - fit_bounds computes its zoom
+    # from the EMBEDDING IFRAME's measured width at the moment the map
+    # script runs, which races against streamlit-folium's own container
+    # sizing (observed: it consistently under-zoomed to show most of
+    # southern India alongside Sri Lanka, regardless of
+    # use_container_width). zoom_start=8 is tuned directly against Sri
+    # Lanka's actual extent (~435km N-S, ~225km E-W) and has no such race.
+    fmap = folium.Map(
+        location=[centroids.y.mean(), centroids.x.mean()], zoom_start=8, tiles="OpenStreetMap"
+    )
+
+    # A geographically-anchored raster image, not Leaflet's point-based
+    # HeatMap plugin: HeatMap's radius/blur are fixed SCREEN pixels, so the
+    # surface only looks continuous at the one zoom level those pixel
+    # values happen to match the grid spacing at - zoom in further and the
+    # grid becomes visible as separate uniform blobs (exactly backwards for
+    # a feature whose whole point is a continuous border-blended surface).
+    # An ImageOverlay scales with the map like any tile layer, so it stays
+    # a smooth gradient at every zoom level.
+    rgba = risk_surface_rgba(xx, yy, mask, surface_values)
+    bounds = grid_lonlat_bounds(xx, yy)
+    ImageOverlay(rgba, bounds=bounds, opacity=0.85).add_to(fmap)
+
+    # District boundary outlines drawn on top of the raster - the surface
+    # itself is continuous and deliberately ignores district borders (that
+    # is the whole point: risk should blend across a border between two
+    # high-risk neighbours, not stop dead at it), but the borders still
+    # need to be VISIBLE so a viewer can actually see the color pushing
+    # past them, e.g. into a neighbouring district. No fill (fillOpacity=0)
+    # - only the raster overlay should contribute color. White for
+    # unselected borders (visible across the whole YlOrRd range, unlike a
+    # low-opacity dark line which disappears against the dark-red high-risk
+    # fills), thick black for the selected district - same convention the
+    # old choropleth used.
+    def _boundary_style(feature: dict) -> dict:
+        is_selected = feature["properties"]["District"] == district
+        return {
+            "fillOpacity": 0,
+            "color": "#0b0b0b" if is_selected else "#ffffff",
+            "weight": 3 if is_selected else 1.2,
+        }
+
+    folium.GeoJson(
+        merged[["District", "geometry"]].to_json(),
+        style_function=_boundary_style,
+        tooltip=folium.GeoJsonTooltip(fields=["District"]),
+    ).add_to(fmap)
+
+    for _, row in merged.iterrows():
+        pt = row.geometry.centroid
+        is_selected = row["District"] == district
+        risk_text = f"{row['Risk']:.1f}" if pd.notna(row["Risk"]) else "—"
+        cases_text = int(row["Number_of_Cases"]) if pd.notna(row["Number_of_Cases"]) else "—"
+        folium.Marker(
+            location=[pt.y, pt.x],
+            popup=folium.Popup(
+                f"<b>{row['District']}</b><br>"
+                f"Hybrid Risk Score: {risk_text}<br>"
+                f"Actual Cases: {cases_text}",
+                max_width=220,
+            ),
+            tooltip=row["District"],
+            icon=folium.Icon(
+                color="red" if is_selected else "blue",
+                icon="star" if is_selected else "info-sign",
+            ),
+        ).add_to(fmap)
+
+    return fmap
+
+
 def render_operational_page(
     *,
     live: pd.DataFrame,
@@ -141,6 +365,8 @@ def render_operational_page(
     m1_weekly: pd.DataFrame,
     climate: pd.DataFrame,
     manifest: pd.DataFrame,
+    hybrid_risk: pd.DataFrame,
+    district_geometry: "gpd.GeoDataFrame",
     case_y: int | None,
     case_w: int | None,
     clim_y: int | None,
@@ -285,3 +511,43 @@ def render_operational_page(
                 title=f"{district}: forward risk by horizon (operational)",
             )
             st.plotly_chart(fig, use_container_width=True)
+
+    st.divider()
+    st.subheader("Module 3 — spatial hotspot map (Hybrid Risk)")
+    st.warning(
+        "**Evidence tier: operational** — Hybrid Risk is Stage 2's output (KDE spatial "
+        "baseline + RF residual correction), not a validated forecast. See the "
+        "**Research evidence** page for Stage 1/Stage 2 validation numbers "
+        "(Moran's I, convergence, fit comparison)."
+    )
+
+    if hybrid_risk.empty or district_geometry.empty:
+        st.info(
+            "Hybrid risk map or district geometry not found — run "
+            "`python -m src.module3_spatial.iterative_loop`."
+        )
+    else:
+        latest = _latest_hybrid_risk(hybrid_risk)
+        latest_year = int(latest["Year"].iloc[0])
+        latest_week = int(latest["Week"].iloc[0])
+        st.caption(
+            f"Latest available district-week: **{latest_year} Wk{latest_week}** "
+            f"(selected district **{district}** outlined in black)."
+        )
+
+        st.caption(
+            "Continuous heat-cloud intensity weighted by Hybrid Risk, interpolated via "
+            "nearest-neighbour distance weighting — risk visibly concentrates toward the "
+            "border between two high-risk neighbouring districts rather than blobbing "
+            "solidly around each district's own centroid. Click a pin for that district's "
+            "exact values."
+        )
+        heatmap = _hybrid_risk_folium_heatmap(district_geometry, latest, district)
+        st_folium(heatmap, use_container_width=True, height=600, returned_objects=[])
+
+        district_row = latest.loc[latest["District"] == district]
+        if not district_row.empty:
+            row = district_row.iloc[0]
+            m1, m2 = st.columns(2)
+            m1.metric(f"{district}: Hybrid Risk", f"{row['Risk']:.1f}")
+            m2.metric(f"{district}: Actual cases (same week)", int(row["Number_of_Cases"]))

@@ -1,0 +1,34 @@
+==============================================================================
+MODULE 3 - STAGE 1 & STAGE 2 RESULTS SUMMARY
+==============================================================================
+
+-- Stage 1: KDE Baseline Spatial Validation --
+Global Moran's I (queen contiguity, aggregated across all weeks): I = 0.7017, p_sim = 0.0010, significant = True
+
+-- Stage 1 alone vs Stage 2 final: fit to actual case counts --
+(Stage 2's correction does NOT improve aggregate fit - a plain, verified null/negative result; see EXPERIMENT_LOG.md M3-005.)
+                                        stage    corr     mae    rmse
+Stage 1 alone (Risk_0, rescaled KDE_baseline)  0.8243 20.1869 47.3039
+    Stage 2 final (Risk, post iterative loop)  0.8205 20.5377 47.7164
+                   Change (Stage 2 - Stage 1) -0.0037  0.3508  0.4125
+
+-- Stage 2 RF: out-of-fold residual prediction accuracy (spatial CV) --
+MAE = 33.12 +/- 23.57, RMSE = 54.79 +/- 29.63 (mean +/- std across 5 spatial folds)
+
+-- Iterative Loop Convergence --
+ iteration  risk_min  risk_max  max_delta  epsilon  morans_I  morans_p_sim  morans_significant  stopped
+         1   -2.3238 1296.1485     9.6310  12.9846   -0.1577        0.1470               False     True
+
+-- Top 10 Feature Importance (final RF model) --
+                  feature  importance
+       population_density      0.4072
+     Estimated_Population      0.1779
+ temperature_2m_mean (°C)      0.0560
+      temperature_anomaly      0.0478
+           rainfall_lag_4      0.0416
+     monsoon_indicator_SW      0.0389
+        temperature_lag_4      0.0361
+        temperature_lag_2      0.0324
+        temperature_lag_3      0.0266
+mahalanobis_anomaly_score      0.0250
+==============================================================================
