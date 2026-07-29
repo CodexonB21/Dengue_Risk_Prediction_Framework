@@ -292,3 +292,134 @@ work - not started this session.
 - `src/config.py` (added `MODULE3_STAGE2_FEATURE_TABLE_PATH`).
 - Added `src/module3_spatial/feature_engineering.py` and
   `data/features/module3/stage2_feature_table.csv`.
+
+---
+
+## Experiment ID: M3-003
+
+### Date
+2026-07-28
+
+### Research Question
+Does a single-pass Random Forest, trained on M3-002's feature set and
+evaluated under genuine spatial (not random) cross-validation, produce a
+sensible residual-compensation model - and is `stage2_feature_table.csv`'s
+literal `Residual` column actually usable as its training target?
+
+### Spatial Unit
+District-week, same grain as M3-001/M3-002. CV folds are 5 clusters of
+whole districts (K-means on GADM centroids), not random row splits.
+
+### Baseline Spatial Method
+Builds on M3-001's `KDE_baseline` (see the new "KDE_baseline: Two Valid
+Uses" section in `MODULE_CONTEXT.md` for why this experiment uses a
+rescaled form of it, not the raw one).
+
+### Stage 2 Model
+`RandomForestRegressor` (`n_estimators=300, min_samples_leaf=5,
+random_state=42`), fixed hyperparameters (not tuned). Single-pass only -
+the iterative convergence loop is explicit future work, not built here.
+
+### Spatial Features Used
+`elevation_m`, `population_density`, `Estimated_Population` (see Feature
+importance below).
+
+### Validation Method
+Spatial K-means CV: the 25 district centroids clustered into 5 groups
+(`KMeans(n_clusters=5, random_state=42)`), each cluster held out as one
+fold's test set, trained on the other 4 clusters' districts - a district's
+weeks are never split across folds by construction (whole districts move
+together).
+
+### Results
+- **Critical pre-training finding**: `stage2_feature_table.csv`'s
+  `Residual` column (`Number_of_Cases - KDE_baseline`, as literally
+  specified) is numerically unusable as a target -
+  `corr(Residual, Number_of_Cases) = 0.9999999999999991`, because
+  `KDE_baseline`'s max value (4.48e-7) is negligible next to
+  `Number_of_Cases` (max 2,631). Flagged to the user before training;
+  user chose a Stage-2-scoped fix (see `MODULE_CONTEXT.md`'s new
+  "KDE_baseline: Two Valid Uses" section for the full framing - this is
+  NOT a defect in Stage 1's committed Moran's I=0.70 result, which is
+  scale-invariant and remains correct).
+- **Fix**: `rescale_kde_baseline()` mass-conserves `KDE_baseline` per
+  (Year, Week) to sum to that week's actual total case count, preserving
+  its spatial redistribution shape. `residual_rescaled` (the actual RF
+  target) has mean ≈0 and `corr(residual_rescaled, Number_of_Cases) =
+  0.678` - a genuine residual with real, learnable variance.
+- **Training set**: 25,123 rows (100 series-start rows dropped for
+  incomplete `lag_4` history - exactly 25 districts × 4 weeks).
+- **Spatial K-means CV folds** (geographically coherent clusters):
+
+  | Fold | Districts | Test rows | MAE | RMSE |
+  |---|---|---|---|---|
+  | 0 | Colombo, Gampaha, Kandy, Kegalle, Kurunegala, Puttalam | 6,030 | 61.28 | 96.90 |
+  | 1 | Jaffna, Kilinochchi, Mannar, Mullaitivu, Vavuniya | 5,023 | 13.61 | 36.86 |
+  | 2 | Ampara, Badulla, Hambantota, Monaragala, Nuwara Eliya | 5,025 | 19.84 | 37.04 |
+  | 3 | Galle, Kalutara, Matara, Ratnapura | 4,020 | 56.17 | 74.83 |
+  | 4 | Anuradhapura, Batticaloa, Matale, Polonnaruwa, Trincomalee | 5,025 | 14.69 | 28.33 |
+
+  **Aggregate: MAE = 33.12 ± 23.57, RMSE = 54.79 ± 29.63** (mean ± std
+  across 5 folds). The large spread tracks case-volume magnitude per fold
+  (fold 0/3 contain the highest-burden districts - Colombo, Gampaha,
+  Kalutara, Galle) - not a modeling defect, but worth normalizing (e.g.
+  MAE relative to each fold's mean case count) for a fairer cross-fold
+  comparison in future work.
+- **Top 10 feature importance** (final model, trained on all 25
+  districts): `population_density` (0.407), `Estimated_Population`
+  (0.178), `temperature_2m_mean (°C)` (0.056), `temperature_anomaly`
+  (0.048), `rainfall_lag_4` (0.042), `monsoon_indicator_SW` (0.039),
+  `temperature_lag_4` (0.036), `temperature_lag_2` (0.032),
+  `temperature_lag_3` (0.027), `mahalanobis_anomaly_score` (0.025).
+  Population features dominate (58.5% combined) - sensible, since the
+  rescaled KDE baseline already accounts for pure spatial proximity
+  redistribution, leaving population size/density as the main systematic
+  driver of a district's remaining burden beyond that.
+- **Outputs**: `outputs/metrics/module3/rf_stage2_metrics.csv` (per-fold +
+  aggregate MAE/RMSE), `outputs/metrics/module3/rf_feature_importance.csv`
+  (full ranked list), `outputs/metrics/module3/spatial_cv_folds.csv`
+  (District → spatial_fold assignment).
+- **Models are NOT committed to git** - `models/module3/` is now
+  `.gitignore`d (large binaries: `rf_final_model.joblib` alone is
+  ~110MB, exceeding GitHub's 100MB push limit; 5 fold models add another
+  ~440MB). Fully reproducible from code + already-committed data. **To
+  regenerate locally: `python -m src.module3_spatial.compensation_model`.**
+
+### Interpretation
+The scale-mismatch finding was a genuine pre-existing gap between the
+written Stage 2 spec and Stage 1's actual output, not an oversight in this
+implementation - catching it before training (rather than after seeing an
+implausibly "perfect" model) is what let it get fixed cleanly, scoped to
+Stage 2 only. With the fix applied, the RF model behaves sensibly:
+population dominates feature importance (expected, since the baseline
+already handles spatial proximity), and per-fold error scales with each
+fold's case-volume magnitude (expected, not a leakage or degeneracy
+signal). Spatial CV folds are geographically coherent (e.g. the northern
+peninsula districts cluster together), confirming the K-means clustering
+on GADM centroids is doing something sensible, not producing arbitrary
+groupings.
+
+### Decision
+**Keep** the rescaled residual as Stage 2's actual training target going
+forward (not the raw `Residual` column already in
+`stage2_feature_table.csv`, which remains on disk unchanged for
+transparency but is not model-usable as-is). **Keep** models out of git
+(`.gitignore`d, regenerate via the command above). **Proceed** to the
+iterative convergence loop as the next piece of Stage 2 work - not started
+this session. The loop must use the RESCALED `KDE_baseline` as `Risk_0`,
+not the raw Stage 1 output, per the new `MODULE_CONTEXT.md` section.
+
+### Documentation Updated
+- `module_3_spatial/MODULE_CONTEXT.md` (new "KDE_baseline: Two Valid Uses,
+  Not a Contradiction" section between Stage 1 and Stage 2).
+- `module_3_spatial/EXPERIMENT_LOG.md` (this entry).
+- `src/config.py` (added `MODULE3_MODELS_DIR`, `MODULE3_RF_FOLDS_DIR`,
+  `MODULE3_RF_FINAL_MODEL_PATH`, `MODULE3_RF_METRICS_PATH`,
+  `MODULE3_RF_FEATURE_IMPORTANCE_PATH`, `MODULE3_SPATIAL_CV_FOLDS_PATH`).
+- `.gitignore` (added `models/module1/`, `models/module2/`,
+  `models/module3/` - module1/module2 already had model binaries
+  committed before this pattern existed; this does not retroactively
+  untrack those, only stops future additions).
+- Added `src/module3_spatial/compensation_model.py`.
+- Added `outputs/metrics/module3/rf_stage2_metrics.csv`,
+  `rf_feature_importance.csv`, `spatial_cv_folds.csv`.

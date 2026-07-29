@@ -85,6 +85,45 @@ Master table output: `data/processed/module3/master_table.csv`.
 
 ---
 
+## KDE_baseline: Two Valid Uses, Not a Contradiction
+
+`KDE_baseline` (Stage 1's output) is used in two different forms across
+the pipeline. This is deliberate, not an inconsistency - documented here
+explicitly so it reads that way to a review panel too:
+
+1. **Stage 1 / Moran's I validation (raw form)**: `KDE_baseline` is a
+   properly-normalized 2D Gaussian density surface - it integrates to 1
+   over space, so its ABSOLUTE magnitude is tiny (max ~4.48e-7 across the
+   whole dataset, since the Silverman bandwidth spans tens/hundreds of km).
+   This is fine for Stage 1's purpose: Global Moran's I is scale-invariant
+   - it validates the RELATIVE spatial clustering pattern of the surface,
+   completely unaffected by the surface's absolute scale. I = 0.70,
+   p = 0.001 is a genuine result on these terms and is untouched.
+
+2. **Stage 2 / RF residual model (rescaled form)**: the residual target
+   `Actual_case_intensity − Current_Risk` only means something if both
+   terms are on a comparable scale - and raw `KDE_baseline` is not (its
+   near-zero magnitude made `Residual` numerically indistinguishable from
+   `Number_of_Cases` itself: corr = 0.9999999999999991, verified before
+   building the RF model). `compensation_model.py::rescale_kde_baseline()`
+   mass-conserves `KDE_baseline` per (Year, Week) so it sums to that
+   week's actual total case count across districts - this preserves the
+   KDE surface's spatial redistribution SHAPE (which district gets more or
+   less of the week's total burden, based on proximity to case-heavy
+   neighbors) while making its magnitude meaningful as a baseline to
+   subtract from. Verified this produces a genuine residual:
+   `corr(residual_rescaled, Number_of_Cases)` drops from 0.9999999 to
+   0.678.
+
+**Same underlying spatial shape, two different valid uses**: a
+scale-invariant clustering test doesn't need (or benefit from) the
+rescale; a subtractable baseline can't work without it. The iterative
+loop (not yet built) must use the RESCALED form as `Risk_0`, not the raw
+one, for `Risk_t = Risk_(t-1) + predicted_residual_t` to stay on a
+consistent scale across iterations.
+
+---
+
 ## Stage 2 — Residual Compensation (decided)
 
 **Residual target:**
