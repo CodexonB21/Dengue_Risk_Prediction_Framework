@@ -190,6 +190,58 @@ Avoid:
 
 ---
 
+# Bullet points or numbered lists are only acceptable for:
+
+- a genuine enumerable list (e.g., objectives, inputs, tools used, dataset columns, evaluation metrics)
+- step-by-step procedures where order matters (e.g., a processing pipeline sequence)
+- short comparative summaries that are immediately followed by paragraph discussion
+
+Hard rules:
+
+- Do not convert an explanation, justification, discussion, or argument into a bullet list. Write it as one or more paragraphs instead.
+- Do not use single-line bullet fragments (e.g., "- Fast" or "- Accurate") in report body text. If a point needs explaining, write it as a full sentence inside a paragraph.
+- A bulleted list must never be the only content of a section. Every list must be introduced by a lead-in sentence and, where relevant, followed by a paragraph that interprets or discusses the list.
+- Limit each section to at most one bullet/numbered list unless the content is genuinely a multi-part enumeration (e.g., listing all three modules, or all dataset fields).
+- When drafting the Literature Review, Approach, Analysis and Design, Implementation, and Evaluation chapters, aim for at least 70-80% paragraph-form content by volume, with bullets/tables used only for the remaining minority.
+- Tables are preferred over bullet lists when comparing multiple items across multiple criteria (e.g., comparing related work, comparing models).
+
+If the user's source notes, logs, or chat messages are in bullet form, the agent must synthesize them into connected academic prose rather than copy-pasting the bullet structure into the report.
+
+Before finalizing any chapter section, scan it for bullet-heavy structure. If more than roughly 30% of a section's content is in bullet/list form, rewrite the non-enumerable parts as paragraphs.
+
+---
+
+# Word Count and Section Length Rule
+
+Report sections must have sufficient depth. Do not produce short, thin sections just to fill a heading.
+
+Default word count targets (adjust only if the user or supervisor specifies otherwise):
+
+| Report Element | Target Length |
+|---|---|
+| Abstract | 250-400 words, single paragraph or two short paragraphs |
+| Chapter Introduction section (e.g., 1.1, 2.1) | 120-250 words |
+| A standard subsection (e.g., 1.2, 2.3, 4.4) | 250-500 words |
+| A major analytical subsection (e.g., literature discussion, module design, evaluation discussion) | 400-800 words |
+| Chapter Summary section | 100-200 words |
+| Full chapter (all subsections combined) | 1,500-3,500 words, depending on chapter importance |
+
+Guidance by chapter weight:
+
+- Literature Review, Analysis and Design, Implementation, and Evaluation are typically the longest and most detailed chapters.
+- Introduction, Technologies Adapted, Conclusion, and Challenges/Limitations are typically shorter but must still be fully developed, not skeletal.
+
+Rules:
+
+- Never generate a subsection with only 1-3 sentences unless the user explicitly asks for a short placeholder or outline.
+- If the available information is insufficient to reach a reasonable length, do not pad with repetition or filler. Instead, write what is factually supportable and clearly flag what is missing using the placeholder conventions (see Evidence and Citation Rules), rather than inflating word count artificially.
+- When the user asks for a specific word count or page count, treat that as an override of the defaults above and follow it exactly.
+- When drafting a full chapter or section, state the approximate word count achieved at the end of the response (e.g., "Approx. word count: 620 words") so the user can track report length against university/supervisor requirements.
+- If a section is trimmed for a quick draft, explicitly tell the user it is a shortened draft and offer to expand it to full report length.
+- Update `research_context/CHAPTER_STATUS.md` with the current approximate word count for each drafted section, so progress against length targets is tracked over time.
+
+---
+
 # Research Quality Guardrails
 
 Always check for:
@@ -301,6 +353,8 @@ Table X.X: Clear descriptive caption
 
 Always cite or refer to figures and tables in the body text before or immediately after placing them.
 
+Update `research_context/REPORT_DIAGRAM_PLAN.md` whenever a new figure or table is planned or created.
+
 ---
 
 # Chapter Writing Workflow
@@ -312,12 +366,13 @@ When writing any chapter or section:
 3. Identify the relevant modules.
 4. Check whether the current subsection structure is suitable.
 5. If needed, propose a better subsection structure.
-6. Draft the content in formal report style.
+6. Draft the content in formal report style, following the Prose vs Bullet Point Rule and the Word Count and Section Length Rule.
 7. Add figure/table placeholders where needed.
 8. Suggest captions for figures and tables.
 9. Identify missing citations, missing results, or missing implementation evidence.
-10. Update `research_context/CHAPTER_STATUS.md`.
-11. Update `research_context/CHANGELOG.md` if the change is important.
+10. State the approximate word count of the drafted content.
+11. Update `research_context/CHAPTER_STATUS.md`.
+12. Update `research_context/CHANGELOG.md` if the change is important.
 
 ---
 
@@ -396,10 +451,12 @@ When generating report sections, use this format unless the user asks otherwise:
 ```md
 ## Section Title
 
-Formal report content here.
+Formal, paragraph-based report content here (see Prose vs Bullet Point Rule and Word Count Rule).
 
 **Suggested Figure/Table:**
 Figure X.X: Caption here.
+
+**Approx. word count:** NNN words
 
 **Notes for Team:**
 - Missing citation: ...
@@ -407,7 +464,7 @@ Figure X.X: Caption here.
 - Check consistency with: ...
 ```
 
-For final cleaned report content, remove internal notes if the user asks for a polished version.
+For final cleaned report content, remove internal notes if the user asks for a polished version, but keep the word count note unless told otherwise.
 
 ---
 
@@ -422,5 +479,7 @@ Before finishing a major report task, check:
 - Did an architecture explanation change?
 - Did implementation and report content diverge?
 - Are there missing citations or placeholders?
+- Is the content mostly paragraph-form, with bullets used only where genuinely appropriate?
+- Does each drafted section meet the expected word count range?
 
 If yes, update the relevant markdown files.

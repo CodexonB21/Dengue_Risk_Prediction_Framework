@@ -6,9 +6,9 @@
 
 ## Purpose
 
-This file tracks the progress, status, missing items, diagrams, tables, citations, and review notes for each chapter of the final report.
+This file tracks the progress, status, word counts, missing items, diagrams, tables, citations, and review notes for each chapter of the final report.
 
-Update this file whenever a chapter or section is drafted, revised, reviewed, or finalized.
+Update this file whenever a chapter or section is drafted, revised, reviewed, or finalized. Record the approximate word count of each drafted section against the targets defined in `research_context/REPORT_STYLE_GUIDE.md`.
 
 ---
 
@@ -27,6 +27,28 @@ Update this file whenever a chapter or section is drafted, revised, reviewed, or
 
 ---
 
+# Word Count Targets
+
+Approximate target lengths per chapter (full targets and per-subsection guidance are in `research_context/REPORT_STYLE_GUIDE.md`):
+
+| Chapter | Target Word Count |
+|---|---|
+| Chapter 1 - Introduction | 1,500-2,500 |
+| Chapter 2 - Literature Review | 2,500-3,500 |
+| Chapter 3 - Technologies and Tools Used | 1,200-2,000 |
+| Chapter 4 - Proposed Research Framework | 2,000-3,000 |
+| Chapter 5 - Analysis and Design | 2,500-3,500 |
+| Chapter 6 - Implementation | 2,500-3,500 |
+| Chapter 7 - Evaluation and Results | 2,500-3,500 |
+| Chapter 8 - Conclusion and Future Work | 1,000-1,500 |
+| Chapter 9 - Challenges and Limitations | 1,200-2,000 |
+
+---
+
+# Overall Report Status
+
+---
+
 # Overall Report Status
 
 | Area | Status | Notes |
@@ -35,9 +57,9 @@ Update this file whenever a chapter or section is drafted, revised, reviewed, or
 | Chapter 1 | Not Started | Introduction and project motivation pending |
 | Chapter 2 | Not Started | Literature review and research gap pending |
 | Chapter 3 | Not Started | Technology/tools explanation pending |
-| Chapter 4 | Not Started | Proposed framework explanation pending |
-| Chapter 5 | Not Started | Architecture/design diagrams pending |
-| Chapter 6 | Not Started | Implementation details pending |
+| Chapter 4 | Drafting | 4.2.1 / 4.2.2 draft ready (`report_drafts/chapter4_4.2.1_4.2.2.md`); M3 deferred |
+| Chapter 5 | Drafting | 5.3.1 / 5.3.2 draft ready (`report_drafts/chapter5_5.3.1_5.3.2.md`); M3 deferred |
+| Chapter 6 | Drafting | 6.2.1/6.2.2/6.3.1/6.3.2 draft ready (`report_drafts/chapter6_6.2_6.3_m1_m2.md`); M3 deferred |
 | Chapter 7 | Not Started | Evaluation results pending |
 | Chapter 8 | Not Started | Conclusion and future work pending |
 | Chapter 9 | Not Started | Challenges and limitations pending |
@@ -213,19 +235,18 @@ Avoid generic tool descriptions. Every tool must be connected to project usage.
 
 ## Current Status
 
-Status: Not Started
+Status: Drafting
 
 ## Possible Sections
 
 - 4.1 Introduction
-- 4.2 Overview of the Proposed Framework
-- 4.3 Module 1: Hybrid Time-Series Case Forecasting
-- 4.4 Module 2: Hybrid Outbreak Risk Classification
-- 4.5 Module 3: Hybrid Spatial Hotspot Detection
-- 4.6 Residual Compensation Strategy
-- 4.7 Integration Between Modules
-- 4.8 Inputs, Processes, and Outputs
-- 4.9 Summary
+- 4.2 Overview of the Proposed Framework / Proposed System
+  - 4.2.1 Module 1: Hybrid Time-Series Case Forecasting — **Draft ready**
+  - 4.2.2 Module 2: Hybrid Outbreak Risk Classification — **Draft ready**
+  - 4.2.3 Module 3: Hybrid Spatial Hotspot Detection — deferred
+- 4.3 System Integration and Early Warning Dashboard
+- 4.4 Summary
+- (Optional later renumbering to match `REPORT_STRUCTURE.md` if supervisor prefers)
 
 ## Required Content
 
@@ -238,18 +259,31 @@ Status: Not Started
 ## Required Figures/Tables
 
 - [ ] Figure: Overall proposed research framework
+- [x] Figure draft text ready: Module 1 residual compensation workflow
+- [x] Figure draft text ready: Module 2 labelling → probability → calibration → alert/tier
 - [ ] Optional Table: Inputs/processes/outputs by module
-- [ ] Optional Figure: Residual compensation concept
+- [ ] Optional Table: Module 1 vs Module 2 compensation interpretation
 
 ## Missing Items
 
-- [ ] Confirm current architecture
-- [ ] Confirm module integration flow
-- [ ] Confirm final input/output design
+- [x] Confirm Module 1/2 architecture for 4.2.1 / 4.2.2 (aligned to living docs, 2026-07-29)
+- [ ] Confirm module integration flow (4.3)
+- [ ] Confirm final input/output design for Module 3
+- [ ] Paste Word update of interim sections 4.2.1 / 4.2.2
 
 ## Notes
 
 This chapter should not go too deeply into implementation code.
+
+Draft location: `research_context/report_drafts/chapter4_4.2.1_4.2.2.md`
+
+Key corrections vs interim draft in 4.2.1/4.2.2:
+- District-level (not fine-scale)
+- Module 1 Stage 1 = SARIMA only (not SARIMAX); climate in Stage 2
+- Module 1 Stage 2 = XGBoost residual regression
+- Module 2 Stage 1 = XGBoost with climate included
+- Module 2 Stage 2 = isotonic probability calibration (official)
+- Avoid SMOTE as production imbalance method
 
 ---
 
@@ -257,20 +291,17 @@ This chapter should not go too deeply into implementation code.
 
 ## Current Status
 
-Status: Not Started
+Status: Drafting
 
 ## Possible Sections
 
-- 5.1 Introduction
-- 5.2 High-Level Architecture
-- 5.3 Data Architecture
-- 5.4 Pipeline Architecture
-- 5.5 Module 1 Design
-- 5.6 Module 2 Design
-- 5.7 Module 3 Design
-- 5.8 Integration Design
-- 5.9 Output Design
-- 5.10 Summary
+- 5.1 Introduction — interim text still generic; edit later
+- 5.2 High-Level / Overall Architecture — interim text needs Decision 013 shared vs module-specific update; edit later
+- 5.3 High-Level Architecture of Individual Modules
+  - 5.3.1 Module 1 — **Draft ready**
+  - 5.3.2 Module 2 — **Draft ready**
+  - 5.3.3 Module 3 — deferred
+- 5.4 Summary — edit later
 
 ## Required Content
 
@@ -286,20 +317,23 @@ Status: Not Started
 - [ ] Figure: High-level architecture
 - [ ] Figure: Data flow diagram
 - [ ] Figure: Module interaction diagram
-- [ ] Figure: Forecasting pipeline
-- [ ] Figure: Classification pipeline
-- [ ] Figure: Spatial hotspot pipeline
+- [x] Draft text + flow ready: Module 1 architecture (Figure 5.4 planned)
+- [x] Draft text + flow ready: Module 2 architecture (Figure 5.5 planned)
+- [x] Draft table text: Module 1 vs Module 2 design contrast
+- [ ] Spatial hotspot pipeline figure — deferred
 
 ## Missing Items
 
-- [ ] Final architecture diagram
-- [ ] Final pipeline diagram
-- [ ] Confirm current file paths and pipeline stages
-- [ ] Confirm outputs generated by each module
+- [x] Confirm Module 1/2 design for 5.3.1 / 5.3.2 (aligned to living docs, 2026-07-29)
+- [ ] Final redrawn architecture diagrams for Word
+- [ ] Confirm current file paths and pipeline stages in 5.2 later
+- [ ] Paste Word update of interim sections 5.3.1 / 5.3.2
 
 ## Notes
 
-Architecture must match `CURRENT_ARCHITECTURE.md`.
+Architecture must match `CURRENT_ARCHITECTURE.md` and module contexts (Module 2 Stage 2 = isotonic calibration).
+
+Draft location: `research_context/report_drafts/chapter5_5.3.1_5.3.2.md`
 
 ---
 
@@ -307,20 +341,21 @@ Architecture must match `CURRENT_ARCHITECTURE.md`.
 
 ## Current Status
 
-Status: Not Started
+Status: Drafting
 
 ## Possible Sections
 
-- 6.1 Introduction
-- 6.2 Dataset Preparation
-- 6.3 Data Preprocessing
-- 6.4 Feature Engineering
-- 6.5 Forecasting Module Implementation
-- 6.6 Outbreak Classification Module Implementation
-- 6.7 Spatial Hotspot Detection Implementation
-- 6.8 Model Training and Experiment Setup
-- 6.9 Output Generation
-- 6.10 Summary
+- 6.1 Introduction — still outdated in interim (NASA POWER / all-module summary); edit later
+- 6.2 Dataset Preparation / Datasets Incorporated
+  - 6.2.1 Epidemiological Dataset — **Draft ready**
+  - 6.2.2 Meteorological Dataset (Open-Meteo) — **Draft ready**
+  - 6.2.3 Spatial/Environmental Datasets — deferred (Module 3)
+  - 6.2.4 Dataset Summary — edit later (needs M3 or M1/M2-only summary)
+- 6.3 Implementation of Modules
+  - 6.3.1 Module 1 Forecasting — **Draft ready** (preprocessing + Stage 1/2)
+  - 6.3.2 Module 2 Classification — **Draft ready** (preprocessing + Stage 1/2)
+  - 6.3.3 Module 3 Spatial — deferred
+- 6.4 Summary — edit later
 
 ## Required Content
 
@@ -337,22 +372,32 @@ Status: Not Started
 ## Required Figures/Tables
 
 - [ ] Screenshot/table of dataset structure
-- [ ] Preprocessing workflow figure
-- [ ] Feature engineering summary table
+- [x] Draft table text: epidemiological columns / Open-Meteo aggregation
+- [x] Draft figure text: Module 1 and Module 2 implementation pipelines
+- [ ] Feature engineering summary table (final numbers)
 - [ ] Model training workflow figure
 - [ ] Output examples
 
 ## Missing Items
 
-- [ ] Confirm final dataset columns
-- [ ] Confirm preprocessing steps
-- [ ] Confirm feature list
-- [ ] Confirm model algorithms
-- [ ] Confirm final implementation screenshots, if needed
+- [x] Confirm meteorological source = Open-Meteo for M1/M2 draft
+- [x] Confirm Module 1/2 preprocessing divergences (week 53, climate in Stage 1, isotonic Stage 2)
+- [ ] Confirm final screenshots, if needed
+- [ ] Paste Word update of interim sections 6.2.1 / 6.2.2 / 6.3.1 / 6.3.2
 
 ## Notes
 
 Avoid excessive code screenshots in the main chapter.
+
+Draft location: `research_context/report_drafts/chapter6_6.2_6.3_m1_m2.md`
+
+Key corrections vs interim draft:
+- NASA POWER → Open-Meteo
+- Seasonal-naive imputation + `is_imputed` (not linear/forward fill as production story)
+- Walk-forward + 2-year holdout (not only a simple calendar split narrative)
+- Module 1 week-53 merge vs Module 2 week-53 keep
+- Module 2 harmonic epidemic threshold (`k=3.0`) + isotonic Stage 2
+- Training/model stages added (interim stopped at preprocessing)
 
 ---
 
@@ -535,6 +580,14 @@ Status: Not Started
 # Change Log for Report Work
 
 Use this section to record major report-related changes.
+
+## 2026-07-29
+
+- Started Chapter 4 drafting from interim report `16_Codexon interim_V2.docx`.
+- Drafted corrected sections **4.2.1** (Module 1) and **4.2.2** (Module 2) in `research_context/report_drafts/chapter4_4.2.1_4.2.2.md`.
+- Drafted corrected Chapter 6 sections **6.2.1**, **6.2.2**, **6.3.1**, **6.3.2** in `research_context/report_drafts/chapter6_6.2_6.3_m1_m2.md` (Open-Meteo; M1/M2 pipelines; Module 3 deferred).
+- Drafted corrected Chapter 5 sections **5.3.1** and **5.3.2** in `research_context/report_drafts/chapter5_5.3.1_5.3.2.md`; planned Figures 5.4/5.5 in `REPORT_DIAGRAM_PLAN.md`.
+- Module 3 subsections intentionally deferred.
 
 ## YYYY-MM-DD
 

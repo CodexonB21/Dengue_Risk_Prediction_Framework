@@ -6,6 +6,63 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-07-29 - Report draft: Chapter 5.3.1 / 5.3.2 (Modules 1–2 design)
+
+### Module
+Report writing (Chapter 5)
+
+### Change
+Created corrected design-architecture draft text for sections 5.3.1 (Module 1) and 5.3.2 (Module 2), replacing interim figure-only placeholders. Saved at `research_context/report_drafts/chapter5_5.3.1_5.3.2.md`. Added planned Figures 5.4/5.5 to `REPORT_DIAGRAM_PLAN.md`. Updated `CHAPTER_STATUS.md`.
+
+### Reason
+Interim Chapter 5 left Module 1/2 architecture as caption-only figures; final report needs structural design text aligned to SARIMA→XGBoost and XGBoost→isotonic architectures.
+
+### Impact
+Team can paste Module 1/2 design sections and redraw figures without waiting for Module 3. Section 5.3.3 remains deferred.
+
+### Status
+Drafting
+
+---
+
+## 2026-07-29 - Report draft: Chapter 6.2.1 / 6.2.2 / 6.3.1 / 6.3.2 (Modules 1–2)
+
+### Module
+Report writing (Chapter 6)
+
+### Change
+Created corrected final-report draft text for epidemiological and Open-Meteo datasets plus Module 1/2 implementation (preprocessing through Stage 1/2 modelling). Saved at `research_context/report_drafts/chapter6_6.2_6.3_m1_m2.md`. Updated `CHAPTER_STATUS.md`.
+
+### Reason
+Interim Chapter 6 used NASA POWER, incomplete preprocessing stories, and pre-decision Module 2 labelling/feature assumptions; M1/M2 training stages were largely missing.
+
+### Impact
+Team can paste updated M1/M2 dataset and implementation sections into Word without waiting for Module 3. Sections 6.2.3 / 6.3.3 remain deferred.
+
+### Status
+Drafting
+
+---
+
+## 2026-07-29 - Report draft: Chapter 4.2.1 and 4.2.2 (Modules 1–2)
+
+### Module
+Report writing (Chapter 4)
+
+### Change
+Created corrected final-report draft text for sections 4.2.1 (Module 1 forecasting approach) and 4.2.2 (Module 2 classification approach) from the interim report baseline, aligned to current living documentation. Saved at `research_context/report_drafts/chapter4_4.2.1_4.2.2.md`. Updated `CHAPTER_STATUS.md`.
+
+### Reason
+Interim report architecture wording was outdated (fine-scale claims, SARIMAX, undecided RF/XGBoost, Module 2 Stage 2 described as climate residual ML).
+
+### Impact
+Team can paste updated Module 1/2 approach sections into Word without waiting for Module 3. Module 3 (4.2.3) remains deferred.
+
+### Status
+Drafting
+
+---
+
 ## 2026-07-29 - Dashboard split: research evidence vs operational prototype
 
 ### Module

@@ -20,6 +20,8 @@ This structure is not fixed. It should evolve based on:
 
 The old final report guideline should be treated as a minimum academic formatting guide. The newer sample report should be treated as a modern structural reference. However, the final report must be customized for this dengue risk prediction project.
 
+For writing style, prose-vs-bullet usage, and word count targets, see `research_context/REPORT_STYLE_GUIDE.md`. This file focuses on structure (chapters and subsections); that file focuses on how each subsection should be written.
+
 ---
 
 # Report Structuring Principle
@@ -67,7 +69,7 @@ Suggested order:
 
 Notes:
 
-- The abstract should summarize the problem, approach, modules, implementation, and key outcomes.
+- The abstract should summarize the problem, approach, modules, implementation, and key outcomes in flowing prose, not bullet points (target: 250-400 words; see `REPORT_STYLE_GUIDE.md`).
 - Avoid citations in the abstract unless the department specifically requires them.
 - The table of contents, list of figures, and list of tables should be generated after pagination is finalized.
 
@@ -96,13 +98,19 @@ Possible sections include:
 
 The exact subsection names may be changed based on supervisor preference.
 
-This chapter should clearly explain:
+This chapter should clearly explain, mostly in paragraph form, the following points:
 
 - why dengue prediction is important
 - why forecasting alone is not enough
 - why outbreak risk classification is useful
 - why spatial hotspot mapping is useful
 - why a hybrid residual compensation framework is proposed
+
+Only the Aim and Objectives subsection should use a numbered/bulleted list (for the objectives themselves); every other subsection should be written as connected prose per `REPORT_STYLE_GUIDE.md`.
+
+## Target Length
+
+Chapter target: 1,500-2,500 words. Standard subsections: 250-500 words each; the Introduction subsection (1.1): 120-250 words; Summary (1.8): 100-200 words.
 
 ---
 
@@ -136,9 +144,15 @@ Possible sections include:
 
 ## Notes
 
-This chapter must contain citations.
+This chapter must contain citations and should be written as connected discussion, not a bullet-point summary per paper. Each subsection should synthesize multiple sources into a coherent narrative, not list one paper per bullet.
+
+Comparison tables (2.9) should always be followed by a discussion paragraph interpreting the comparison, not left to stand alone.
 
 The research gap should lead naturally into the proposed three-module framework.
+
+## Target Length
+
+This is one of the longest chapters. Chapter target: 2,500-3,500 words. Major analytical subsections (2.4-2.9): 400-800 words each.
 
 ---
 
@@ -183,13 +197,19 @@ Possible sections include:
 
 ## Notes
 
-Do not write a generic technology description.
+Do not write a generic technology description or a bare bullet list of features.
 
-For each technology, explain:
+For each technology, explain in paragraph form:
 
 - why it was selected
 - where it was used in the project
 - how it supports dengue risk prediction
+
+A summary table (Table 3.1) listing all tools is acceptable, but each technology should still be discussed in prose beforehand, per `REPORT_STYLE_GUIDE.md`.
+
+## Target Length
+
+Chapter target: 1,200-2,000 words. Each technology subsection: roughly 150-350 words depending on how central the tool is to the project.
 
 ---
 
@@ -215,9 +235,15 @@ Possible sections include:
 
 ## Notes
 
-This chapter should explain what the project does, why the modules exist, and how the modules are connected.
+This chapter should explain what the project does, why the modules exist, and how the modules are connected, mostly in paragraph form.
 
 It should not go too deeply into code-level details.
+
+Each module subsection (4.3-4.5) should read as a short narrative, not a bulleted feature list. A single inputs/processes/outputs table (4.8) is acceptable as a summary, but it should be preceded and/or followed by prose explaining the table.
+
+## Target Length
+
+Chapter target: 2,000-3,000 words. Each module subsection (4.3-4.5): 400-800 words.
 
 ---
 
@@ -255,9 +281,13 @@ Possible figures include:
 
 At least one top-level architecture diagram should be included.
 
-Every diagram should be cited in the body text.
+Every diagram should be cited in the body text and followed by a paragraph interpreting it, not left to stand alone (see Figure and Table Style in `REPORT_STYLE_GUIDE.md`).
 
 The architecture must match `CURRENT_ARCHITECTURE.md`.
+
+## Target Length
+
+Chapter target: 2,500-3,500 words. Each module design subsection (5.5-5.7): 400-800 words.
 
 ---
 
@@ -284,11 +314,17 @@ Possible sections include:
 
 ## Notes
 
-This chapter should be consistent with the design chapter.
+This chapter should be consistent with the design chapter, and written mostly in narrative form describing what was done and why, rather than as a bare sequence of bullet points.
+
+Short ordered lists are acceptable for describing a strict processing sequence (e.g., exact preprocessing steps), but each step should still be explained rather than left as a bare label.
 
 Avoid placing too many raw code screenshots in the main body.
 
 Detailed code, extended screenshots, or additional outputs can be moved to appendices.
+
+## Target Length
+
+Chapter target: 2,500-3,500 words. Each module implementation subsection (6.5-6.7): 400-800 words.
 
 ---
 
@@ -313,39 +349,23 @@ Possible sections include:
 
 ## Possible Metrics
 
-For forecasting:
+For forecasting: MAE, RMSE, MAPE, sMAPE, residual error analysis.
 
-- MAE
-- RMSE
-- MAPE
-- sMAPE
-- residual error analysis
+For classification: accuracy, precision, recall, F1-score, ROC-AUC, confusion matrix, calibration metrics, if used.
 
-For classification:
-
-- accuracy
-- precision
-- recall
-- F1-score
-- ROC-AUC
-- confusion matrix
-- calibration metrics, if used
-
-For spatial hotspot detection:
-
-- visual hotspot validation
-- spatial clustering quality
-- Moran's I, if used
-- LISA analysis, if used
-- comparison with observed dengue concentration patterns
+For spatial hotspot detection: visual hotspot validation, spatial clustering quality, Moran's I, if used, LISA analysis, if used, comparison with observed dengue concentration patterns.
 
 ## Notes
 
-Do not invent result values.
+Do not invent result values. Use actual experiment logs.
 
-Use actual experiment logs.
+Every metric or number reported must be followed by a paragraph interpreting what it means, not left as a bare figure or bullet (see Evaluation Chapter Style in `REPORT_STYLE_GUIDE.md`).
 
 If final results are not yet available, use placeholders.
+
+## Target Length
+
+Chapter target: 2,500-3,500 words. Each module evaluation subsection (7.3-7.5): 400-800 words.
 
 ---
 
@@ -368,7 +388,11 @@ Possible sections include:
 
 Avoid claiming full real-world deployment unless it was actually completed.
 
-Conclusion should be aligned with actual evaluation results.
+Conclusion should be aligned with actual evaluation results, written in reflective prose rather than a bullet-point recap.
+
+## Target Length
+
+Chapter target: 1,000-1,500 words. Each subsection: 250-500 words.
 
 ---
 
@@ -394,17 +418,15 @@ Possible sections include:
 
 ## Possible Issues to Discuss
 
-- limited data availability
-- missing values
-- inconsistent data formats
-- underreporting of dengue cases
-- weather data alignment issues
-- temporal leakage risk
-- spatial leakage risk
-- model generalization limits
-- district-level aggregation limitations
-- difficulty validating predicted hotspots
-- lack of real-time deployment
+Limited data availability, missing values, inconsistent data formats, underreporting of dengue cases, weather data alignment issues, temporal leakage risk, spatial leakage risk, model generalization limits, district-level aggregation limitations, difficulty validating predicted hotspots, lack of real-time deployment.
+
+## Notes
+
+Each limitation should be explained as connected reasoning (cause, effect, and possible mitigation), not a bare list of one-line issues. A short list may be used to name the categories of limitation, but each named item must then be discussed in a paragraph.
+
+## Target Length
+
+Chapter target: 1,200-2,000 words. Each subsection (9.2-9.8): 200-400 words.
 
 ---
 
@@ -420,7 +442,7 @@ All references cited in the body must appear in the reference list.
 
 All references in the reference list should be cited inside the report.
 
-Use the citation style required by the department or supervisor.
+Use the citation style required by the department or supervisor (see Citation Style in `REPORT_STYLE_GUIDE.md`).
 
 ---
 
@@ -454,3 +476,5 @@ Update this file whenever:
 - sections are removed
 - project architecture changes
 - final evaluation results affect report organization
+
+For actual drafting progress, word counts achieved, and per-chapter missing items, see `research_context/CHAPTER_STATUS.md`. For diagram and table tracking, see `research_context/REPORT_DIAGRAM_PLAN.md`.

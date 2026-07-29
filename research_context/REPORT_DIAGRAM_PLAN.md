@@ -156,6 +156,65 @@ Notes:
 - If modules are independent, clearly show independent outputs.
 - If Module 1 outputs feed Module 2 or Module 3, clearly show that dependency.
 - Must reflect latest architecture documentation.
+- For now, Module 1 and Module 2 can be shown as largely independent production pipelines sharing cleaned base tables; Module 1→Module 2 forecast feed is optional/evaluation-side, not a hard Stage 1 dependency.
+
+---
+
+## Figure 5.4: Module 1 High-Level Architecture
+
+Chapter: Chapter 5 - Analysis and Design
+Status: Drafted
+
+Purpose:
+
+Show Module 1 design flow: shared tables → Module 1 preprocessing → SARIMA → residual → Stage 2 features → XGBoost → final forecast.
+
+Caption suggestion:
+
+```text
+Figure 5.4: High-level architecture of Module 1 — Hybrid Time-Series Case Forecasting
+```
+
+Source / file:
+
+- `research_context/report_drafts/diagrams/figure_5_4_module1_architecture.drawio`
+- Also page 1 of `figure_5_4_and_5_5_module1_module2.drawio`
+
+Notes:
+
+- Climate must enter only at Stage 2.
+- Include residual and final-prediction equations on the figure or immediately beside it.
+- Replaces interim report “Figure 3”.
+- Open in [diagrams.net](https://app.diagrams.net/) or the Draw.io VS Code/Cursor extension, then export PNG/SVG for Word.
+
+---
+
+## Figure 5.5: Module 2 High-Level Architecture
+
+Chapter: Chapter 5 - Analysis and Design
+Status: Drafted
+
+Purpose:
+
+Show Module 2 design flow: shared tables → Module 2 preprocessing → epidemic-threshold labels → XGBoost probability → isotonic calibration → alert/risk tier.
+
+Caption suggestion:
+
+```text
+Figure 5.5: High-level architecture of Module 2 — Hybrid Outbreak Risk Classification
+```
+
+Source / file:
+
+- `research_context/report_drafts/diagrams/figure_5_5_module2_architecture.drawio`
+- Also page 2 of `figure_5_4_and_5_5_module1_module2.drawio`
+
+Notes:
+
+- Stage 2 is probability calibration, not climate residual regression.
+- Show labelling as an explicit box before Stage 1.
+- Replaces interim report “Figure 4”.
+- Open in diagrams.net, then export PNG/SVG for Word.
 
 ---
 
