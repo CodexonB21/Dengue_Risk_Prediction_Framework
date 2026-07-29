@@ -221,13 +221,17 @@ def _prepare_tree_stage2_xy(
 # Data assembly
 # ---------------------------------------------------------------------------
 
-def assemble_stage2_base_table(full_feature_df: pd.DataFrame) -> pd.DataFrame:
+def assemble_stage2_base_table(
+    full_feature_df: pd.DataFrame,
+    *,
+    baseline_predictions_path: Path | None = None,
+) -> pd.DataFrame:
     """Read Stage 1's predictions, keep only the OFFICIAL model's rows (the
     one Stage 2 exists to correct), and attach Module 2's fold-agnostic
     contextual features (already present in `full_feature_df`, Stage 1's own
     feature table).
     """
-    preds = pd.read_csv(MODULE2_BASELINE_PREDICTIONS_PATH)
+    preds = pd.read_csv(baseline_predictions_path or MODULE2_BASELINE_PREDICTIONS_PATH)
     preds = preds[preds["is_selected_model"]].copy()
     preds["fold_id_numeric"] = pd.to_numeric(preds["fold_id"], errors="coerce")
 
@@ -324,12 +328,13 @@ def assemble_stage2_table(
     *,
     include_m1_forecast_features: bool = False,
     m1_predictions_path: Path | None = None,
+    baseline_predictions_path: Path | None = None,
 ) -> tuple[pd.DataFrame, dict[int, set], dict[int, set], set, set]:
     full_feature_df = pd.read_csv(MODULE2_STAGE1_FEATURE_TABLE_PATH, parse_dates=["Week_Start_Date", "Week_End_Date"])
 
     fold_train_keys, fold_val_keys, pre_holdout_keys, holdout_keys = compute_fold_boundaries(full_feature_df)
 
-    base = assemble_stage2_base_table(full_feature_df)
+    base = assemble_stage2_base_table(full_feature_df, baseline_predictions_path=baseline_predictions_path)
     anomalies = build_fold_scoped_anomalies(full_feature_df, fold_train_keys, fold_val_keys, pre_holdout_keys, holdout_keys)
     probability_lags = build_probability_residual_lags(full_feature_df, base)
 
@@ -465,7 +470,11 @@ def _build_prediction_rows(
 # Main benchmark (folds 2-13 x 3 architectures, plus fold-1 no-op passthrough)
 # ---------------------------------------------------------------------------
 
-def run_stage2_benchmark(stage2_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, dict[int, object]]]:
+def run_stage2_benchmark(
+    stage2_df: pd.DataFrame,
+    *,
+    stacked_feature_columns: list[str] | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, dict[int, object]]]:
     """Benchmark all `ARCHITECTURE_NAMES` across Stage 2's 12 trainable folds
     (2-13), plus a documented fold-1 no-op passthrough. Also computes
     `architecture="stage1_raw"` rows at every fold (Stage 1's own
@@ -508,7 +517,8 @@ def run_stage2_benchmark(stage2_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Data
         )
 
         for architecture in ARCHITECTURE_NAMES:
-            proba, fitted = fit_and_calibrate(architecture, trainable_train, val_rows_all)
+            tree_cols = stacked_feature_columns if architecture in ("stacked_xgboost", "logit_residual") else None
+            proba, fitted = fit_and_calibrate(architecture, trainable_train, val_rows_all, feature_columns=tree_cols)
             prediction_frames.append(_build_prediction_rows(val_rows_all, proba, architecture, fold_num, "validation", stage2_trained=True))
             scores = _score_predictions(val_rows_all[TARGET_COL], proba)
             metric_rows.append({"architecture": architecture, "fold_id": fold_num, "split": "validation", **scores})
@@ -647,7 +657,12 @@ def select_official_architecture(metrics_df: pd.DataFrame) -> str:
 # Held-out final block
 # ---------------------------------------------------------------------------
 
-def run_holdout_evaluation(stage2_df: pd.DataFrame, official_architecture: str) -> tuple[pd.DataFrame, pd.DataFrame, object]:
+def run_holdout_evaluation(
+    stage2_df: pd.DataFrame,
+    official_architecture: str,
+    *,
+    stacked_feature_columns: list[str] | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, object]:
     """Train all 3 architectures on ALL 13 folds' pooled out-of-sample rows,
     score against the untouched holdout block. Returns `(predictions_df,
     metrics_df, official_fitted_model)`."""
@@ -664,7 +679,8 @@ def run_holdout_evaluation(stage2_df: pd.DataFrame, official_architecture: str) 
     official_fitted = None
 
     for architecture in ARCHITECTURE_NAMES:
-        proba, fitted = fit_and_calibrate(architecture, trainable_train, val_rows_all)
+        tree_cols = stacked_feature_columns if architecture in ("stacked_xgboost", "logit_residual") else None
+        proba, fitted = fit_and_calibrate(architecture, trainable_train, val_rows_all, feature_columns=tree_cols)
         prediction_frames.append(_build_prediction_rows(val_rows_all, proba, architecture, "holdout", "holdout", stage2_trained=True))
         scores = _score_predictions(val_rows_all[TARGET_COL], proba)
         metric_rows.append({"architecture": architecture, "fold_id": "holdout", "split": "holdout", **scores})
@@ -682,7 +698,12 @@ def run_holdout_evaluation(stage2_df: pd.DataFrame, official_architecture: str) 
 # Final production model
 # ---------------------------------------------------------------------------
 
-def train_final_production_model(stage2_df: pd.DataFrame, official_architecture: str):
+def train_final_production_model(
+    stage2_df: pd.DataFrame,
+    official_architecture: str,
+    *,
+    stacked_feature_columns: list[str] | None = None,
+):
     """Train one final `official_architecture` model on ALL available
     out-of-sample rows (13 folds + holdout, defined-label only), for
     potential future live scoring. Not used for any reported metric."""
@@ -693,7 +714,8 @@ def train_final_production_model(stage2_df: pd.DataFrame, official_architecture:
 
     # fit_and_calibrate requires a val_df; reuse a throwaway trainable row
     # as a discarded prediction target (mirrors baseline_classifier.py).
-    _, model = fit_and_calibrate(official_architecture, trainable, trainable.iloc[[0]])
+    tree_cols = stacked_feature_columns if official_architecture in ("stacked_xgboost", "logit_residual") else None
+    _, model = fit_and_calibrate(official_architecture, trainable, trainable.iloc[[0]], feature_columns=tree_cols)
     return model
 
 
@@ -765,9 +787,15 @@ def run_stage2_pipeline(
     include_m1_forecast_features: bool = False,
     m1_predictions_path: Path | None = None,
     feature_variant: str | None = None,
+    baseline_predictions_path: Path | None = None,
+    stacked_feature_columns: list[str] | None = None,
 ) -> pd.DataFrame:
     paths = module2_stage2_paths(feature_variant)
     use_m1 = include_m1_forecast_features or feature_variant == "m2_007_d"
+    stage1_preds_path = baseline_predictions_path
+    if stage1_preds_path is None and feature_variant == "m2_008":
+        from src.config import module2_stage1_paths
+        stage1_preds_path = module2_stage1_paths("m2_008")["predictions"]
 
     logger.info(
         "Assembling Stage 2 table (M1-fed features=%s)...",
@@ -776,13 +804,16 @@ def run_stage2_pipeline(
     stage2_df, _, _, _, _ = assemble_stage2_table(
         include_m1_forecast_features=use_m1,
         m1_predictions_path=m1_predictions_path,
+        baseline_predictions_path=stage1_preds_path,
     )
 
     logger.info(
         "Running Stage 2 benchmark across architectures: %s (folds %d-%d trainable, fold 1 is a no-op passthrough)...",
         ARCHITECTURE_NAMES, FIRST_TRAINABLE_STAGE2_FOLD, STAGE1_N_FOLDS,
     )
-    predictions_df, metrics_df, fitted_models = run_stage2_benchmark(stage2_df)
+    predictions_df, metrics_df, fitted_models = run_stage2_benchmark(
+        stage2_df, stacked_feature_columns=stacked_feature_columns,
+    )
 
     official_architecture = select_official_architecture(metrics_df)
 
@@ -794,7 +825,9 @@ def run_stage2_pipeline(
     comparison_df = run_pooled_vs_per_district_comparison(stage2_df, pooled_bss_by_fold)
 
     logger.info("Running Stage 2 held-out final-block evaluation...")
-    holdout_predictions_df, holdout_metrics_df, official_holdout_model = run_holdout_evaluation(stage2_df, official_architecture)
+    holdout_predictions_df, holdout_metrics_df, official_holdout_model = run_holdout_evaluation(
+        stage2_df, official_architecture, stacked_feature_columns=stacked_feature_columns,
+    )
 
     predictions_df = pd.concat([predictions_df, holdout_predictions_df], ignore_index=True)
     predictions_df["is_selected_architecture"] = predictions_df["architecture"] == official_architecture
@@ -815,7 +848,9 @@ def run_stage2_pipeline(
     _save_model(official_holdout_model, _model_file_path(MODULE2_STAGE2_MODELS_DIR, "holdout", official_architecture), official_architecture)
 
     logger.info("Training final Stage 2 production model (%s) on all available out-of-sample data...", official_architecture)
-    final_model = train_final_production_model(stage2_df, official_architecture)
+    final_model = train_final_production_model(
+        stage2_df, official_architecture, stacked_feature_columns=stacked_feature_columns,
+    )
     _save_model(
         final_model, MODULE2_STAGE2_FINAL_MODEL_PATH.with_suffix(
             ".json" if official_architecture in ("stacked_xgboost", "logit_residual") else ".joblib"

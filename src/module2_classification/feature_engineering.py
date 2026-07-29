@@ -153,8 +153,18 @@ FOLD_AGNOSTIC_FEATURE_COLUMNS = (
     + CASE_ANOMALY_LAG_FEATURES
 )
 
+# M2-008 symmetric ablation (Module 1–style split): Stage 1 omits climate so Stage 2
+# can learn climate-driven correction on top of a case-history baseline.
+STAGE1_CLIMATE_FREE_FEATURE_COLUMNS = (
+    CASE_TREND_FEATURES + SEASONAL_FEATURES + CASE_ANOMALY_LAG_FEATURES
+)
+
 # NOT written to the global file - must be recomputed per walk-forward fold.
 FOLD_AWARE_FEATURE_COLUMNS = ["rainfall_anomaly", "temperature_anomaly", "humidity_anomaly"]
+
+STAGE2_CLIMATE_COMPENSATION_FEATURE_COLUMNS = (
+    CLIMATE_LAG_FEATURES + CURRENT_WEEK_CLIMATE_FEATURES + FOLD_AWARE_FEATURE_COLUMNS
+)
 
 # Categorical, handled separately by Stage 1 modeling code (Module 1 Feature
 # Group 5b equivalent) - not part of the plain numeric feature lists above.

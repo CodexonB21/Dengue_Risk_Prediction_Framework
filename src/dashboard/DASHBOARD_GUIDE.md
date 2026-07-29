@@ -80,7 +80,31 @@ The app is a **read-only consumer** of precomputed CSV outputs:
 
 ---
 
-## Page layout
+## Page layout (2026-07-29 redesign)
+
+The app has **two sidebar-selected views**. Always demo **Research evidence first**, then **Operational prototype**.
+
+### Page 1 — Research evidence (holdout-validated)
+
+**Default view for thesis / viva.** Read-only display of:
+
+- Module 1 holdout summary (median MASE/sMAPE, districts improved)
+- Module 2 holdout summary (PR-AUC, alert recall/precision @ τ=0.14)
+- M2-009 table — why Module 2 is not redundant vs thresholding M1 forecasts
+- Per-district holdout MASE chart (SARIMA vs hybrid)
+- Holdout reliability diagram (Module 2 calibration)
+
+**Data sources:** `outputs/metrics/production_stack_evaluation_summary.csv`, `outputs/metrics/module2/m2_009_m1_alert_baseline.csv`, `outputs/metrics/module1/production_stack_m1_district_comparison.csv`, `outputs/figures/module2/reliability_diagram_holdout.png`.
+
+**Safe to cite** these numbers in the thesis.
+
+### Page 2 — Operational prototype (live / forward)
+
+Integration demo only — **not** accuracy proof. Contains national triage, district drill-down (recent risk, case forecast, forward risk), and refresh controls.
+
+---
+
+## Operational page layout
 
 ### Top banner — data freshness
 
@@ -248,12 +272,12 @@ See also: `research_context/QUESTIONS_FOR_DEFENSE.md` (forward risk vs holdout s
 
 ## Suggested 2-minute walkthrough
 
-1. **Open national view** — *“Data through 2026 Wk25; climate refreshed; last refresh timestamp shown.”*
-2. **Point to alert counts** — *“X districts flagged for attention next week nationally.”*
-3. **Pick Colombo or Gampaha** — *“Recent risk tab: probability rose over the last 8 weeks.”*
-4. **Case forecast tab** — *“Module 1 expects cases to continue elevated over the next 8 weeks.”*
-5. **Forward risk tab** — *“Module 2 shows how outbreak probability may evolve; note `uses_module1_cases` and `climate_source` for weeks ahead.”*
-6. **Close with caveat** — *“Operational early warning — complements, not replaces, official surveillance and our published holdout metrics.”*
+1. **Open Research evidence page** — *“These are our holdout-validated results: M1 hybrid MASE 0.374, M2 PR-AUC 0.412, Module 2 beats thresholding M1 forecasts.”*
+2. **Switch to Operational prototype** — *“This page shows how the same frozen models could feed a monitoring screen — not validated accuracy.”*
+3. **Point to freshness banner** — data through latest epi-week; refresh timestamp.
+4. **National triage** — *“X districts flagged for attention — monitoring signals, not thesis metrics.”*
+5. **District drill-down** — recent risk, case forecast, forward risk with `evidence_tier` / `cases_source`.
+6. **Close** — *“Operational early warning complements official surveillance; skill claims come from the Research evidence page only.”*
 
 ---
 
@@ -276,7 +300,8 @@ See also: `research_context/QUESTIONS_FOR_DEFENSE.md` (forward risk vs holdout s
 | `research_context/RESEARCH_DECISIONS.md` | Decision 027 (M1-fed forward risk) |
 | `research_context/DATA_DICTIONARY.md` | Output column definitions |
 | `module_1_forecasting/MODULE_CONTEXT.md` | Module 1 forward forecast |
-| `module_2_classification/MODULE_CONTEXT.md` | Live + forward risk scoring |
+| `src/dashboard/evidence_data.py` | Load holdout metric CSVs for evidence page |
+| `src/dashboard/pages.py` | Research evidence + operational page renderers |
 
 ---
 

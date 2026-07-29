@@ -6,7 +6,62 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
-## Entry Format
+## 2026-07-29 - Dashboard split: research evidence vs operational prototype
+
+### Module
+Integration layer (dashboard)
+
+### Change
+Restructured `src/dashboard/app.py` into two sidebar views: **Research evidence** (holdout-validated M1/M2 metrics, M2-009 redundancy table, district MASE chart, calibration figure) and **Operational prototype** (existing live/forward monitoring with stronger disclaimers). New modules `evidence_data.py`, `pages.py`. Updated `DASHBOARD_GUIDE.md` walkthrough.
+
+### Reason
+Chat review concluded forward/dashboard outputs are not thesis-accuracy evidence; dashboard should demonstrate integration without being mistaken for validation.
+
+### Impact
+Default page is research evidence (viva-safe). Operational numbers labeled `evidence_tier: operational` throughout. No model retraining.
+
+### Status
+Accepted
+
+---
+
+## 2026-07-29 - M2-009 Module 1-Derived Alert Baseline (Module 2 Redundancy Test)
+
+### Module
+Module 2 (cross-module with Module 1)
+
+### Change
+Formalized holdout comparison: M2 production alerts vs thresholding M1 `final_prediction` (fair epidemic-threshold rule + naive fixed-100 rule). New read-only script `scripts/m2_009_m1_alert_baseline.py`.
+
+### Reason
+Defense question: Module 2 may appear redundant if Module 1 already forecasts cases. Empirical proof needed on the same holdout block and outbreak label.
+
+### Impact
+**Module 2 justified.** M2 PR-AUC 0.412 / recall 0.60 vs M1-threshold PR-AUC 0.063 / recall 0.225. M2 catches 15 outbreaks M1-threshold misses. Artifacts: `outputs/metrics/module2/m2_009_*.csv`. Production unchanged.
+
+### Status
+Accepted (evidence for thesis defense)
+
+---
+
+## 2026-07-29 - M2-008 Symmetric Climate-Free Stage 1 + Climate Stage 2 Ablation
+
+### Module
+Module 2
+
+### Change
+Ran Module 1–symmetric ablation: climate-free Stage 1 (case history + seasonality) + climate-only stacked Stage 2 correction. New script `scripts/m2_008_symmetric_ablation.py`, feature constants in `feature_engineering.py`, variant artifact paths via `module2_stage1_paths` / `--feature-variant m2_008`.
+
+### Reason
+Defense question: is Module 2’s isotonic Stage 2 only because climate was already in Stage 1? Test whether withholding climate from Stage 1 and routing it through Stage 2 stacked correction reproduces Module 1’s residual-compensation benefit.
+
+### Impact
+**Rejected.** Stacked climate Stage 2 holdout PR-AUC 0.424 vs climate-free Stage 1 raw 0.462; BSS −0.22. Production isotonic unchanged. Artifacts: `outputs/metrics/module2/m2_008_{vs_production,summary}.csv`, `*_m2_008` variant CSVs.
+
+### Status
+Experimental (ablation only; production unchanged)
+
+---
 
 ```markdown
 ## YYYY-MM-DD - Short Change Title

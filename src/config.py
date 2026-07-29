@@ -211,6 +211,29 @@ MODULE2_LIVE_RISK_PREDICTIONS_PATH = MODULE2_PROCESSED_DIR / "live_risk_predicti
 MODULE2_FUTURE_RISK_PREDICTIONS_PATH = MODULE2_PROCESSED_DIR / "future_risk_predictions.csv"
 
 
+def module2_stage1_paths(feature_variant: str | None = None) -> dict[str, Path]:
+    """Return Stage 1 artifact paths; ablations use a ``_<variant>`` suffix."""
+    if not feature_variant:
+        return {
+            "predictions": MODULE2_BASELINE_PREDICTIONS_PATH,
+            "metrics": MODULE2_BASELINE_METRICS_PATH,
+            "importance": MODULE2_BASELINE_FEATURE_IMPORTANCE_PATH,
+            "pooled_vs_district": MODULE2_POOLED_VS_DISTRICT_PATH,
+            "models_dir": MODULE2_BASELINE_MODELS_DIR,
+            "final_model": MODULE2_BASELINE_FINAL_MODEL_PATH,
+        }
+    suffix = feature_variant
+    models_dir = MODULE2_MODELS_DIR / f"baseline_classifier_{suffix}"
+    return {
+        "predictions": MODULE2_PROCESSED_DIR / f"baseline_classifier_predictions_{suffix}.csv",
+        "metrics": MODULE2_METRICS_DIR / f"baseline_classifier_metrics_{suffix}.csv",
+        "importance": MODULE2_METRICS_DIR / f"baseline_classifier_feature_importance_{suffix}.csv",
+        "pooled_vs_district": MODULE2_METRICS_DIR / f"pooled_vs_per_district_comparison_{suffix}.csv",
+        "models_dir": models_dir,
+        "final_model": models_dir / "final_production_model",
+    }
+
+
 def module2_stage2_paths(feature_variant: str | None = None) -> dict[str, Path]:
     """Return Stage 2 artifact paths; ablations use a ``_<variant>`` suffix."""
     if not feature_variant:

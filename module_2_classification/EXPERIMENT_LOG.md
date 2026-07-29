@@ -1110,4 +1110,113 @@ Holdout confirmation after default-path refit:
 
 Artifacts: `outputs/metrics/production_stack_evaluation_summary.csv`, backup at
 `outputs/metrics/production_promotion_backup_2026-07-29/`. Ablations unchanged at
-variant paths (`_m1_006_a`, `_m1_006_b`, `_m2_007_d`).
+variant paths (`_m1_006_a`, `_m1_006_b`, `_m2_007_d`, `_m2_008`).
+
+---
+
+## Experiment ID: M2-008
+
+### Date
+2026-07-29
+
+### Research Question
+If Module 2 adopts a Module 1–symmetric architecture — **climate-free Stage 1** (case history + seasonality only) and **climate-only Stage 2 stacked correction** — does Stage 2 learn useful climate-driven compensation the way Module 1’s XGBoost learns count residuals?
+
+### Label Definition
+Unchanged (Decision 025 harmonic estimator, `k=3.0`).
+
+### Data Period
+Same 13 walk-forward folds + 2-year holdout as production.
+
+### Stage 1 Model
+Climate-free feature set (`STAGE1_CLIMATE_FREE_FEATURE_COLUMNS` + `District`): case lags/rolling stats, seasonal encodings, case-anomaly lags — **no** climate lags, current climate, or fold-aware anomalies. Three-model benchmark; **Random Forest selected** (median validation PR-AUC 0.414 vs XGBoost 0.392).
+
+### Stage 2 Model
+Climate compensation feature set for `stacked_xgboost`: climate lags + current climate + fold-scoped anomalies + `predicted_probability` + `probability_residual_lag_1/2` + `District`. Isotonic/Platt/logit_residual also benchmarked (standard pipeline).
+
+### Features Used
+- Stage 1 (15 cols): `CASE_TREND + SEASONAL + CASE_ANOMALY_LAG + District`
+- Stage 2 stacked (25 cols): `STAGE2_CLIMATE_COMPENSATION + predicted_probability + probability_residual_lags + District`
+
+### Class Imbalance Handling
+Unchanged (`class_weight` / `scale_pos_weight`).
+
+### Metrics
+PR-AUC, ROC-AUC, BSS (Stage 2 selection), alert recall/precision @ τ=0.14 — holdout primary check.
+
+### Results (holdout, 2,600 rows)
+
+| Pipeline | Architecture | PR-AUC | BSS | Alert recall @ 0.14 | Alert precision @ 0.14 |
+|---|---|---:|---:|---:|---:|
+| **Production** | isotonic | **0.412** | **0.232** | 0.600 | **0.338** |
+| Symmetric M2-008 | stage1_raw (climate-free) | **0.462** | −0.512 | 0.825 | 0.087 |
+| Symmetric M2-008 | isotonic | 0.428 | 0.284 | 0.550 | 0.400 |
+| Symmetric M2-008 | platt | 0.462 | 0.278 | 0.575 | 0.383 |
+| Symmetric M2-008 | **stacked_xgboost (climate)** | 0.424 | **−0.221** | 0.800 | 0.175 |
+
+- Climate-free Stage 1 holdout PR-AUC **0.462** — comparable to production full-feature Stage 1 (~0.429 RF), confirming case-history features carry most discrimination signal.
+- **Stacked climate Stage 2 regressed vs climate-free Stage 1 raw** (PR-AUC −0.038, BSS negative) — pre-registered “stacked improves S1 by ≥0.02” gate **failed**.
+- **Stacked did not beat production isotonic** (+0.013 PR-AUC, below 0.02 gate; precision collapsed to 0.175).
+- Stage 2 official architecture under symmetric design: **Platt** (median BSS 0.244 vs isotonic 0.230) — calibration still wins over feature correction.
+- Artifacts: `outputs/metrics/module2/{m2_008_vs_production,m2_008_summary}.csv`, variant paths `*_m2_008.csv`.
+
+### Interpretation
+The symmetric ablation **disproves** the hypothesis that Module 2’s negative residual result is only because “climate was already in Stage 1.” When climate is deliberately withheld from Stage 1 and offered exclusively to Stage 2 stacked correction — mirroring Module 1’s SARIMA→XGBoost split — **stacked correction still fails**. Climate-free Stage 1 already ranks well; adding a second imbalance-corrected tree layer on top distorts probabilities (negative BSS, precision collapse) without improving ranking. Simple calibration (Platt/isotonic) remains the well-posed fix. Module 1’s residual metaphor transfers to **where features are placed**, but not to **how binary probability errors should be corrected**.
+
+### Decision
+**Reject** symmetric stacked climate compensation for production (no Decision 031). **Keep** production architecture (full Stage 1 + isotonic Stage 2). Retain `m2_008` variant paths for thesis defense evidence.
+
+### Documentation Updated
+`research_context/QUESTIONS_FOR_DEFENSE.md`, `module_2_classification/EXPERIMENT_LOG.md`, `research_context/CHANGELOG.md`, `src/module2_classification/feature_engineering.py` (ablation column constants), `scripts/m2_008_symmetric_ablation.py`.
+
+---
+
+## Experiment ID: M2-009
+
+### Date
+2026-07-29
+
+### Research Question
+Is Module 2 redundant if Module 1 already forecasts weekly cases — can we declare outbreaks by thresholding `final_prediction` instead?
+
+### Label Definition
+Unchanged (Decision 025 harmonic estimator, `k=3.0`).
+
+### Data Period
+Untouched 2-year holdout block: Module 1 `final_combined_predictions.csv` + Module 2 `stage2_risk_tier_predictions.csv`, joined on `(District, Year, Week)`. Epidemic thresholds from `labels.compute_epidemic_threshold_labels` on `weekly_modeling_table.csv`.
+
+### Stage 1 / Stage 2 Model
+No retraining — read-only comparison of existing production outputs.
+
+### Baselines Compared (holdout)
+1. **M2 production** — `calibrated_probability ≥ 0.14` (isotonic, Decision 024)
+2. **M1 fair** — `final_prediction > epidemic_threshold` (same threshold formula as M2 label)
+3. **M1 excess score** — `final_prediction − epidemic_threshold` (PR-AUC only)
+4. **Oracle** — `actual cases > epidemic_threshold` (label definition applied to actuals)
+5. **M1 naive** — `final_prediction > 100` (fixed global cutoff)
+
+### Metrics
+PR-AUC, recall, precision, F2, alert count; discordant true-outbreak capture (M2 vs M1-threshold).
+
+### Results (holdout, 2,600 rows, 40 outbreaks, prevalence 1.5%)
+
+| Rule | PR-AUC | Recall | Precision | F2 | Alerts |
+|---|---:|---:|---:|---:|---:|
+| M2 production (τ=0.14) | **0.412** | **0.600** | 0.338 | **0.519** | 71 |
+| M1 forecast > epidemic threshold | 0.063 | 0.225 | 0.563 | 0.256 | 16 |
+| M1 excess (pred − threshold) | 0.280 | 0.225 | 0.563 | 0.256 | 16 |
+| Oracle: actual > threshold | 0.302 | 1.000 | 1.000 | 1.000 | 40 |
+| M1 forecast > 100 cases | 0.063 | 0.500 | 0.073 | 0.231 | 273 |
+
+Discordant: M2 catches **15** true outbreaks M1-threshold misses; M1-threshold catches **0** M2 misses. Top-decile M1 predictions that are **not** outbreaks: **240** (Colombo 101, Gampaha 80).
+
+Artifacts: `outputs/metrics/module2/m2_009_{m1_alert_baseline,summary,discordant_counts,top_decile_false_high_by_district}.csv`; script: `scripts/m2_009_m1_alert_baseline.py`.
+
+### Interpretation
+Forecasting case **levels** and detecting **relative epidemic exceedance** are separable tasks. M1-threshold compounds forecast error with threshold error and fails to rank rare outbreak weeks (PR-AUC 0.063). Module 2's classifier is tuned for this rare-event discrimination task; M1 remains the quantification layer and operational case-lag source (Decision 027), not a substitute for outbreak alerting.
+
+### Decision
+**Keep Module 2 as a distinct module.** M1-derived threshold alerting is a documented negative baseline, not a production alternative.
+
+### Documentation Updated
+`research_context/QUESTIONS_FOR_DEFENSE.md`, `module_2_classification/EXPERIMENT_LOG.md`, `research_context/CHANGELOG.md`.
