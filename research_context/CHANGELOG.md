@@ -1302,3 +1302,125 @@ Weather ingestion in the upcoming `src/preprocessing/shared.py` should read
 
 ### Status
 Accepted
+
+---
+
+## 2026-07-27 - Stage 1 Explosive-AR-Root Fix; Real-World Outbreak Sanity Check
+
+### Module
+Module 1
+
+### Change
+Fixed the `Vavuniya`/`Mannar` SARIMA divergence flagged as Open Question #14
+during Stage 2 development: `baseline_sarima.fit_and_forecast()` now checks
+every fitted SARIMAX model's combined AR polynomial roots and treats any fit
+with a root on or inside the unit circle (non-stationary/explosive despite
+`enforce_stationarity=False`) as a failed fit (`NaN` for that fold), instead
+of returning an unbounded-growth forecast. Confirmed via a full 25-district
+scan that this affects exactly two folds: `Vavuniya` fold 1 (2010, AR(1)
+coefficient 1.266) and `Mannar` fold 13 (2022, seasonal AR coefficient
+1.162). The full Stage 1 → Stage 2 → combine pipeline was regenerated
+(`main.py --force --stages stage1_sarima stage2_xgboost combine`, ~62
+minutes). `compensation_model.py` (`_trainable_mask()`) and `combine.py`
+(`residual_variance_reduction()` switched to `np.nanvar`) were hardened to
+correctly handle the newly-possible `NaN` residual rows. Also fixed a
+sign-convention bug found while re-verifying results: `evaluate.dm_test`'s
+docstring had `mean_loss_diff`'s interpretation backwards (the code was
+already correct; only the prose was wrong).
+
+Separately, while investigating whether the framework could predict the
+real, ongoing 2026 Colombo/Gampaha dengue outbreak (the dataset already
+extends to 2026 week 25, which includes the actual spike inside the
+untouched holdout block), found that the shared climate data pipeline has
+not been refreshed past 2026 week 21 - leaving every climate feature `NaN`
+for weeks 22-25, exactly the weeks containing the outbreak spike.
+
+### Reason
+The Vavuniya/Mannar divergence was previously only mitigated at the Stage 2
+level (Decision 014's MAE loss switch contained the symptom) but never
+fixed at the source, and was explicitly flagged in Open Question #14 as
+worth a targeted look. A user question about the framework's real-world
+predictive accuracy on the current outbreak prompted revisiting this fix
+before further real-world evaluation, and separately surfaced the climate
+data currency gap as a distinct, actionable finding.
+
+### Impact
+- `data/processed/module1/sarima_stage1_predictions.csv`,
+  `models/module1/sarima_selected_configs.csv`,
+  `outputs/metrics/module1/sarima_walk_forward_metrics.csv`,
+  `data/processed/module1/xgboost_stage2_predictions.csv`,
+  `data/processed/module1/final_combined_predictions.csv`,
+  `outputs/metrics/module1/combined_vs_baseline_metrics.csv`, and
+  `outputs/metrics/module1/diebold_mariano_results.csv` all regenerated.
+- Stage 2's headline result improved from 24/25 to **25/25 districts**
+  improving on validation-aggregate MASE; median validation MASE
+  improvement 43.5% (was ~42.8%), median holdout MASE improvement 32.7%
+  (was ~28.7%). `Vavuniya` went from one of the most fragile districts to
+  one of the best. Holdout win rate is 23/25 (`Kilinochchi`, `Mannar` show
+  small, non-significant holdout regressions).
+- `module_1_forecasting/MODULE_CONTEXT.md` (Open Question #14 resolved and
+  fixed; Open Question #12's numbers refreshed; new Open Question #16 for
+  the climate-data-lag/real-world-outbreak finding; "Stage 1/2
+  Implementation Status" sections fully refreshed).
+- `research_context/RESEARCH_DECISIONS.md` (new Decision 017; Decision 016
+  annotated as superseded by it).
+- `module_1_forecasting/EXPERIMENT_LOG.md` (new entry M1-003).
+- The climate data pipeline currency gap (2026 weeks 22-25) is flagged but
+  **not yet fixed** - re-running the shared climate preprocessing (Open-Meteo
+  fetch) through the current date is a follow-up action item.
+
+### Status
+Accepted
+
+---
+
+## 2026-07-27 - Module 1 Forward Production Forecast Added
+
+### Module
+Module 1
+
+### Change
+Added `src/module1_forecasting/forecast_future.py` (new): generates a
+genuine forward forecast for 8 weeks beyond the last available case-count
+week (2026 weeks 26-33), for all 25 districts. Stage 1 is refit on each
+district's entire available history and forecasts 8 steps ahead in one
+deterministic call; Stage 2 applies the existing final production XGBoost
+model recursively (real historical values feed the first 1-2 future weeks'
+lag features, then the script's own prior-step predictions feed all later
+weeks). A `feature_completeness_pct` diagnostic is reported per row to
+quantify declining confidence with horizon. Outputs
+`data/processed/module1/future_forecast.csv` and illustrative plots for
+`Colombo`/`Gampaha`.
+
+### Reason
+Prompted by the user asking whether Module 1's testing was complete and
+whether it can predict genuinely future case counts - a different question
+from the already-answered "does the holdout MASE improve" (M1-002/M1-003).
+No existing script in the pipeline could answer this: walk-forward
+validation and the holdout block both score against data already present in
+the dataset, not genuinely new weeks.
+
+### Impact
+- New file `data/processed/module1/future_forecast.csv` (200 rows) and new
+  plots `outputs/figures/module1/future_forecast_{Colombo,Gampaha}.png`.
+- `src/config.py`: added `MODULE1_FUTURE_FORECAST_PATH`.
+- For the real-outbreak districts: `Colombo`'s forecast settles to a
+  ~460-470/week plateau (from a pre-spike ~300-500/week baseline);
+  `Gampaha`'s settles to a ~1,360-1,370/week plateau (from ~200-500/week) -
+  both clearly elevated but not simply repeating the single week-25 spike
+  value (1,138/1,294), consistent with the model discounting what may be a
+  partly reporting-lag-driven outlier (a suspicious week-24 dip precedes the
+  spike in both districts).
+- `feature_completeness_pct` declines from 56.2% (horizon step 1) to 43.8%
+  (steps 5-8) as `residual_lag_1/2` become fully recursive and climate lags
+  run out of range - reported explicitly rather than hidden.
+- Deliberately **not** wired into `main.py`'s orchestration and does **not**
+  close Open Question #16's climate-data-currency gap or substitute for the
+  still-not-built rolling 1-week-ahead re-evaluation - both remain open.
+- `research_context/RESEARCH_DECISIONS.md` (new Decision 018).
+- `module_1_forecasting/MODULE_CONTEXT.md` (new "Forward Production
+  Forecast" section).
+- `module_1_forecasting/EXPERIMENT_LOG.md` (new entry M1-004).
+
+### Status
+Accepted

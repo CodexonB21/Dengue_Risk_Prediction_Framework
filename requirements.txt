@@ -1,9 +1,12 @@
 pandas
 numpy
+scipy
 scikit-learn
 statsmodels==0.14.6
 pmdarima==2.1.1
 xgboost==3.2.0
+imbalanced-learn
+optuna
 matplotlib
 seaborn
 jupyter
@@ -13,3 +16,5 @@ rasterio
 xarray
 shapely
 folium
+libpysal
+esda

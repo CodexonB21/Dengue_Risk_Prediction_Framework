@@ -56,11 +56,16 @@ from src.config import (  # noqa: E402
 logger = logging.getLogger(__name__)
 
 # Raw climate columns used as the "rainfall"/"temperature"/"humidity" source
-# for lag and anomaly features. Rainfall is a PROVISIONAL choice: Module 1
-# Open Question #5 ("Should rain_sum or precipitation_sum be preferred?") is
-# still unresolved (see module_1_forecasting/MODULE_CONTEXT.md) - rain_sum is
-# used here as a placeholder pending that decision, not as a settled choice.
-RAINFALL_COLUMN = "rain_sum (mm)"
+# for lag and anomaly features. Module 1 Open Question #5 ("Should rain_sum
+# or precipitation_sum be preferred?") is RESOLVED as of the Stage 2 session
+# (2026-07-27): precipitation_sum is used. Open-Meteo's own documentation
+# confirms precipitation_sum = rain + showers + snowfall (liquid equivalent),
+# while rain_sum excludes showers entirely. Sri Lanka's monsoon rainfall is
+# heavily convective-shower-driven, so rain_sum risked systematically
+# undercounting real water input relevant to mosquito-breeding habitat -
+# precipitation_sum is the more complete signal. See RESEARCH_DECISIONS.md
+# Decision 008.
+RAINFALL_COLUMN = "precipitation_sum (mm)"
 TEMPERATURE_COLUMN = "temperature_2m_mean (\u00b0C)"
 HUMIDITY_COLUMN = "relative_humidity_2m_mean (%)"
 WEATHER_CODE_COLUMN = "weather_code (wmo code)"

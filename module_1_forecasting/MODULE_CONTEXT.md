@@ -105,9 +105,28 @@ residual = actual_cases - sarima_prediction
    supports, but per `PIPELINE_ARCHITECTURE_PLAN.md` does not by itself
    decide, Stage 2's planned `residual_lag_1/2` features. That remains
    Stage 2's own decision.
-4. Which rainfall lag window gives best performance?
-5. Should `rain_sum` or `precipitation_sum` be preferred?
-6. How much improvement is required to claim compensation benefit?
+4. **Not ablated this session.** Which rainfall lag window gives best
+   performance? The full `rainfall_lag_2..8` window (as originally specified)
+   was used as-is. Stage 2's feature importance (gain-based, final production
+   model) shows `rainfall_lag_5`/`rainfall_lag_6` among the top ~10 features
+   overall — tentative evidence they carry real signal — but this was not a
+   controlled ablation (no lag-window-subset comparison was run). Candidate
+   future work.
+5. **RESOLVED (2026-07-27).** Should `rain_sum` or `precipitation_sum` be
+   preferred? `precipitation_sum (mm)` — see Decision 008
+   (`RESEARCH_DECISIONS.md`) for the full reasoning (captures convective
+   showers, which `rain_sum` excludes; relevant given Sri Lanka's
+   shower-driven monsoon pattern). `feature_engineering.py`'s `RAINFALL_COLUMN`
+   was switched and `stage2_feature_table.csv` regenerated before Stage 2 was
+   built.
+6. **RESOLVED (2026-07-27), answered by the Stage 2 evaluation framework
+   itself.** How much improvement is required to claim compensation benefit?
+   Rather than an arbitrary threshold, this is answered with a
+   Diebold-Mariano test (Decision 016) — the criterion is statistical
+   distinguishability from zero improvement, not a fixed percentage. Result:
+   24/25 districts improve directionally (validation-aggregate MASE), 12/25
+   reach `p < 0.05` at the larger validation+holdout DM scope, 4/25 at the
+   stricter holdout-only scope. See "Stage 2 Implementation Status" below.
 7. **Resolved (2026-07-27) — evidence gathered, Decision 002 kept
    unchanged.** Zero-inflation risk: rather than special-casing sparse
    districts, all 25 got the same uniform SARIMA treatment and their
@@ -175,11 +194,65 @@ residual = actual_cases - sarima_prediction
     is cheap regardless of outcome: the expensive part (`auto_arima` search)
     is a one-time, already-benchmarked ~82-minute cost for all 25 districts,
     and could be re-run for only the specific districts found to need it,
-    not all 25 - so deferring this carries no meaningful lock-in cost. Not
-    addressed further this session; flagged as the single most significant
-    finding from Stage 1's implementation, worth raising with the thesis
-    supervisor.
-13. **Holdout vs. validation-fold performance diverges more than expected**:
+    not all 25 - so deferring this carries no meaningful lock-in cost.
+
+    **RESOLVED WITH EVIDENCE (2026-07-27, Stage 2 built and run; numbers
+    refreshed same day after the Open Question #14 fix below).** The
+    diagnostic came back in the *opposite* direction from what would justify
+    reworking Stage 1: the 18 non-seasonal districts show a **larger** median
+    MASE improvement from Stage 2 (44.9% validation-aggregate / 39.1%
+    holdout) than the 7 seasonal districts (31.9% validation-aggregate /
+    26.2% holdout). This is evidence FOR the original sequencing bet — Stage
+    2's `sin_week`/`cos_week`/monsoon-indicator/climate-anomaly features
+    appear to be substantially compensating for the annual cycle that Stage
+    1's SARIMA missed in those 18 districts, without needing to touch Stage 1
+    at all. This open question is now closed: no Stage 1 rework is justified
+    by this evidence. (Caveat: `Kilinochchi`, one of only two districts where
+    Stage 2 makes the *holdout* MASE worse post-fix, is itself one of the 7
+    *seasonal* districts — a small, single-district counter-example within
+    the smaller group, noted but not large enough to change the aggregate
+    conclusion. See "Stage 2 Implementation Status" below for full numbers.)
+14. **RESOLVED AND FIXED (found 2026-07-27 during Stage 2 implementation;
+    fixed and re-run 2026-07-27 same day — see Decision 017).** Stage 1's
+    SARIMA diverged catastrophically for `Vavuniya` in one walk-forward fold
+    (2010, weeks 42-51): forecasts reached ~30 million cases/week against an
+    actual mean of ~6/week. This did not surface in Stage 1's own original
+    headline metrics because the per-district validation MASE is a
+    **median** across 14 folds (robust to one bad fold by design) —
+    `Vavuniya`'s originally-reported validation MASE of 0.38 (already the
+    best of all 25 districts) was technically correct but hid this one
+    catastrophic fold entirely. It was only discovered because Stage 2 pools
+    all districts' residuals into one model, and this single extreme
+    residual (~-30,000,000) was large enough to corrupt predicted residuals
+    for every other district too (see Decision 014's Stage 2 mitigation:
+    switching to a robust `reg:absoluteerror` objective, which contained the
+    symptom but did not fix Stage 1 itself).
+
+    **Root cause, confirmed precisely**: `enforce_stationarity=False`
+    (Stage 1 design decision 3) let the fold-1 refit of the fixed order
+    `(1,0,2)` land on an AR(1) coefficient of 1.266 (>1 → explosive/
+    non-stationary), which SARIMAX happily accepts without complaint. A full
+    25-district scan for the same pathology found a **second, independent
+    occurrence**: `Mannar`'s 2022 fold-13 fit a seasonal AR coefficient of
+    1.162 (`(0,0,0)x(1,0,0,52)`), putting all 52 seasonal roots on the unit
+    circle — confirming this is a general failure mode, not a Vavuniya-only
+    quirk. **Fixed** in `baseline_sarima.fit_and_forecast()`: every fit's
+    combined AR-polynomial roots are now checked; any root on or inside the
+    unit circle is treated as a failed fit (`NaN` for that fold), consistent
+    with Stage 1's existing failure-handling convention. Full pipeline
+    (Stage 1 → Stage 2 → combine) was regenerated with this fix.
+
+    **Result**: `Vavuniya` went from one of the pipeline's most fragile
+    districts to one of its best (validation MASE 0.375 → 0.286, holdout
+    0.417 → 0.374). Stage 2's headline result improved from 24/25 to a
+    **clean 25/25 districts** improving on validation-aggregate MASE, with
+    median validation MASE improvement rising slightly to 39.0% and, more
+    notably, median **holdout** MASE improvement rising from ~29% to 39.7% —
+    much closer to (and more consistent with) the validation figure than
+    before. See Decision 017 and "Stage 2 Implementation Status" below for
+    complete before/after numbers, including the (small, non-significant)
+    holdout regressions for `Kilinochchi` and `Mannar`.
+15. **Holdout vs. validation-fold performance diverges more than expected**:
     18/25 districts have holdout MASE < 1 vs. only 13/25 for the walk-forward
     validation aggregate, and several districts' holdout MASE is noticeably
     better than their validation-fold median (e.g. `Jaffna`: 2.22 validation
@@ -189,6 +262,44 @@ residual = actual_cases - sarima_prediction
     (2022-2026) are simply less volatile than the 2007-2021 span most
     validation folds are drawn from. Worth a closer look before Stage 2
     treats holdout numbers as representative of "true" future performance.
+16. **New (2026-07-27, discovered while checking the framework against the
+    real, ongoing 2026 Colombo/Gampaha outbreak).** The dataset already
+    extends to 2026 week 25 — the actual outbreak spike (Colombo 1,138
+    cases, Gampaha 1,294 cases at week 25) falls inside the untouched
+    holdout block, giving a genuine real-world test. Two findings:
+    - **Shared climate data pipeline has not been refreshed past 2026 week
+      21**, while case-count data extends to week 25. This leaves every
+      climate feature (rainfall, temperature, humidity, and all their lags)
+      entirely `NaN` for weeks 22-25 — the exact weeks containing the
+      spike. Quantified impact: Stage 1+2's sMAPE is 14-24% for every period
+      checked where climate data is complete (Dec 2025: Colombo 13.9%/
+      Gampaha 20.1%; all 2025: 15.9%/16.6%; 2026 weeks 1-21 excluding a
+      week-14 reporting-dip artifact: 17.9%/23.8%) but jumps to **~97% for
+      both districts** the moment climate data disappears (2026 weeks
+      22-25). **Action needed**: re-run the shared climate preprocessing
+      pipeline (Open-Meteo fetch) to close this gap before drawing any
+      further conclusion about real-time outbreak-tracking accuracy — this
+      is a fixable data-currency problem, not a modeling limitation.
+    - Even during the accuracy-decent weeks 1-21 stretch (climate data
+      present, cases already well above the historical Jan-Jun baseline),
+      the framework still completely missed the acute week-25 explosion
+      itself (~8-10x underestimate for both districts) — expected, not a
+      red flag: this is a 104-week-ahead, one-shot holdout forecast from a
+      fixed 2-year-old vantage point, not a rolling forecast that would see
+      the weeks 20-24 ramp-up happening in real time. A rolling 1-week-ahead
+      re-evaluation (closer to how the framework would actually be deployed
+      operationally) is a natural, not-yet-built follow-up to properly
+      assess real-time outbreak-response accuracy — flagged here, not
+      implemented this session per user direction to prioritize the
+      Vavuniya/Mannar Stage 1 fix first (Decision 017).
+    - A secondary confound worth separating out before drawing conclusions
+      from the week-25 numbers specifically: both districts show a
+      suspiciously low case count at week 24 (Colombo 20, Gampaha 24)
+      immediately preceding the week-25 spike — a plausible signature of
+      delayed case reporting catching up in one lump, which would also mean
+      `residual_lag_1` fed the model a misleadingly *negative* signal right
+      when a strongly positive one was needed. Not yet confirmed against
+      the raw source data.
 
 ---
 
@@ -419,6 +530,16 @@ wall time, dominated by the 50 one-time `auto_arima` calls). Outputs:
 Zero fallback orders were needed - `auto_arima` completed successfully for
 all 25 districts x 2 transforms.
 
+**Update (2026-07-27, later same day, Decision 017):** the claim below in
+decision 3 that "none occurred in the full run" (referring to failed
+fits/`NaN` folds) was **only true before the explosive-AR-root guard was
+added**. Two folds now legitimately produce `NaN` under the corrected
+definition of "failed fit" - `Vavuniya` fold 1 (2010) and `Mannar` fold 13
+(2022), both non-stationary/explosive SARIMAX fits that the original
+`enforce_stationarity=False` design let through silently. See Decision 017
+and Open Question #14 for full detail; all Stage 1 numbers throughout this
+document reflect the post-fix, regenerated run.
+
 ### Five design decisions approved before implementation
 
 1. **Order search uses full pre-holdout history, not per-fold.** One
@@ -436,7 +557,12 @@ all 25 districts x 2 transforms.
 3. **`SARIMAX(..., enforce_stationarity=False, enforce_invertibility=False)`**
    on every fit, to avoid convergence failures across 25 districts x 14
    folds x 2 candidates. Any fold whose fit still fails is caught, logged,
-   and recorded as `NaN` (none occurred in the full run).
+   and recorded as `NaN`. **Updated 2026-07-27 (Decision 017)**: "failed fit"
+   now also includes a fit whose AR polynomial has a non-stationary/explosive
+   root (`enforce_stationarity=False` otherwise lets these through silently)
+   - two folds (`Vavuniya` fold 1, `Mannar` fold 13) are caught by this and
+   recorded as `NaN`, where they previously produced wildly divergent
+   finite forecasts instead.
 4. **MASE is the single deciding metric** for both (a) raw-vs-`log1p` per
    district and (b) the reported "winning" config, computed with a
    seasonal-naive (m=52) scale from the *training* window, with
@@ -467,7 +593,7 @@ all 25 districts x 2 transforms.
 | Kegalle | raw | (0,1,2) | (0,0,0,52) | 0.59 | 0.33 |
 | Kilinochchi | log1p | (0,1,1) | (1,0,0,52) | 1.45 | 2.15 |
 | Kurunegala | log1p | (1,1,1) | (0,0,0,52) | 0.86 | 0.38 |
-| Mannar | raw | (0,0,0) | (1,0,0,52) | 0.84 | 1.12 |
+| Mannar | raw | (0,0,0) | (1,0,0,52) | 0.81 | 1.12 |
 | Matale | log1p | (1,1,2) | (0,0,0,52) | 0.84 | 1.28 |
 | Matara | log1p | (2,1,2) | (0,0,0,52) | 0.94 | 1.45 |
 | Monaragala | log1p | (1,1,2) | (1,0,0,52) | 0.63 | 0.62 |
@@ -477,7 +603,13 @@ all 25 districts x 2 transforms.
 | Puttalam | log1p | (0,1,1) | (0,0,0,52) | 0.89 | 0.31 |
 | Ratnapura | raw | (2,1,0) | (0,0,0,52) | 0.90 | 1.11 |
 | Trincomalee | log1p | (0,1,2) | (0,0,0,52) | 1.04 | 0.41 |
-| Vavuniya | raw | (1,0,2) | (0,0,0,52) | 0.38 | 0.42 |
+| Vavuniya | raw | (1,0,2) | (0,0,0,52) | 0.37 | 0.42 |
+
+*(`Mannar`'s and `Vavuniya`'s validation MASE above reflect the Decision 017
+explosive-AR-root fix - both improved slightly once their one pathological
+fold each was correctly excluded as a failed fit rather than scored on a
+wildly divergent finite forecast. Every other district's numbers are
+unaffected by that fix.)*
 
 Full detail (RMSE/MAE/sMAPE, both candidates' MASE, Ljung-Box results) in
 `models/module1/sarima_selected_configs.csv` and `outputs/metrics/module1/
