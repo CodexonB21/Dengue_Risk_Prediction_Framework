@@ -56,7 +56,10 @@ Daily per district.
 Climate data is sourced from Open-Meteo at a **single point per district** (not a district-wide spatial average). This is a known constraint of the data source, not a processing choice. Larger districts may have reduced spatial representativeness. This limitation should be stated explicitly in any write-up rather than left implicit.
 
 ## Data Coverage
-2007-01-01 to 2026-05-22, per district, daily. Starts slightly after the earliest case data (case data begins 12/23/2006), leaving a small leading-edge gap — see Data Quality Notes. Verified: zero missing calendar days and zero duplicate dates within range (checked across sampled districts).
+2007-01-01 through daily refresh (Open-Meteo Archive + Forecast APIs via
+`scripts/fetch_open_meteo_weather.py`). As of 2026-07-29 refresh: observed daily
+through yesterday, forecast daily ~16 days ahead. Weekly aggregation via master
+epi-week calendar in `shared.py`.
 
 ## Source Folder Structure (Validated 2026-07-26; path updated 2026-07-27)
 
@@ -81,6 +84,16 @@ This is the result of a cleanup: the raw source originally shipped as two subfol
 | rain_sum (mm) | Daily rain sum | Weekly sum |
 | precipitation_sum (mm) | Daily precipitation sum | Weekly sum |
 | weather_code (wmo code) | Categorical weather code | Excluded from Module 1 features (see Decision 008) |
+| climate_data_source | `observed` or `forecast` (daily level; optional — defaults to `observed` if absent) | Propagated to weekly via majority vote in `climate_weekly.csv` |
+
+## Operational outputs (Decision 027)
+
+| File | Description |
+|---|---|
+| `data/processed/module1/future_forecast.csv` | M1 forward case forecast (8 weeks), `feature_completeness_pct` |
+| `data/processed/module2/live_risk_predictions.csv` | M2 recent-week risk (default last 8 weeks) |
+| `data/processed/module2/future_risk_predictions.csv` | M2 forward operational risk; columns include `horizon_step`, `cases_source`, `climate_source`, `uses_module1_cases`, `evidence_tier=operational` |
+| `data/raw/weather/climate_fetch_manifest.csv` | Per-district fetch log from Open-Meteo refresh |
 
 ---
 

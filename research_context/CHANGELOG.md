@@ -29,6 +29,34 @@ Accepted / Rejected / Experimental / Superseded
 
 ---
 
+## 2026-07-29 - Early Warning Dashboard, Climate Refresh, Module 2 Forward Risk (M1-fed)
+
+### Module
+All modules (Integration layer + Module 1/2 operational scoring)
+
+### Change
+Added operational early-warning infrastructure:
+- `scripts/fetch_open_meteo_weather.py` — Open-Meteo Archive (observed gap-fill) + Forecast API extension for all 25 district CSVs, with daily `climate_data_source` tagging (`observed`/`forecast`).
+- `scripts/refresh_dashboard_data.py` — end-to-end refresh orchestrator (weather → preprocessing → M1 forward forecast → M2 live + forward risk).
+- `src/module2_classification/scoring_utils.py` — shared frozen-model scoring helpers extracted from `live_scoring.py`.
+- `src/module2_classification/forecast_future_risk.py` — forward operational risk (M1 `final_prediction` feeds case-derived lag features for multi-week-ahead rows).
+- `src/dashboard/app.py` — Streamlit early-warning dashboard (overview + district drill-down).
+- `shared.py` / `module1_preprocessing.py` — propagate `climate_data_source` through weekly climate aggregation; weather glob restricted to `open-meteo-*.csv`.
+- `src/config.py` — `MODULE2_FUTURE_RISK_PREDICTIONS_PATH`, `FORECAST_HORIZON_WEEKS`, `DASHBOARD_REFRESH_MANIFEST_PATH`.
+
+Climate gap closed: raw weather extended through 2026-08-13; shared `climate_weekly.csv` now reaches 2026 Wk25; live scoring `feature_completeness_pct` restored to 100% on latest weeks.
+
+### Reason
+Thesis operational deliverable: integrate Module 1 case forecasts and Module 2 risk scoring into a refreshable dashboard, closing the documented ~4-week climate-currency gap (Open Questions #16/#10) and enabling multi-week-ahead forward risk using user-approved M1-fed case lags.
+
+### Impact
+New scripts and CSV outputs (`future_risk_predictions.csv`, `climate_fetch_manifest.csv`, `dashboard_refresh_manifest.csv`). No model retraining. Forward outputs tagged `evidence_tier=operational` — distinct from holdout-validated metrics.
+
+### Status
+Accepted
+
+---
+
 ## 2026-07-29 - Module 1 Completion Scope: Non-Seasonal SARIMA Flagged for Supervisor; Other Follow-Ups Deferred
 
 ### Module

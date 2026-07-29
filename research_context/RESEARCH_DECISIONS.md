@@ -1032,3 +1032,41 @@ MODULE_CONTEXT.md` (Open Question #4 addendum reconfirming Decision 021),
 `research_context/CHANGELOG.md` (new entry). New artifacts: `scripts/audit_smote_imbalance.py`,
 `outputs/metrics/module2/smote_imbalance_audit.csv`. No production pipeline artifact
 regenerated — `baseline_classifier.py` and all its outputs are unchanged.
+
+---
+
+## Decision 027: Module 2 Forward Operational Risk Uses Module 1 Case Forecasts + Forecast Climate (Operational Tier)
+
+**Module:** Module 2 (cross-module with Module 1, Integration layer)
+**Status:** Accepted (implemented 2026-07-29)
+**Date:** 2026-07-29
+
+### Decision
+For **operational** multi-week-ahead outbreak risk (dashboard consumption), Module 2's
+forward scoring script (`forecast_future_risk.py`) may use:
+1. **Module 1 `final_prediction`** from `future_forecast.csv` to populate case-derived lag
+   features when real case counts are unavailable (weeks t+2 onward in the forward horizon).
+2. **Open-Meteo forecast daily weather** (tagged `climate_data_source=forecast`) aggregated
+   through the shared climate pipeline for weeks not yet observed.
+
+This is **explicitly separate** from the holdout-validated walk-forward evaluation pipeline.
+No Module 1 or Module 2 models are retrained. All forward outputs carry
+`evidence_tier=operational`.
+
+### Reason
+Module 2's Stage 1 features are lags of prior-week cases/climate — never the current week's
+case count (leakage guard). For true forward weeks, case lags must come from somewhere;
+Module 1's recursive case forecast is the user-approved source. Climate for future weeks
+requires the Forecast API extension, not just Archive gap-fill.
+
+### Implication
+- Does **not** supersede Decision 019/022's deferral of M1 integration in **training/evaluation**.
+- Forward risk CSV must never be cited alongside holdout PR-AUC/BSS/recall figures.
+- Error compounding (M1 recursive cases + forecast climate uncertainty) is flagged per-row
+  via `uses_module1_cases`, `cases_source`, `climate_source`, `feature_completeness_pct`.
+
+### Documentation Updated
+`research_context/CHANGELOG.md`, `research_context/PIPELINE_ARCHITECTURE_PLAN.md`,
+`research_context/CURRENT_ARCHITECTURE.md`, `module_2_classification/MODULE_CONTEXT.md`,
+`module_1_forecasting/MODULE_CONTEXT.md`, `research_context/DATA_DICTIONARY.md`,
+`research_context/QUESTIONS_FOR_DEFENSE.md`.

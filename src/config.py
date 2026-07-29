@@ -159,3 +159,13 @@ MODULE2_RISK_THRESHOLD_HOLDOUT_COMPARISON_PATH = MODULE2_METRICS_DIR / "risk_thr
 # --- Module 2 live/production scoring (genuinely new incoming weeks, for
 # dashboard consumption; src/module2_classification/live_scoring.py) ---
 MODULE2_LIVE_RISK_PREDICTIONS_PATH = MODULE2_PROCESSED_DIR / "live_risk_predictions.csv"
+
+# --- Module 2 forward operational risk (beyond last case week; M1-fed case
+# lags; src/module2_classification/forecast_future_risk.py) ---
+MODULE2_FUTURE_RISK_PREDICTIONS_PATH = MODULE2_PROCESSED_DIR / "future_risk_predictions.csv"
+
+# Shared forward horizon for Module 1 case forecast and Module 2 forward risk.
+FORECAST_HORIZON_WEEKS = 8
+
+# --- Dashboard outputs ---
+DASHBOARD_REFRESH_MANIFEST_PATH = OUTPUTS_DIR / "metrics" / "dashboard_refresh_manifest.csv"

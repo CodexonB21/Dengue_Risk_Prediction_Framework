@@ -78,3 +78,19 @@ The latest documentation should be treated as the source of truth, not the conve
 **If challenged:** “Would STL+SARIMA be better?” — Possible ablation for future work, but superseded for this thesis by empirical evidence that Stage 2 already captures the missing seasonal structure. Not required to validate the residual-compensation hypothesis.
 
 **Evidence:** `models/module1/sarima_selected_configs.csv`, M1-001/M1-002 experiment log, Open Question #12 resolution in `module_1_forecasting/MODULE_CONTEXT.md`.
+
+---
+
+## How is forward/dashboard risk different from holdout validation?
+
+**Short answer:** Holdout metrics measure **model skill on past data** the pipeline never used for selection; dashboard forward outputs measure **what the frozen production models say about upcoming weeks** using forecast climate and (for multi-week risk) Module 1 predicted case lags.
+
+| Aspect | Holdout / walk-forward | Operational forward (`future_risk_predictions.csv`) |
+|---|---|---|
+| Purpose | Honest skill estimate | Decision-support / early warning |
+| Models | Same checkpoints, but scored on historical rows | Frozen `final_production_model.*` |
+| Case inputs | Real observed lags only | M1 `final_prediction` for lags when real cases unavailable |
+| Climate | Observed only (historical) | Observed + Open-Meteo forecast API |
+| Evidence tier | Validation | `operational` — never cite as PR-AUC/BSS |
+
+**Thesis framing:** “We validated the framework on held-out history; the dashboard applies the same frozen models operationally with clearly labeled uncertainty and without retraining.”

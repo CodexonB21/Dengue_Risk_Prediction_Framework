@@ -69,6 +69,7 @@ CLIMATE_MEAN_COLUMNS = [
     "temperature_2m_mean (°C)",
 ]
 CLIMATE_MODE_COLUMN = "weather_code (wmo code)"
+CLIMATE_SOURCE_COLUMN = "climate_data_source"
 
 POPULATION_CENSUS_YEARS = (2001, 2012, 2024)
 POPULATION_OUTPUT_YEARS = range(2006, 2027)  # 2006-2026 inclusive
@@ -404,7 +405,7 @@ def aggregate_climate_weekly(
     is dropped, see the doc note recorded for this session).
     """
     lookup = _build_day_to_week_lookup(calendar)
-    files = sorted(weather_dir.glob("*.csv"))
+    files = sorted(weather_dir.glob("open-meteo-*.csv"))
 
     if len(files) != len(DISTRICTS):
         raise ValueError(f"Expected {len(DISTRICTS)} weather files, found {len(files)}")
@@ -428,6 +429,15 @@ def aggregate_climate_weekly(
             .reset_index()
         )
         weekly = weekly.merge(weekly_mode, on=["Year", "Week"], how="left")
+
+        if CLIMATE_SOURCE_COLUMN in daily.columns:
+            daily[CLIMATE_SOURCE_COLUMN] = daily[CLIMATE_SOURCE_COLUMN].fillna("observed")
+            weekly_source = (
+                daily.groupby(["Year", "Week"])[CLIMATE_SOURCE_COLUMN]
+                .agg(lambda s: s.value_counts().idxmax() if not s.empty else "observed")
+                .reset_index()
+            )
+            weekly = weekly.merge(weekly_source, on=["Year", "Week"], how="left")
 
         weekly.insert(0, "District", district)
         weekly_frames.append(weekly)

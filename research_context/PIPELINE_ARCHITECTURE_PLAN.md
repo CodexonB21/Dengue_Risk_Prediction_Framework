@@ -86,8 +86,18 @@ See `module_2_classification/MODULE_CONTEXT.md` Open Question #8 and
 "Stage 1/Stage 2 Implementation Status", `EXPERIMENT_LOG.md` M2-005, and
 `RESEARCH_DECISIONS.md` Decision 025 for full results.
 
+**Implementation status (2026-07-29, Decision 027):** operational early-warning layer
+implemented — Open-Meteo climate refresh (`scripts/fetch_open_meteo_weather.py`),
+refresh orchestrator (`scripts/refresh_dashboard_data.py`), Module 2 forward
+operational risk (`src/module2_classification/forecast_future_risk.py`, M1-fed
+case lags), shared scoring helpers (`scoring_utils.py`), and Streamlit dashboard
+(`src/dashboard/app.py`). Climate-currency gap (Open Question #16/#10) closed for
+observed weeks through 2026 Wk25; daily weather extends through forecast API
+horizon (~16 days). Forward epi-week climate beyond the master calendar edge
+remains a documented limitation.
+
 ## Last Updated
-2026-07-28 (Module 2 label mean/SD estimator replaced with harmonic regression, k re-audited to 3.0, full pipeline rerun — Decision 025, M2-005)
+2026-07-29 (operational dashboard layer — Decision 027)
 
 ---
 
@@ -581,13 +591,36 @@ trained on it).
 
 Surfaced a new finding while building/testing it: Module 2 shares Module 1's
 Open Question #16 climate-currency gap (same upstream shared climate
-pipeline) — see `module_2_classification/MODULE_CONTEXT.md` Open Question
-#10.
+pipeline) — **resolved for observed weeks 2026-07-29** via
+`scripts/fetch_open_meteo_weather.py` + preprocessing rerun; see Decision 027.
 
-## Independent of Module 1 (Decision 019)
+## `src/module2_classification/forecast_future_risk.py` (new, standalone — Decision 027)
 
-Module 2's Stage 1 does not consume Module 1's forecast output for this
-kickoff phase — deferred to a future Stage 2 feature candidate.
+Scores **forward operational outbreak risk** beyond the last case-count week.
+Uses frozen Stage 1 RF + Stage 2 isotonic + persisted thresholds (via
+`scoring_utils.py`, same as `live_scoring.py`). For multi-week-ahead rows
+(`horizon_step >= 2`), Module 1 `final_prediction` populates case-derived lag
+features (`cases_source`, `uses_module1_cases` flagged). Output:
+`data/processed/module2/future_risk_predictions.csv` with
+`evidence_tier=operational`.
+
+Prerequisites: refreshed climate (`fetch_open_meteo_weather.py` +
+preprocessing), `forecast_future.py` output.
+
+## Operational refresh + dashboard (Decision 027)
+
+| Script | Role |
+|---|---|
+| `scripts/fetch_open_meteo_weather.py` | Archive gap-fill + Forecast API; tags daily `climate_data_source` |
+| `scripts/refresh_dashboard_data.py` | Orchestrates weather → shared/M1/M2 preprocess → M1/M2 forward outputs |
+| `src/dashboard/app.py` | Streamlit read-only dashboard |
+
+## Independent of Module 1 for **training/evaluation** (Decision 019)
+
+Module 2's Stage 1 does not consume Module 1's forecast output for **training or
+holdout evaluation** — Decision 019/022 deferral stands. Module 1 forecasts ARE
+used for **operational forward risk feature assembly only** (Decision 027,
+`forecast_future_risk.py`).
 
 Writes to `data/processed/module2/` and `data/features/module2/`.
 

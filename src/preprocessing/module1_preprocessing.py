@@ -51,6 +51,8 @@ CANONICAL_WEEKS_PER_YEAR = 52
 # no upstream rule for collapsing a categorical code across a merged pair of
 # weeks, so the more frequent of the two is kept.
 CLIMATE_MODE_COLUMN = "weather_code (wmo code)"
+CLIMATE_SOURCE_COLUMN = "climate_data_source"
+CATEGORICAL_CLIMATE_COLUMNS = {CLIMATE_MODE_COLUMN, CLIMATE_SOURCE_COLUMN}
 
 
 # ---------------------------------------------------------------------------
@@ -120,9 +122,10 @@ def merge_week_53_cases(epi: pd.DataFrame) -> pd.DataFrame:
 
 def merge_week_53_climate(climate: pd.DataFrame) -> pd.DataFrame:
     value_cols = [c for c in climate.columns if c not in ("District", "Year", "Week")]
-    agg_map = {c: "mean" for c in value_cols if c != CLIMATE_MODE_COLUMN}
-    if CLIMATE_MODE_COLUMN in value_cols:
-        agg_map[CLIMATE_MODE_COLUMN] = _weekly_mode
+    agg_map = {c: "mean" for c in value_cols if c not in CATEGORICAL_CLIMATE_COLUMNS}
+    for col in CATEGORICAL_CLIMATE_COLUMNS:
+        if col in value_cols:
+            agg_map[col] = _weekly_mode
     return merge_week_53_into_52(climate, agg_map=agg_map)
 
 

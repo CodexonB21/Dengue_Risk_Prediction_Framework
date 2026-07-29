@@ -267,19 +267,11 @@ residual = actual_cases - sarima_prediction
     extends to 2026 week 25 — the actual outbreak spike (Colombo 1,138
     cases, Gampaha 1,294 cases at week 25) falls inside the untouched
     holdout block, giving a genuine real-world test. Two findings:
-    - **Shared climate data pipeline has not been refreshed past 2026 week
-      21**, while case-count data extends to week 25. This leaves every
-      climate feature (rainfall, temperature, humidity, and all their lags)
-      entirely `NaN` for weeks 22-25 — the exact weeks containing the
-      spike. Quantified impact: Stage 1+2's sMAPE is 14-24% for every period
-      checked where climate data is complete (Dec 2025: Colombo 13.9%/
-      Gampaha 20.1%; all 2025: 15.9%/16.6%; 2026 weeks 1-21 excluding a
-      week-14 reporting-dip artifact: 17.9%/23.8%) but jumps to **~97% for
-      both districts** the moment climate data disappears (2026 weeks
-      22-25). **Action needed**: re-run the shared climate preprocessing
-      pipeline (Open-Meteo fetch) to close this gap before drawing any
-      further conclusion about real-time outbreak-tracking accuracy — this
-      is a fixable data-currency problem, not a modeling limitation.
+    - **Shared climate data pipeline refresh (2026-07-29, Decision 027):**
+      `scripts/fetch_open_meteo_weather.py` closes the observed-week gap through
+      2026 Wk25. Forward epi-week climate beyond the master calendar and beyond
+      the ~16-day Forecast API window remains a documented operational
+      limitation.
     - Even during the accuracy-decent weeks 1-21 stretch (climate data
       present, cases already well above the historical Jan-Jun baseline),
       the framework still completely missed the acute week-25 explosion
@@ -933,9 +925,10 @@ districts x 8 weeks: `sarima_prediction`, `predicted_residual`,
 Kept as a separate, clearly-labeled deliverable (see Decision 018) - not
 merged into `main.py`'s validated walk-forward/holdout orchestration, since
 it answers a fundamentally different question at a fundamentally different
-evidence standard. Does **not** close Open Question #16 (climate data
-currency gap) or substitute for the still-not-built rolling 1-week-ahead
-re-evaluation - both remain open, higher-rigor follow-ups.
+evidence standard. **Module 1 outputs now also feed Module 2 forward operational
+risk** (`forecast_future_risk.py`, Decision 027) — not training/evaluation.
+Climate refresh via `scripts/fetch_open_meteo_weather.py` (Decision 027).
+Rolling 1-week-ahead re-evaluation remains an open higher-rigor follow-up.
 
 ---
 
