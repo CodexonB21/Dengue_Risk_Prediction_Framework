@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.config import OUTPUTS_DIR
+from src.config import (
+    MODULE3_CONVERGENCE_LOG_PATH,
+    MODULE3_MORANS_I_METRICS_PATH,
+    MODULE3_RF_FEATURE_IMPORTANCE_PATH,
+    MODULE3_STAGE_COMPARISON_PATH,
+    OUTPUTS_DIR,
+)
 
 PRODUCTION_STACK_PATH = OUTPUTS_DIR / "metrics" / "production_stack_evaluation_summary.csv"
 M2_009_BASELINE_PATH = OUTPUTS_DIR / "metrics" / "module2" / "m2_009_m1_alert_baseline.csv"
@@ -63,4 +69,42 @@ def m2_holdout_summary(stack: pd.DataFrame) -> dict[str, str | float | int]:
         "pr_auc": r.get("post_pr_auc"),
         "alert_recall": r.get("post_alert_recall"),
         "alert_precision": r.get("post_alert_precision"),
+    }
+
+
+def load_m3_morans_i() -> pd.DataFrame:
+    return _read_csv(MODULE3_MORANS_I_METRICS_PATH)
+
+
+def load_m3_convergence_log() -> pd.DataFrame:
+    return _read_csv(MODULE3_CONVERGENCE_LOG_PATH)
+
+
+def load_m3_feature_importance() -> pd.DataFrame:
+    return _read_csv(MODULE3_RF_FEATURE_IMPORTANCE_PATH)
+
+
+def load_m3_stage_comparison() -> pd.DataFrame:
+    return _read_csv(MODULE3_STAGE_COMPARISON_PATH)
+
+
+def m3_morans_i_summary(morans_df: pd.DataFrame) -> dict[str, float | bool]:
+    if morans_df.empty:
+        return {}
+    row = morans_df.loc[morans_df["check"] == "aggregated"]
+    if row.empty:
+        return {}
+    r = row.iloc[0]
+    return {"I": float(r["I"]), "p_sim": float(r["p_sim"]), "significant": bool(r["significant"])}
+
+
+def m3_convergence_summary(log_df: pd.DataFrame) -> dict[str, float | int | bool]:
+    if log_df.empty:
+        return {}
+    r = log_df.iloc[-1]
+    return {
+        "n_iterations": int(r["iteration"]),
+        "converged": bool(r["stopped"]),
+        "max_delta": float(r["max_delta"]),
+        "epsilon": float(r["epsilon"]),
     }

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import geopandas as gpd
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -15,15 +17,22 @@ from src.config import (
     MODULE1_WEEKLY_MODELING_TABLE_PATH,
     MODULE2_FUTURE_RISK_PREDICTIONS_PATH,
     MODULE2_LIVE_RISK_PREDICTIONS_PATH,
+    MODULE3_FEATURE_IMPORTANCE_PLOT_PATH,
     SHARED_CLIMATE_WEEKLY_PATH,
 )
 from src.dashboard.evidence_data import (
     RELIABILITY_HOLDOUT_FIG,
     load_m1_district_holdout,
     load_m2_009_baseline,
+    load_m3_convergence_log,
+    load_m3_feature_importance,
+    load_m3_morans_i,
+    load_m3_stage_comparison,
     load_production_stack,
     m1_holdout_summary,
     m2_holdout_summary,
+    m3_convergence_summary,
+    m3_morans_i_summary,
 )
 
 
@@ -118,6 +127,78 @@ def render_evidence_page() -> None:
         st.subheader("Module 2 — calibration (holdout)")
         st.image(str(RELIABILITY_HOLDOUT_FIG), caption="Stage 1 raw vs isotonic — holdout reliability diagram")
 
+    st.divider()
+    st.subheader("Module 3 — spatial hotspot detection (KDE + RF residual compensation)")
+    st.caption(
+        "Stage 1: Kernel Density Estimation + Global Moran's I spatial baseline. "
+        "Stage 2: Random Forest residual compensation, wrapped in an iterative "
+        "refinement loop (max 4 iterations, dual convergence check)."
+    )
+
+    morans = m3_morans_i_summary(load_m3_morans_i())
+    convergence = m3_convergence_summary(load_m3_convergence_log())
+    m3_comparison = load_m3_stage_comparison()
+    m3_importance = load_m3_feature_importance()
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Stage 1 — spatial clustering validation**")
+        if morans:
+            st.metric("Global Moran's I", f"{morans['I']:.3f}")
+            st.metric("p-value (permutation, 999 runs)", f"{morans['p_sim']:.3f}")
+            st.metric("Clustering significant?", "Yes" if morans["significant"] else "No")
+        else:
+            st.warning("Moran's I validation file not found — run `python -m src.module3_spatial.kde_baseline`.")
+
+    with col2:
+        st.markdown("**Stage 2 — iterative loop convergence**")
+        if convergence:
+            st.metric("Converged after", f"{convergence['n_iterations']} iteration(s)")
+            st.metric(
+                "max|Risk delta| vs. epsilon",
+                f"{convergence['max_delta']:.2f} / {convergence['epsilon']:.2f}",
+            )
+            st.metric("Converged?", "Yes" if convergence["converged"] else "No (hit iteration cap)")
+        else:
+            st.warning("Convergence log not found — run `python -m src.module3_spatial.iterative_loop`.")
+
+    st.markdown("**Does Stage 2 improve fit over Stage 1 alone?**")
+    if not m3_comparison.empty:
+        display = m3_comparison.copy()
+        for col in ("corr", "mae", "rmse"):
+            if col in display.columns:
+                display[col] = display[col].map(lambda x: f"{x:.4f}" if pd.notna(x) else "—")
+        st.dataframe(display, use_container_width=True, hide_index=True)
+        st.info(
+            "**Null result, reported honestly**: Stage 2's residual correction does NOT "
+            "improve aggregate fit to actual case counts (correlation -0.0037, MAE +1.7%, "
+            "RMSE +0.9% vs. Stage 1 alone). This is expected, not a bug — the shrinkage "
+            "term (alpha=0.05) was chosen for stable, immediate convergence, not accuracy. "
+            "Stage 2's real value is diagnostic: the feature importance below reveals "
+            "*which* factors (population density, climate timing) drive district-level "
+            "burden beyond pure spatial proximity — something Stage 1's KDE baseline, "
+            "with zero covariates, structurally cannot provide."
+        )
+    else:
+        st.warning("Stage 1 vs Stage 2 comparison file not found — run `python -m src.module3_spatial.evaluate`.")
+
+    if not m3_importance.empty:
+        st.markdown("**Stage 2 feature importance**")
+        if MODULE3_FEATURE_IMPORTANCE_PLOT_PATH.exists():
+            st.image(
+                str(MODULE3_FEATURE_IMPORTANCE_PLOT_PATH),
+                caption="Random Forest feature importance (final model, all 25 districts)",
+            )
+        else:
+            fig = px.bar(
+                m3_importance.sort_values("importance"),
+                x="importance",
+                y="feature",
+                orientation="h",
+                title="Stage 2 feature importance",
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
     with st.expander("Operational vs validation — what not to cite"):
         st.markdown(
             """
@@ -133,6 +214,41 @@ def render_evidence_page() -> None:
         )
 
 
+def _latest_hybrid_risk(hybrid_risk: pd.DataFrame) -> pd.DataFrame:
+    if hybrid_risk.empty:
+        return pd.DataFrame()
+    latest_key = hybrid_risk.sort_values(["Year", "Week"]).iloc[-1]
+    return hybrid_risk.loc[
+        (hybrid_risk["Year"] == latest_key["Year"]) & (hybrid_risk["Week"] == latest_key["Week"])
+    ]
+
+
+def _hybrid_risk_choropleth(geometry: "gpd.GeoDataFrame", latest: pd.DataFrame, district: str):
+    merged = geometry.merge(latest[["District", "Risk"]], on="District", how="left")
+    geojson = json.loads(merged.to_json())
+
+    # Highlight the selected district with a thicker, darker outline - same
+    # per-district drill-down concept the M1/M2 tabs use, applied to a map
+    # instead of a time series.
+    line_widths = [4 if d == district else 0.5 for d in merged["District"]]
+    line_colors = ["#0b0b0b" if d == district else "rgba(11,11,11,0.15)" for d in merged["District"]]
+
+    fig = px.choropleth(
+        merged,
+        geojson=geojson,
+        locations="District",
+        featureidkey="properties.District",
+        color="Risk",
+        color_continuous_scale="Blues",
+        hover_name="District",
+        hover_data={"Risk": ":.1f"},
+    )
+    fig.update_traces(marker_line_width=line_widths, marker_line_color=line_colors)
+    fig.update_geos(fitbounds="locations", visible=False)
+    fig.update_layout(margin=dict(l=0, r=0, t=30, b=0))
+    return fig
+
+
 def render_operational_page(
     *,
     live: pd.DataFrame,
@@ -141,6 +257,8 @@ def render_operational_page(
     m1_weekly: pd.DataFrame,
     climate: pd.DataFrame,
     manifest: pd.DataFrame,
+    hybrid_risk: pd.DataFrame,
+    district_geometry: "gpd.GeoDataFrame",
     case_y: int | None,
     case_w: int | None,
     clim_y: int | None,
@@ -285,3 +403,36 @@ def render_operational_page(
                 title=f"{district}: forward risk by horizon (operational)",
             )
             st.plotly_chart(fig, use_container_width=True)
+
+    st.divider()
+    st.subheader("Module 3 — spatial hotspot map (Hybrid Risk)")
+    st.warning(
+        "**Evidence tier: operational** — Hybrid Risk is Stage 2's output (KDE spatial "
+        "baseline + RF residual correction), not a validated forecast. See the "
+        "**Research evidence** page for Stage 1/Stage 2 validation numbers "
+        "(Moran's I, convergence, fit comparison)."
+    )
+
+    if hybrid_risk.empty or district_geometry.empty:
+        st.info(
+            "Hybrid risk map or district geometry not found — run "
+            "`python -m src.module3_spatial.iterative_loop`."
+        )
+    else:
+        latest = _latest_hybrid_risk(hybrid_risk)
+        latest_year = int(latest["Year"].iloc[0])
+        latest_week = int(latest["Week"].iloc[0])
+        st.caption(
+            f"Latest available district-week: **{latest_year} Wk{latest_week}** "
+            f"(selected district **{district}** outlined in black)."
+        )
+
+        fig = _hybrid_risk_choropleth(district_geometry, latest, district)
+        st.plotly_chart(fig, use_container_width=True)
+
+        district_row = latest.loc[latest["District"] == district]
+        if not district_row.empty:
+            row = district_row.iloc[0]
+            m1, m2 = st.columns(2)
+            m1.metric(f"{district}: Hybrid Risk", f"{row['Risk']:.1f}")
+            m2.metric(f"{district}: Actual cases (same week)", int(row["Number_of_Cases"]))

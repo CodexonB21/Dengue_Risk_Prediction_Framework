@@ -39,6 +39,7 @@ from src.config import (  # noqa: E402
     MODULE3_RF_FEATURE_IMPORTANCE_PATH,
     MODULE3_RF_METRICS_PATH,
     MODULE3_RESULTS_SUMMARY_PATH,
+    MODULE3_STAGE_COMPARISON_PATH,
 )
 from src.module3_spatial.compensation_model import load_training_table, rescale_kde_baseline
 
@@ -244,6 +245,7 @@ def run_evaluation() -> str:
     MODULE3_METRICS_DIR.mkdir(parents=True, exist_ok=True)
 
     comparison_df = compare_stage1_vs_stage2()
+    comparison_df.to_csv(MODULE3_STAGE_COMPARISON_PATH, index=False)
     moransI_df = pd.read_csv(MODULE3_MORANS_I_METRICS_PATH)
     rf_metrics_df = pd.read_csv(MODULE3_RF_METRICS_PATH)
     convergence_df = pd.read_csv(MODULE3_CONVERGENCE_LOG_PATH)
