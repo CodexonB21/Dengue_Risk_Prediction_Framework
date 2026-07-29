@@ -1,0 +1,2 @@
+module,pre_median_mase,post_median_mase,pre_median_smape,post_median_smape,districts_improved_mase,n_districts,vs_m1_005_baseline_median_mase,vs_m1_005_baseline_median_smape,pre_pooled_smape,post_pooled_smape,wk22_23_smape_delta_pp
+M1,0.3861,0.3741,34.98,34.15,22,25,0.386,35.0,42.3,41.73,-1.38

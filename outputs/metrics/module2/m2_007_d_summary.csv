@@ -1,0 +1,2 @@
+variant,baseline_isotonic_pr_auc,best_tree_architecture,best_tree_pr_auc,pr_auc_delta_vs_isotonic,baseline_alert_recall_at_0.14,best_tree_alert_recall_at_0.14,holdout_pr_auc_slice_2026_wk20_25_isotonic,holdout_pr_auc_slice_2026_wk20_25_best_tree,accept_criterion
+m2_007_d,0.4116575828696608,stacked_xgboost,0.4652375646692367,0.053579981799575904,0.6,0.775,0.47109987838678435,0.5663239976592848,True

@@ -239,22 +239,12 @@ list."
    see Data Pipeline Note above), `is_imputed` masking was made consistent
    across all case-derived features (a real bug fix, not just a design
    choice), and `weather_code` exclusion was reconfirmed unchanged.
-10. **New (2026-07-28, discovered while building `live_scoring.py`).** Module
-    2 has its own instance of Module 1's Open Question #16 climate-currency
-    gap — they share the same upstream climate pipeline. `weekly_modeling_table
-    .csv`'s case counts extend through 2026 Wk25 but every climate column stops
-    4 weeks earlier, at 2026 Wk21, for all 25 districts. Consequence:
-    `current_rainfall/temperature/humidity`, the near-term climate lags
-    (`rainfall/temperature/humidity_lag_1/2/3`), and `rainfall/temperature/
-    humidity_anomaly` are genuinely `NaN` for the most recent ~4 weeks —
-    verified via `live_scoring.py`'s `feature_completeness_pct`, which drops
-    from 100% to 60% over exactly that window. The official Random Forest
-    model copes numerically (median imputation, per its
-    `build_sklearn_preprocessor`), so live-scoring output is not blocked, but
-    the most recent ~4 weeks' risk read is measurably less climate-informed
-    than older weeks. **Action needed** (shared with Module 1's Open Question
-    #16, not a separate fix): re-run the shared climate preprocessing
-    pipeline (Open-Meteo fetch) to close this gap.
+10. **Partially resolved (2026-07-29, Decision 027).** Climate-currency gap for
+    **observed** weeks closed via `scripts/fetch_open_meteo_weather.py` +
+    preprocessing rerun — live scoring `feature_completeness_pct` back to 100%
+    on latest weeks. **Remaining limitation:** forward epi-weeks beyond the
+    master calendar edge may lack forecast climate until calendar extension is
+    added; daily forecast API horizon is ~16 days.
 
 ---
 
@@ -552,8 +542,9 @@ Module 1's forward forecast has one.
   evidence; `EXPERIMENT_LOG.md`/`RESEARCH_DECISIONS.md`'s existing figures
   remain the only honest skill estimates. Each row is flagged
   `already_scored_in_pipeline`.
-- **Discovered while building this script**: Module 2 shares Module 1's Open
-  Question #16 climate-currency gap - see Open Question #10 above.
+- **Climate refresh (2026-07-29, Decision 027):** observed-week gap closed;
+  forward-week climate beyond master calendar / ~16-day Forecast API window
+  remains a documented operational limitation — see Open Question #10 above.
 - Live scoring for the `stacked_xgboost` Stage 2 architecture is not
   implemented (raises `NotImplementedError`) - isotonic/Platt are the only
   architectures that have ever won Stage 2 selection, so this was not built
@@ -572,6 +563,21 @@ above (see limitations), but a reassuring qualitative sanity check that the
 live-scoring path reproduces a real, known outbreak signal.
 
 **Output**: `data/processed/module2/live_risk_predictions.csv`.
+
+## Forward Operational Risk (2026-07-29, Decision 027)
+
+`src/module2_classification/forecast_future_risk.py` scores horizon 0 (latest
+observed week) plus 8 forward epi-weeks per district. Multi-week-ahead rows
+(`horizon_step >= 2`) use Module 1 `final_prediction` for case-derived lag features
+(`uses_module1_cases=True`; `cases_source=module1_forecast`). Horizon 1 uses real
+historical lags only (`cases_source=na`). Forward epi-weeks beyond
+`climate_weekly.csv` aggregate daily Open-Meteo rows (observed/forecast/mixed
+`climate_source`). Output: `future_risk_predictions.csv` with
+`evidence_tier=operational`. Shared helpers in `scoring_utils.py`.
+
+Module 1 `future_forecast.csv` is now an **operational input** to Module 2 forward
+risk (Decision 027) — not used in training/evaluation pipelines (Decision 019/022
+deferral unchanged).
 
 ## Documentation Rule
 

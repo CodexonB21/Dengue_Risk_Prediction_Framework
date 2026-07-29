@@ -1,0 +1,3 @@
+module,pre_median_mase,post_median_mase,pre_median_smape,post_median_smape,districts_improved_mase,n_districts,vs_m1_005_baseline_median_mase,vs_m1_005_baseline_median_smape,pre_pooled_smape,post_pooled_smape,wk22_23_smape_delta_pp,stack,architecture,alert_threshold,ramp_rule,post_pr_auc,post_alert_recall,post_alert_precision,baseline_pr_auc,baseline_alert_recall,baseline_alert_precision,holdout_alert_count,alert_threshold_used
+M1,0.3861,0.3741,34.98,34.15,22.0,25.0,0.386,35.0,42.3,41.73,-1.38,production,,,,,,,,,,,
+M2,,,,,,,,,,,,production,isotonic,0.14,False,0.4117,0.6,0.338,0.412,0.6,0.338,71.0,0.14

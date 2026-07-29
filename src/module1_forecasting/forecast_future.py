@@ -64,15 +64,17 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.config import (  # noqa: E402
     DISTRICTS,
+    M1_STAGE2_RESIDUAL_MODE,
     MODULE1_FIGURES_DIR,
     MODULE1_FUTURE_FORECAST_PATH,
     MODULE1_SARIMA_CONFIG_PATH,
     MODULE1_SARIMA_PREDICTIONS_PATH,
     MODULE1_WEEKLY_MODELING_TABLE_PATH,
-    MODULE1_XGBOOST_FINAL_MODEL_PATH,
+    module1_stage2_paths,
 )
 from src.module1_forecasting.baseline_sarima import fit_and_forecast  # noqa: E402
 from src.module1_forecasting.compensation_model import FEATURE_COLUMNS  # noqa: E402
+from src.module1_forecasting.residual_transform import combine_stage2_forecast, validate_residual_mode  # noqa: E402
 from src.module1_forecasting.feature_engineering import (  # noqa: E402
     HUMIDITY_COLUMN,
     RAINFALL_COLUMN,
@@ -133,6 +135,8 @@ def forecast_district(
     xgb_model: xgb.XGBRegressor,
     climate_norms: pd.DataFrame,
     horizon: int = FORECAST_HORIZON_WEEKS,
+    *,
+    residual_mode: str = M1_STAGE2_RESIDUAL_MODE,
 ) -> pd.DataFrame:
     dist_df = (
         weekly_df.loc[weekly_df["District"] == district]
@@ -214,7 +218,9 @@ def forecast_district(
         X = pd.DataFrame([feature_row])[FEATURE_COLUMNS]
         X["District"] = pd.Categorical(X["District"], categories=DISTRICTS)
         predicted_residual = float(xgb_model.predict(X)[0])
-        final_prediction = max(sarima_pred + predicted_residual, 0.0)
+        final_prediction = float(
+            combine_stage2_forecast(sarima_pred, predicted_residual, mode=residual_mode)
+        )
 
         completeness = float(pd.Series(feature_row)[NON_DISTRICT_FEATURE_COLUMNS].notna().mean())
 
@@ -239,20 +245,30 @@ def forecast_district(
     return pd.DataFrame(rows)
 
 
-def run_future_forecast(districts: list[str] = DISTRICTS, horizon: int = FORECAST_HORIZON_WEEKS) -> pd.DataFrame:
+def run_future_forecast(
+    districts: list[str] = DISTRICTS,
+    horizon: int = FORECAST_HORIZON_WEEKS,
+    *,
+    residual_mode: str | None = None,
+) -> pd.DataFrame:
+    mode = validate_residual_mode(residual_mode or M1_STAGE2_RESIDUAL_MODE)
+    paths = module1_stage2_paths(mode)
     weekly_df = pd.read_csv(MODULE1_WEEKLY_MODELING_TABLE_PATH, parse_dates=["Week_Start_Date", "Week_End_Date"])
     predictions_df = pd.read_csv(MODULE1_SARIMA_PREDICTIONS_PATH)
     sarima_configs = _load_selected_configs()
     climate_norms = _compute_climate_norms(weekly_df)
 
     xgb_model = xgb.XGBRegressor()
-    xgb_model.load_model(str(MODULE1_XGBOOST_FINAL_MODEL_PATH))
+    xgb_model.load_model(str(paths["xgboost_final_model"]))
 
     frames = []
     for district in districts:
         logger.info("Forecasting %s forward %d weeks...", district, horizon)
         frames.append(
-            forecast_district(district, weekly_df, predictions_df, sarima_configs, xgb_model, climate_norms, horizon)
+            forecast_district(
+                district, weekly_df, predictions_df, sarima_configs, xgb_model, climate_norms, horizon,
+                residual_mode=mode,
+            )
         )
 
     result = pd.concat(frames, ignore_index=True)

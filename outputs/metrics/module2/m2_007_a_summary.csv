@@ -1,0 +1,2 @@
+variant,holdout_pr_auc_isotonic,holdout_pr_auc_logit_residual,pr_auc_delta,holdout_bss_isotonic,holdout_bss_logit_residual,alert_recall_at_0.14_isotonic,alert_recall_at_0.14_logit,alert_precision_at_0.14_isotonic,alert_precision_at_0.14_logit,accept_criterion
+m2_007_a_logit_residual,0.4116575828696608,0.32394759249373084,-0.08770999037592997,0.2315237751704754,0.02309505843767823,0.6,0.125,0.3380281690140845,0.4166666666666667,False

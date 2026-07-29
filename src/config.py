@@ -75,6 +75,8 @@ MODULE1_SARIMA_METRICS_PATH = MODULE1_METRICS_DIR / "sarima_walk_forward_metrics
 MODULE1_FIGURES_DIR = OUTPUTS_DIR / "figures" / "module1"
 
 # --- Module 1 Stage 2 (XGBoost residual compensation; src/module1_forecasting/compensation_model.py) ---
+M1_STAGE2_RESIDUAL_MODE = "additive"  # "additive" (M1-005 baseline) | "log" (M1-006A)
+
 MODULE1_XGBOOST_PREDICTIONS_PATH = MODULE1_PROCESSED_DIR / "xgboost_stage2_predictions.csv"
 MODULE1_XGBOOST_MODELS_DIR = MODULE1_MODELS_DIR / "xgboost_folds"
 MODULE1_XGBOOST_FINAL_MODEL_PATH = MODULE1_MODELS_DIR / "xgboost_final_model.json"
@@ -86,10 +88,54 @@ MODULE1_FINAL_PREDICTIONS_PATH = MODULE1_PROCESSED_DIR / "final_combined_predict
 MODULE1_COMBINED_METRICS_PATH = MODULE1_METRICS_DIR / "combined_vs_baseline_metrics.csv"
 MODULE1_DM_TEST_PATH = MODULE1_METRICS_DIR / "diebold_mariano_results.csv"
 
+
+def module1_stage2_paths(
+    residual_mode: str | None = None,
+    feature_variant: str | None = None,
+) -> dict[str, Path]:
+    """Return Stage 2 / combine artifact paths for residual mode + feature variant.
+
+    Production additive baseline uses default paths. Ablations write to
+    ``_*`` suffix paths so M1-005 artifacts are preserved.
+    """
+    mode = residual_mode or M1_STAGE2_RESIDUAL_MODE
+    suffix_parts: list[str] = []
+    if feature_variant:
+        suffix_parts.append(feature_variant)
+    if mode != "additive":
+        suffix_parts.append(f"m1_006_{mode}")
+    if not suffix_parts:
+        return {
+            "xgboost_predictions": MODULE1_XGBOOST_PREDICTIONS_PATH,
+            "xgboost_models_dir": MODULE1_XGBOOST_MODELS_DIR,
+            "xgboost_final_model": MODULE1_XGBOOST_FINAL_MODEL_PATH,
+            "xgboost_metrics": MODULE1_XGBOOST_METRICS_PATH,
+            "xgboost_feature_importance": MODULE1_XGBOOST_FEATURE_IMPORTANCE_PATH,
+            "final_predictions": MODULE1_FINAL_PREDICTIONS_PATH,
+            "combined_metrics": MODULE1_COMBINED_METRICS_PATH,
+            "dm_test": MODULE1_DM_TEST_PATH,
+        }
+    suffix = "_".join(suffix_parts)
+    return {
+        "xgboost_predictions": MODULE1_PROCESSED_DIR / f"xgboost_stage2_predictions_{suffix}.csv",
+        "xgboost_models_dir": MODULE1_MODELS_DIR / f"xgboost_folds_{suffix}",
+        "xgboost_final_model": MODULE1_MODELS_DIR / f"xgboost_final_model_{suffix}.json",
+        "xgboost_metrics": MODULE1_METRICS_DIR / f"xgboost_stage2_metrics_{suffix}.csv",
+        "xgboost_feature_importance": MODULE1_METRICS_DIR / f"xgboost_feature_importance_{suffix}.csv",
+        "final_predictions": MODULE1_PROCESSED_DIR / f"final_combined_predictions_{suffix}.csv",
+        "combined_metrics": MODULE1_METRICS_DIR / f"combined_vs_baseline_metrics_{suffix}.csv",
+        "dm_test": MODULE1_METRICS_DIR / f"diebold_mariano_results_{suffix}.csv",
+    }
+
 # --- Module 1 forward production forecast (beyond last available data;
 # src/module1_forecasting/forecast_future.py) - distinct from the validated
 # holdout evaluation above: no ground truth exists yet to score against.
 MODULE1_FUTURE_FORECAST_PATH = MODULE1_PROCESSED_DIR / "future_forecast.csv"
+
+# Operational rolling 1-step-ahead evaluation (distinct from the 104-week
+# one-shot holdout forecast in baseline_sarima.forecast_holdout).
+MODULE1_ROLLING_ONE_STEP_PATH = MODULE1_PROCESSED_DIR / "rolling_one_step_predictions.csv"
+MODULE1_ROLLING_ONE_STEP_METRICS_PATH = MODULE1_METRICS_DIR / "rolling_one_step_metrics.csv"
 
 # 25 official Sri Lankan districts modeled post Kalmunai -> Ampara merge
 # (Decision 012). Kalmunai is a real ~19-year case series with no matching
@@ -171,3 +217,52 @@ MODULE2_RISK_THRESHOLD_HOLDOUT_COMPARISON_PATH = MODULE2_METRICS_DIR / "risk_thr
 # --- Module 2 live/production scoring (genuinely new incoming weeks, for
 # dashboard consumption; src/module2_classification/live_scoring.py) ---
 MODULE2_LIVE_RISK_PREDICTIONS_PATH = MODULE2_PROCESSED_DIR / "live_risk_predictions.csv"
+
+# --- Module 2 forward operational risk (beyond last case week; M1-fed case
+# lags; src/module2_classification/forecast_future_risk.py) ---
+MODULE2_FUTURE_RISK_PREDICTIONS_PATH = MODULE2_PROCESSED_DIR / "future_risk_predictions.csv"
+
+
+def module2_stage1_paths(feature_variant: str | None = None) -> dict[str, Path]:
+    """Return Stage 1 artifact paths; ablations use a ``_<variant>`` suffix."""
+    if not feature_variant:
+        return {
+            "predictions": MODULE2_BASELINE_PREDICTIONS_PATH,
+            "metrics": MODULE2_BASELINE_METRICS_PATH,
+            "importance": MODULE2_BASELINE_FEATURE_IMPORTANCE_PATH,
+            "pooled_vs_district": MODULE2_POOLED_VS_DISTRICT_PATH,
+            "models_dir": MODULE2_BASELINE_MODELS_DIR,
+            "final_model": MODULE2_BASELINE_FINAL_MODEL_PATH,
+        }
+    suffix = feature_variant
+    models_dir = MODULE2_MODELS_DIR / f"baseline_classifier_{suffix}"
+    return {
+        "predictions": MODULE2_PROCESSED_DIR / f"baseline_classifier_predictions_{suffix}.csv",
+        "metrics": MODULE2_METRICS_DIR / f"baseline_classifier_metrics_{suffix}.csv",
+        "importance": MODULE2_METRICS_DIR / f"baseline_classifier_feature_importance_{suffix}.csv",
+        "pooled_vs_district": MODULE2_METRICS_DIR / f"pooled_vs_per_district_comparison_{suffix}.csv",
+        "models_dir": models_dir,
+        "final_model": models_dir / "final_production_model",
+    }
+
+
+def module2_stage2_paths(feature_variant: str | None = None) -> dict[str, Path]:
+    """Return Stage 2 artifact paths; ablations use a ``_<variant>`` suffix."""
+    if not feature_variant:
+        return {
+            "predictions": MODULE2_STAGE2_PREDICTIONS_PATH,
+            "metrics": MODULE2_STAGE2_METRICS_PATH,
+            "pooled_vs_district": MODULE2_STAGE2_POOLED_VS_DISTRICT_PATH,
+        }
+    suffix = feature_variant
+    return {
+        "predictions": MODULE2_PROCESSED_DIR / f"stage2_compensated_predictions_{suffix}.csv",
+        "metrics": MODULE2_METRICS_DIR / f"stage2_compensation_metrics_{suffix}.csv",
+        "pooled_vs_district": MODULE2_METRICS_DIR / f"stage2_pooled_vs_per_district_comparison_{suffix}.csv",
+    }
+
+# Shared forward horizon for Module 1 case forecast and Module 2 forward risk.
+FORECAST_HORIZON_WEEKS = 8
+
+# --- Dashboard outputs ---
+DASHBOARD_REFRESH_MANIFEST_PATH = OUTPUTS_DIR / "metrics" / "dashboard_refresh_manifest.csv"

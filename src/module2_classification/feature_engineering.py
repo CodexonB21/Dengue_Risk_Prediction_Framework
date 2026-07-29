@@ -99,6 +99,7 @@ from src.module1_forecasting.feature_engineering import (  # noqa: E402
     compute_fold_climate_anomalies,
 )
 from src.module2_classification.labels import compute_historical_stats_harmonic  # noqa: E402
+from src.preprocessing.reporting_anomalies import mask_untrusted_cases  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -152,8 +153,18 @@ FOLD_AGNOSTIC_FEATURE_COLUMNS = (
     + CASE_ANOMALY_LAG_FEATURES
 )
 
+# M2-008 symmetric ablation (Module 1–style split): Stage 1 omits climate so Stage 2
+# can learn climate-driven correction on top of a case-history baseline.
+STAGE1_CLIMATE_FREE_FEATURE_COLUMNS = (
+    CASE_TREND_FEATURES + SEASONAL_FEATURES + CASE_ANOMALY_LAG_FEATURES
+)
+
 # NOT written to the global file - must be recomputed per walk-forward fold.
 FOLD_AWARE_FEATURE_COLUMNS = ["rainfall_anomaly", "temperature_anomaly", "humidity_anomaly"]
+
+STAGE2_CLIMATE_COMPENSATION_FEATURE_COLUMNS = (
+    CLIMATE_LAG_FEATURES + CURRENT_WEEK_CLIMATE_FEATURES + FOLD_AWARE_FEATURE_COLUMNS
+)
 
 # Categorical, handled separately by Stage 1 modeling code (Module 1 Feature
 # Group 5b equivalent) - not part of the plain numeric feature lists above.
@@ -166,6 +177,7 @@ NON_FEATURE_COLUMNS = [
     "cases_per_100k",
     "Year",
     "is_imputed",
+    "is_reporting_anomaly",
     "Estimated_Population",
     "Source_Type",
     "Week_Start_Date",
@@ -187,12 +199,9 @@ def build_fold_agnostic_features(df: pd.DataFrame) -> pd.DataFrame:
     grouped = df.groupby("District")
 
     # --- M2-1: case-trend features ---
-    # Mask is_imputed rows to NaN BEFORE deriving any case-lag/rolling
-    # feature from them (revised 2026-07-28, consistency fix - see module
-    # docstring): a seasonal-naive-imputed case count is not a real
-    # observation and must not silently flow into a neighboring week's
-    # feature, same principle already applied to case_anomaly_lag/the label.
-    clean_cases = df["Number_of_Cases"].where(~df["is_imputed"])
+    # Mask is_imputed and reporting-anomaly rows to NaN BEFORE deriving any
+    # case-lag/rolling feature from them (Decision 026 extends Decision 020).
+    clean_cases = mask_untrusted_cases(df)
     clean_grouped = clean_cases.groupby(df["District"])
 
     for lag in CASE_LAGS:
@@ -266,6 +275,8 @@ def compute_case_anomaly_lags(df: pd.DataFrame) -> pd.DataFrame:
     case_zscore = (stats["Number_of_Cases"] - stats["historical_mean"]) / stats["historical_sd"]
     case_zscore = case_zscore.replace([np.inf, -np.inf], np.nan)
     case_zscore = case_zscore.where(~stats["is_imputed"])
+    if "is_reporting_anomaly" in stats.columns:
+        case_zscore = case_zscore.where(~stats["is_reporting_anomaly"])
 
     stats["case_zscore"] = case_zscore
     grouped_zscore = stats.groupby("District")["case_zscore"]

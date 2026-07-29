@@ -95,32 +95,26 @@ import logging
 import sys
 from pathlib import Path
 
-import joblib
-import numpy as np
 import pandas as pd
-import xgboost as xgb
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.config import (  # noqa: E402
-    DISTRICTS,
-    MODULE2_BASELINE_FINAL_MODEL_PATH,
-    MODULE2_BASELINE_METRICS_PATH,
     MODULE2_LIVE_RISK_PREDICTIONS_PATH,
-    MODULE2_RISK_THRESHOLD_SCAN_PATH,
     MODULE2_RISK_TIER_PREDICTIONS_PATH,
-    MODULE2_STAGE2_FINAL_MODEL_PATH,
-    MODULE2_STAGE2_METRICS_PATH,
 )
-from src.module2_classification.baseline_classifier import (  # noqa: E402
-    CATEGORICAL_FEATURE_COLUMNS,
-    NUMERIC_FEATURE_COLUMNS,
-    attach_fold_anomalies,
+from src.module2_classification.scoring_utils import (  # noqa: E402
+    apply_risk_tiers,
+    build_scoring_feature_table,
+    load_production_thresholds,
+    load_stage1_model,
+    load_stage2_model,
+    official_stage1_model,
+    official_stage2_architecture,
+    score_feature_rows,
 )
-from src.module2_classification.feature_engineering import build_module2_feature_table  # noqa: E402
-from src.module2_classification.risk_thresholds import assign_risk_tier, select_thresholds  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -131,77 +125,6 @@ OUTPUT_COLUMNS = [
     "predicted_probability", "calibrated_probability", "alert_flag", "risk_tier",
     "feature_completeness_pct", "already_scored_in_pipeline",
 ]
-
-
-# ---------------------------------------------------------------------------
-# Dynamic model/architecture discovery (never hardcode - read what
-# baseline_classifier.py / compensation_model.py actually selected)
-# ---------------------------------------------------------------------------
-
-def _official_stage1_model() -> str:
-    metrics = pd.read_csv(MODULE2_BASELINE_METRICS_PATH)
-    selected = metrics.loc[metrics["selected"], "model"].unique()
-    if len(selected) != 1:
-        raise ValueError(f"Expected exactly one selected Stage 1 model, found {selected!r}.")
-    return str(selected[0])
-
-
-def _official_stage2_architecture() -> str:
-    metrics = pd.read_csv(MODULE2_STAGE2_METRICS_PATH)
-    selected = metrics.loc[metrics["selected"], "architecture"].unique()
-    if len(selected) != 1:
-        raise ValueError(f"Expected exactly one selected Stage 2 architecture, found {selected!r}.")
-    return str(selected[0])
-
-
-def _load_stage1_model(model_name: str):
-    path = MODULE2_BASELINE_FINAL_MODEL_PATH.with_suffix(".json" if model_name == "xgboost" else ".joblib")
-    if model_name == "xgboost":
-        model = xgb.XGBClassifier()
-        model.load_model(str(path))
-        return model
-    return joblib.load(path)
-
-
-def _load_stage2_model(architecture: str):
-    path = MODULE2_STAGE2_FINAL_MODEL_PATH.with_suffix(".json" if architecture == "stacked_xgboost" else ".joblib")
-    if architecture == "stacked_xgboost":
-        model = xgb.XGBClassifier()
-        model.load_model(str(path))
-        return model
-    return joblib.load(path)
-
-
-def _load_thresholds() -> tuple[float, float]:
-    """Re-derive `(alert_threshold, high_threshold)` from the persisted
-    `risk_threshold_scan.csv` via `risk_thresholds.select_thresholds` - reuses
-    the exact production selection logic instead of duplicating or
-    hardcoding the numeric values, so this script cannot silently drift from
-    whatever `risk_thresholds.py` last selected.
-    """
-    if not MODULE2_RISK_THRESHOLD_SCAN_PATH.exists():
-        raise FileNotFoundError(
-            f"{MODULE2_RISK_THRESHOLD_SCAN_PATH} not found - run the Module 2 training "
-            "pipeline (`python -m src.module2_classification.main`) at least once first."
-        )
-    scan_df = pd.read_csv(MODULE2_RISK_THRESHOLD_SCAN_PATH)
-    return select_thresholds(scan_df)
-
-
-# ---------------------------------------------------------------------------
-# Feature assembly (full-history, maximal-data - mirrors
-# baseline_classifier.train_final_production_model's own construction)
-# ---------------------------------------------------------------------------
-
-def build_scoring_feature_table() -> pd.DataFrame:
-    features = build_module2_feature_table()
-    train_mask = pd.Series(True, index=features.index)
-    return attach_fold_anomalies(features, train_mask)
-
-
-def select_recent_weeks(df: pd.DataFrame, n_recent_weeks: int) -> pd.DataFrame:
-    df = df.sort_values(["District", "Year", "Week"])
-    return df.groupby("District", group_keys=False).tail(n_recent_weeks)
 
 
 def _already_scored_keys() -> set[tuple[str, int, int]]:
@@ -219,35 +142,9 @@ def _already_scored_keys() -> set[tuple[str, int, int]]:
 # Scoring
 # ---------------------------------------------------------------------------
 
-def _prepare_stage1_X(target_df: pd.DataFrame, model_name: str) -> pd.DataFrame:
-    cols = NUMERIC_FEATURE_COLUMNS + CATEGORICAL_FEATURE_COLUMNS
-    X = target_df[cols].copy()
-    if model_name == "xgboost":
-        X["District"] = pd.Categorical(X["District"], categories=DISTRICTS)
-    return X
-
-
-def score_weeks(
-    target_df: pd.DataFrame, stage1_model, stage1_model_name: str, stage2_model, stage2_architecture: str,
-) -> pd.DataFrame:
-    X1 = _prepare_stage1_X(target_df, stage1_model_name)
-    predicted_probability = stage1_model.predict_proba(X1)[:, 1]
-
-    if stage2_architecture == "stacked_xgboost":
-        raise NotImplementedError(
-            "Live scoring for the 'stacked_xgboost' Stage 2 architecture needs its own "
-            "feature assembly (contextual features + probability_residual_lag_1/2) - "
-            "not implemented, since isotonic/Platt are the only architectures that have "
-            "ever won Stage 2 selection (M2-002/M2-003/M2-005)."
-        )
-    # isotonic/platt are feature-free: predict directly on Stage 1's probability.
-    calibrated_probability = stage2_model.predict(predicted_probability)
-
-    out = target_df[["District", "Year", "Week", "Week_Start_Date", "Number_of_Cases", "is_imputed"]].copy()
-    out["predicted_probability"] = predicted_probability
-    out["calibrated_probability"] = np.clip(calibrated_probability, 0.0, 1.0)
-    out["feature_completeness_pct"] = (target_df[NUMERIC_FEATURE_COLUMNS].notna().mean(axis=1) * 100).round(1)
-    return out
+def select_recent_weeks(df: pd.DataFrame, n_recent_weeks: int) -> pd.DataFrame:
+    df = df.sort_values(["District", "Year", "Week"])
+    return df.groupby("District", group_keys=False).tail(n_recent_weeks)
 
 
 def run_live_scoring(n_recent_weeks: int = DEFAULT_N_RECENT_WEEKS) -> pd.DataFrame:
@@ -257,22 +154,24 @@ def run_live_scoring(n_recent_weeks: int = DEFAULT_N_RECENT_WEEKS) -> pd.DataFra
     logger.info("Selecting the most recent %d weeks per district to score...", n_recent_weeks)
     target_df = select_recent_weeks(feature_df, n_recent_weeks)
 
-    stage1_model_name = _official_stage1_model()
-    stage2_architecture = _official_stage2_architecture()
+    stage1_model_name = official_stage1_model()
+    stage2_architecture = official_stage2_architecture()
     logger.info(
         "Loading frozen final-production models: Stage 1=%s, Stage 2=%s...",
         stage1_model_name, stage2_architecture,
     )
-    stage1_model = _load_stage1_model(stage1_model_name)
-    stage2_model = _load_stage2_model(stage2_architecture)
+    stage1_model = load_stage1_model(stage1_model_name)
+    stage2_model = load_stage2_model(stage2_architecture)
 
-    scored = score_weeks(target_df, stage1_model, stage1_model_name, stage2_model, stage2_architecture)
+    scored = score_feature_rows(target_df, stage1_model, stage1_model_name, stage2_model, stage2_architecture)
+    scored = scored[
+        ["District", "Year", "Week", "Week_Start_Date", "Number_of_Cases", "is_imputed",
+         "predicted_probability", "calibrated_probability", "feature_completeness_pct"]
+    ]
 
-    alert_threshold, high_threshold = _load_thresholds()
+    alert_threshold, high_threshold = load_production_thresholds()
     logger.info("Applying persisted risk thresholds: alert=%.3f, high=%.3f", alert_threshold, high_threshold)
-    calibrated = scored["calibrated_probability"].to_numpy(dtype=float)
-    scored["alert_flag"] = calibrated >= alert_threshold
-    scored["risk_tier"] = assign_risk_tier(calibrated, alert_threshold, high_threshold)
+    scored = apply_risk_tiers(scored, alert_threshold, high_threshold)
 
     already_scored = _already_scored_keys()
     scored["already_scored_in_pipeline"] = [

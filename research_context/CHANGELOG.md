@@ -6,7 +6,62 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
-## Entry Format
+## 2026-07-29 - Dashboard split: research evidence vs operational prototype
+
+### Module
+Integration layer (dashboard)
+
+### Change
+Restructured `src/dashboard/app.py` into two sidebar views: **Research evidence** (holdout-validated M1/M2 metrics, M2-009 redundancy table, district MASE chart, calibration figure) and **Operational prototype** (existing live/forward monitoring with stronger disclaimers). New modules `evidence_data.py`, `pages.py`. Updated `DASHBOARD_GUIDE.md` walkthrough.
+
+### Reason
+Chat review concluded forward/dashboard outputs are not thesis-accuracy evidence; dashboard should demonstrate integration without being mistaken for validation.
+
+### Impact
+Default page is research evidence (viva-safe). Operational numbers labeled `evidence_tier: operational` throughout. No model retraining.
+
+### Status
+Accepted
+
+---
+
+## 2026-07-29 - M2-009 Module 1-Derived Alert Baseline (Module 2 Redundancy Test)
+
+### Module
+Module 2 (cross-module with Module 1)
+
+### Change
+Formalized holdout comparison: M2 production alerts vs thresholding M1 `final_prediction` (fair epidemic-threshold rule + naive fixed-100 rule). New read-only script `scripts/m2_009_m1_alert_baseline.py`.
+
+### Reason
+Defense question: Module 2 may appear redundant if Module 1 already forecasts cases. Empirical proof needed on the same holdout block and outbreak label.
+
+### Impact
+**Module 2 justified.** M2 PR-AUC 0.412 / recall 0.60 vs M1-threshold PR-AUC 0.063 / recall 0.225. M2 catches 15 outbreaks M1-threshold misses. Artifacts: `outputs/metrics/module2/m2_009_*.csv`. Production unchanged.
+
+### Status
+Accepted (evidence for thesis defense)
+
+---
+
+## 2026-07-29 - M2-008 Symmetric Climate-Free Stage 1 + Climate Stage 2 Ablation
+
+### Module
+Module 2
+
+### Change
+Ran Module 1–symmetric ablation: climate-free Stage 1 (case history + seasonality) + climate-only stacked Stage 2 correction. New script `scripts/m2_008_symmetric_ablation.py`, feature constants in `feature_engineering.py`, variant artifact paths via `module2_stage1_paths` / `--feature-variant m2_008`.
+
+### Reason
+Defense question: is Module 2’s isotonic Stage 2 only because climate was already in Stage 1? Test whether withholding climate from Stage 1 and routing it through Stage 2 stacked correction reproduces Module 1’s residual-compensation benefit.
+
+### Impact
+**Rejected.** Stacked climate Stage 2 holdout PR-AUC 0.424 vs climate-free Stage 1 raw 0.462; BSS −0.22. Production isotonic unchanged. Artifacts: `outputs/metrics/module2/m2_008_{vs_production,summary}.csv`, `*_m2_008` variant CSVs.
+
+### Status
+Experimental (ablation only; production unchanged)
+
+---
 
 ```markdown
 ## YYYY-MM-DD - Short Change Title
@@ -26,6 +81,232 @@ What files/code/models are affected?
 ### Status
 Accepted / Rejected / Experimental / Superseded
 ```
+
+---
+
+## 2026-07-29 - Production stack promotion (M1-006B + M2 isotonic)
+
+### Module
+All modules (M1 + M2 production defaults)
+
+### Change
+Promoted M1-006B Feature Group 6 to default Module 1 paths (refit
+`feature_engineering` → `stage2_xgboost` → `combine` → `xgboost_final_model.json`).
+Confirmed M2 production: isotonic Stage 2, τ=0.14 alert threshold, no ramp rule.
+Ablations retained at `_m1_006_a`, `_m1_006_b`, `_m2_007_d` variant paths.
+
+### Reason
+User sign-off on recommended production stack after Stage 2 upgrade experiments.
+
+### Results
+M1 holdout median MASE 0.386 → **0.374**, median sMAPE 35.0 → **34.2**, 22/25 districts
+improved; M2 holdout unchanged (PR-AUC 0.412, recall 0.60, precision 0.338 @ 0.14).
+See `scripts/evaluate_production_stack.py` and `production_stack_*` metrics.
+
+### Impact
+Default M1/M2 artifacts refreshed; Decision 030 accepted; backup at
+`outputs/metrics/production_promotion_backup_2026-07-29/`.
+
+### Status
+Accepted
+
+---
+
+## 2026-07-29 - M2-007D M1-fed Stage 2 features (implemented, PR-AUC gate met, production deferred)
+
+### Module
+Module 2
+
+### Change
+Leakage-safe join of M1 OOS `final_prediction` lags into tree-based Stage 2 (`m1_final_prediction_lag_1`, `m1_forecast_momentum`). New `m1_forecast_join.py`, `--feature-variant m2_007_d`, evaluation script `scripts/m2_007d_evaluate.py`.
+
+### Reason
+M2-007D experiment — test whether Module 1 forecast signal improves Module 2 discrimination when joined evaluation-safely.
+
+### Results
+Holdout PR-AUC for `stacked_xgboost` + M1 features **0.465** vs isotonic **0.412** (+0.054; passes ≥0.02 gate). Alert recall @ 0.14 rises to **0.775** but precision falls to **0.194**; BSS **−0.067**. Official validation selector still **isotonic**. **Feature signal accepted; architecture switch deferred.**
+
+### Impact
+`m1_forecast_join.py`, `compensation_model.py`, `config.py`, `m2_007_d_*` artifacts. Official Stage 2 unchanged (isotonic).
+
+### Status
+Experimental (partial accept — ablation path only)
+
+---
+
+## 2026-07-29 - M1-006B reporting-delay features (implemented, acceptance met)
+
+### Module
+Module 1
+
+### Change
+Feature Group 6: `weeks_since_reporting_anomaly`, `reporting_rebound_ratio_lag1`, `suspected_backfill_week`; nowcast `cases_lag_1` when prior week flagged. Evaluation via `feature_variant='m1_006_b'` paths.
+
+### Reason
+M1-006B experiment — extend Decision 028 with learnable reporting-state features.
+
+### Results
+Median holdout MASE 0.374 vs 0.386; 22/25 districts improved; Colombo/Gampaha gain. **Proposed Decision 030.**
+
+### Impact
+`reporting_anomalies.py`, `feature_engineering.py`, `compensation_model.py`, `config.py`, `m1_006_b_*` artifacts.
+
+### Status
+Accepted (promoted to default paths 2026-07-29; see production stack entry above)
+
+---
+
+## 2026-07-29 - M2-007A logit-residual Stage 2 (implemented, rejected)
+
+### Module
+Module 2
+
+### Change
+Added `logit_residual` architecture to `compensation_model.py` and evaluation script `scripts/m2_007a_evaluate.py`. Live-scoring hook in `scoring_utils.py`.
+
+### Reason
+Execute M2-007A — test M1-style logit/residual compensation for probability calibration.
+
+### Results
+Holdout PR-AUC 0.324 vs isotonic 0.412; alert recall @ 0.14 drops to 0.125. **Rejected.**
+
+### Impact
+`compensation_model.py`, `scoring_utils.py`, `m2_007_a_*` metrics. Official architecture unchanged (isotonic).
+
+### Status
+Experimental (rejected for production)
+
+---
+
+## 2026-07-29 - M1-006A log-residual ablation + M2-007C ramp alert rule (implemented, rejected for production)
+
+### Module
+Module 1 + Module 2
+
+### Change
+- **M1-006A:** Added `src/module1_forecasting/residual_transform.py` and `--residual-mode {additive,log}` switch across Stage 2 / combine / rolling / forward forecast. Log variant artifacts: `*_m1_006_log.csv` / `xgboost_final_model_m1_006_log.json`. Comparison: `outputs/metrics/module1/m1_006_log_vs_baseline.csv`.
+- **M2-007C:** Added `src/module2_classification/alert_rules.py` and `scripts/m2_007c_evaluate.py` for consecutive-week ramp alert post-processing. Optional hook in `scoring_utils.apply_risk_tiers`.
+
+### Reason
+Execute first two phases of `STAGE2_UPGRADE_EXPERIMENT_PLAN.md` with holdout-gated adoption.
+
+### Results
+- M1-006A: median holdout MASE 0.375 vs 0.386 baseline (−2.9%), but median sMAPE flat (+0.2 pp), only 15/25 districts beat additive, Colombo/Gampaha regress. **Rejected** for production; additive baseline retained.
+- M2-007C: holdout recall unchanged (0.60), precision −0.9 pp vs τ=0.14. **Rejected** for production; single-threshold alerting retained.
+
+### Impact
+`src/config.py`, `compensation_model.py`, `combine.py`, `rolling_one_step.py`, `forecast_future.py`, `main.py`, new M1/M2 metrics CSVs, both `EXPERIMENT_LOG.md` files.
+
+### Status
+Experimental (ablation code kept; production defaults unchanged)
+
+---
+
+## 2026-07-29 - Stage 2 Upgrade Experiment Plan (M1-006 / M2-007)
+
+### Module
+Module 1 + Module 2
+
+### Change
+Added `research_context/STAGE2_UPGRADE_EXPERIMENT_PLAN.md` — phased ablation plan for log-scale / reporting-delay Stage 2 (M1) and logit-residual / cost-sensitive / alert-rule / M1-fed Stage 2 (M2), with holdout metrics, leakage checks, acceptance criteria, and implementation order. Stub entries added to both `EXPERIMENT_LOG.md` files.
+
+### Reason
+User requested a research-backed path to improve forecast accuracy and outbreak recall/precision beyond current additive residuals (M1) and isotonic calibration (M2).
+
+### Impact
+Planning document only; no code or model changes yet.
+
+### Status
+Planned
+
+---
+
+## 2026-07-29 - Reporting-Lag Guard + Rolling 1-Step Operational Evaluator (Decisions 028–029, M1-005)
+
+### Module
+Module 1 (with Module 2 preprocessing/feature parity for the guard column)
+
+### Change
+**Fix 1 (Decision 028):** Added `src/preprocessing/reporting_anomalies.py` to flag suspected delayed-reporting weeks (`is_reporting_anomaly`) when prior-week cases ≥100, current week drops ≥75%, and the next week rebounds ≥2.5× (or exceeds the prior week). Wired into Module 1/2 preprocessing and feature engineering via `mask_untrusted_cases()` — case-derived lags, rolling stats, M2 `case_anomaly_lag_*`, and M1 `build_residual_lags()` all null suspect values before shifting. Raw `Number_of_Cases` is preserved for labels/evaluation.
+
+**Fix 2 (Decision 029):** Added `src/module1_forecasting/rolling_one_step.py` — weekly SARIMA refit on all data strictly before week *t*, 1-step forecast, frozen Stage 2 XGBoost checkpoint. Outputs `rolling_one_step_predictions.csv` and period sMAPE summaries. Also hardened `_save_xgboost_model()` in `compensation_model.py` (atomic save + correct `.json` temp suffix for Windows/XGBoost 2.x).
+
+### Reason
+Colombo/Gampaha 2026 Wk24 reporting dips poisoned `cases_lag_1` for Wk25; the flat 104-week SARIMA holdout is a poor proxy for real weekly deployment. These fixes address the two highest-priority operational failure modes identified in the M1-004 climate retest post-mortem.
+
+### Impact
+33 M1 / 26 M2 rows flagged across all districts (including Colombo/Gampaha 2026 Wk24). Holdout MASE: 23/25 districts improved (median 32.9%). Rolling 1-step (Colombo/Gampaha): holdout-all sMAPE 21.2%/26.7%; 2026 Wk22–23 sMAPE ~13% (vs ~21% on flat holdout); Wk25 spike still missed (~7× underestimate) — documented limit, not solved.
+
+### Status
+Accepted
+
+---
+
+## 2026-07-29 - Dashboard Observer Guide
+
+### Module
+Integration layer (dashboard)
+
+### Change
+Added `src/dashboard/DASHBOARD_GUIDE.md` — observer/demo guide covering page layout, column definitions, risk tiers, operational vs holdout distinction, walkthrough script, and troubleshooting. Updated `app.py` docstring to reference the guide.
+
+### Reason
+Support thesis demo, viva defense, and stakeholder handoff without relying on chat or ad-hoc explanation.
+
+### Impact
+Documentation only; no pipeline or model changes.
+
+### Status
+Accepted
+
+---
+
+## 2026-07-29 - Early Warning Dashboard, Climate Refresh, Module 2 Forward Risk (M1-fed)
+
+### Module
+All modules (Integration layer + Module 1/2 operational scoring)
+
+### Change
+Added operational early-warning infrastructure:
+- `scripts/fetch_open_meteo_weather.py` — Open-Meteo Archive (observed gap-fill) + Forecast API extension for all 25 district CSVs, with daily `climate_data_source` tagging (`observed`/`forecast`).
+- `scripts/refresh_dashboard_data.py` — end-to-end refresh orchestrator (weather → preprocessing → M1 forward forecast → M2 live + forward risk).
+- `src/module2_classification/scoring_utils.py` — shared frozen-model scoring helpers extracted from `live_scoring.py`.
+- `src/module2_classification/forecast_future_risk.py` — forward operational risk (M1 `final_prediction` feeds case-derived lag features for multi-week-ahead rows).
+- `src/dashboard/app.py` — Streamlit early-warning dashboard (overview + district drill-down).
+- `shared.py` / `module1_preprocessing.py` — propagate `climate_data_source` through weekly climate aggregation; weather glob restricted to `open-meteo-*.csv`.
+- `src/config.py` — `MODULE2_FUTURE_RISK_PREDICTIONS_PATH`, `FORECAST_HORIZON_WEEKS`, `DASHBOARD_REFRESH_MANIFEST_PATH`.
+
+Climate gap closed: raw weather extended through 2026-08-13; shared `climate_weekly.csv` now reaches 2026 Wk25; live scoring `feature_completeness_pct` restored to 100% on latest weeks.
+
+### Reason
+Thesis operational deliverable: integrate Module 1 case forecasts and Module 2 risk scoring into a refreshable dashboard, closing the documented ~4-week climate-currency gap (Open Questions #16/#10) and enabling multi-week-ahead forward risk using user-approved M1-fed case lags.
+
+### Impact
+New scripts and CSV outputs (`future_risk_predictions.csv`, `climate_fetch_manifest.csv`, `dashboard_refresh_manifest.csv`). No model retraining. Forward outputs tagged `evidence_tier=operational` — distinct from holdout-validated metrics.
+
+### Status
+Accepted
+
+---
+
+## 2026-07-29 - Module 1 Completion Scope: Non-Seasonal SARIMA Flagged for Supervisor; Other Follow-Ups Deferred
+
+### Module
+Module 1
+
+### Change
+Documented the non-seasonal SARIMA finding (18/25 districts, Open Question #12) as an explicit supervisor-facing flag rather than a silent limitation. Added a prepared defense answer in `research_context/QUESTIONS_FOR_DEFENSE.md` and a "Supervisor Flag" section in `module_1_forecasting/MODULE_CONTEXT.md`. Confirmed no Stage 1 rework — Stage 2 already compensates more for non-seasonal districts.
+
+Team decision: defer remaining Module 1 follow-ups (climate currency refresh, rolling 1-week-ahead evaluation, STL+SARIMA ablation, Ljung-Box follow-up features, rainfall lag ablation, holdout divergence investigation) as not blocking thesis completion given the validated compensation-framework results.
+
+### Reason
+Thesis scope is historical validation of the residual-compensation hypothesis, not operational early-warning certification. The non-seasonal SARIMA issue must be disclosed honestly because 12/25 Stage-1-only configs fail seasonal naive, but empirical evidence shows Stage 2 addresses it — reworking Stage 1 is not justified.
+
+### Impact
+Documentation only — no code or pipeline rerun. Updated `research_context/QUESTIONS_FOR_DEFENSE.md`, `module_1_forecasting/MODULE_CONTEXT.md`, `research_context/CHANGELOG.md`.
+
+### Status
+Accepted
 
 ---
 

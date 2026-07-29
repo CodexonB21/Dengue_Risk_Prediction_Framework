@@ -40,6 +40,7 @@ from src.config import (  # noqa: E402
     SHARED_EPI_WEEK_CALENDAR_PATH,
     SHARED_POPULATION_ANNUAL_PATH,
 )
+from src.preprocessing.reporting_anomalies import flag_reporting_anomalies  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,8 @@ CANONICAL_WEEKS_PER_YEAR = 52
 # no upstream rule for collapsing a categorical code across a merged pair of
 # weeks, so the more frequent of the two is kept.
 CLIMATE_MODE_COLUMN = "weather_code (wmo code)"
+CLIMATE_SOURCE_COLUMN = "climate_data_source"
+CATEGORICAL_CLIMATE_COLUMNS = {CLIMATE_MODE_COLUMN, CLIMATE_SOURCE_COLUMN}
 
 
 # ---------------------------------------------------------------------------
@@ -120,9 +123,10 @@ def merge_week_53_cases(epi: pd.DataFrame) -> pd.DataFrame:
 
 def merge_week_53_climate(climate: pd.DataFrame) -> pd.DataFrame:
     value_cols = [c for c in climate.columns if c not in ("District", "Year", "Week")]
-    agg_map = {c: "mean" for c in value_cols if c != CLIMATE_MODE_COLUMN}
-    if CLIMATE_MODE_COLUMN in value_cols:
-        agg_map[CLIMATE_MODE_COLUMN] = _weekly_mode
+    agg_map = {c: "mean" for c in value_cols if c not in CATEGORICAL_CLIMATE_COLUMNS}
+    for col in CATEGORICAL_CLIMATE_COLUMNS:
+        if col in value_cols:
+            agg_map[col] = _weekly_mode
     return merge_week_53_into_52(climate, agg_map=agg_map)
 
 
@@ -277,12 +281,16 @@ def validate_weekly_modeling_table(df: pd.DataFrame) -> None:
 
     if "is_imputed" not in df.columns:
         raise ValueError("is_imputed column missing.")
+    if "is_reporting_anomaly" not in df.columns:
+        raise ValueError("is_reporting_anomaly column missing.")
 
     logger.info(
         "Validation passed: %d rows, %d districts, interior years %d-%d each "
-        "have exactly %d weeks, %d rows flagged is_imputed.",
+        "have exactly %d weeks, %d rows flagged is_imputed, %d rows flagged "
+        "is_reporting_anomaly.",
         len(df), n_districts, min_year + 1, max_year - 1,
         CANONICAL_WEEKS_PER_YEAR, int(df["is_imputed"].sum()),
+        int(df["is_reporting_anomaly"].sum()),
     )
 
 
@@ -300,6 +308,7 @@ def run_module1_preprocessing() -> pd.DataFrame:
 
     missing = find_missing_weeks(epi)
     epi = impute_missing_weeks(epi, missing, calendar)
+    epi = flag_reporting_anomalies(epi)
 
     table = merge_climate(epi, climate)
     table = merge_population(table, population)

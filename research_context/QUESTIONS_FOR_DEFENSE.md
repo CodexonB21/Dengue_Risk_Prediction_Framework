@@ -53,3 +53,137 @@ Module-specific documents prevent confusion and allow each module to evolve inde
 The Cursor rule file should not contain detailed static research facts. Instead, it should instruct Cursor to read the latest markdown files and update them when decisions change.
 
 The latest documentation should be treated as the source of truth, not the conversation history.
+
+---
+
+## Why does Stage 1 SARIMA often have no seasonal component (18/25 districts)?
+
+**Short answer:** AIC-driven `auto_arima` order selection, with `m=52`, frequently chose `seasonal_order=(0,0,0,52)` — a plain non-seasonal ARIMA — even though weekly dengue data is strongly seasonal. This is a known limitation of Stage 1 **in isolation**, not a silent bug we ignored.
+
+**What we found:**
+- OCSB and Canova-Hansen both selected `D=0` for all 25 districts; only 7/25 got a seasonal AR term.
+- **12/25 districts** have Stage-1-only validation MASE > 1 (worse than a seasonal-naive “repeat last year’s same week” benchmark).
+- Forcing seasonal differencing (`D=1`) was tested and found computationally infeasible at pipeline scale (7+ minutes per fit vs ~0.01s for the fixed-order refits used everywhere else).
+
+**Why we did not rework Stage 1:**
+- The residual-compensation design deliberately keeps climate and explicit seasonality out of Stage 1 (Decision 001) so Stage 2 can learn those signals from residuals.
+- We ran the pre-registered diagnostic after Stage 2 was built: the **18 non-seasonal districts improved more** with Stage 2 (median 44.9% validation / 39.1% holdout MASE reduction) than the 7 seasonal districts (31.9% / 26.2%). Stage 2’s `sin_week`/`cos_week`, monsoon indicators, and climate features appear to be compensating for the annual cycle Stage 1 missed.
+- Reworking Stage 1 now would risk weakening the residual signal Stage 2 is designed to correct, with no evidence the **combined** pipeline would improve.
+
+**How to present this honestly:**
+- Report Stage 1-only metrics separately from Stage 1+Stage 2 — do not oversell Stage 1 as a strong standalone forecaster for all districts.
+- Frame the contribution as: *baseline + residual compensation improves forecasts*, not *SARIMA alone is optimal*.
+- Flag explicitly to the supervisor: “Stage 1 is a deliberately simple, AIC-selected univariate baseline; its seasonal weakness is a documented limitation that Stage 2 substantially addresses.”
+
+**If challenged:** “Would STL+SARIMA be better?” — Possible ablation for future work, but superseded for this thesis by empirical evidence that Stage 2 already captures the missing seasonal structure. Not required to validate the residual-compensation hypothesis.
+
+**Evidence:** `models/module1/sarima_selected_configs.csv`, M1-001/M1-002 experiment log, Open Question #12 resolution in `module_1_forecasting/MODULE_CONTEXT.md`.
+
+---
+
+## How is forward/dashboard risk different from holdout validation?
+
+**Short answer:** Holdout metrics measure **model skill on past data** the pipeline never used for selection; dashboard forward outputs measure **what the frozen production models say about upcoming weeks** using forecast climate and (for multi-week risk) Module 1 predicted case lags.
+
+| Aspect | Holdout / walk-forward | Operational forward (`future_risk_predictions.csv`) |
+|---|---|---|
+| Purpose | Honest skill estimate | Decision-support / early warning |
+| Models | Same checkpoints, but scored on historical rows | Frozen `final_production_model.*` |
+| Case inputs | Real observed lags only | M1 `final_prediction` for lags when real cases unavailable |
+| Climate | Observed only (historical) | Observed + Open-Meteo forecast API |
+| Evidence tier | Validation | `operational` — never cite as PR-AUC/BSS |
+
+**Thesis framing:** “We validated the framework on held-out history; the dashboard applies the same frozen models operationally with clearly labeled uncertainty and without retraining.”
+
+---
+
+## Why does Module 2 use isotonic calibration instead of climate/residual compensation like Module 1?
+
+**Short answer:** The unified framework is a **two-stage hybrid** (baseline + error correction), not a literal copy of Module 1’s additive residual formula everywhere. Module 2 **does** use climate and case history — in **Stage 1**, where they drive discrimination. Stage 2’s dominant error turned out to be **probability miscalibration** from imbalance handling (`scale_pos_weight` / `class_weight`), not missing weather signal. Isotonic regression fixes that scale distortion; feature-based “residual” models (stacked XGBoost, logit-residual) consistently underperformed in held-out evaluation (M2-002/M2-003/M2-007A).
+
+**Why the architectures differ (by design, not oversight):**
+
+| | Module 1 | Module 2 (production) |
+|---|---|---|
+| Stage 1 role | Deliberately climate-free SARIMA | Full classifier with case history **and** climate |
+| Stage 2 error type | Structured count residuals (`actual − SARIMA`) | Probability scale distortion |
+| Stage 2 fix | XGBoost on residuals + climate | Isotonic calibration |
+| Literal residual target | Well-posed (continuous) | Ill-posed for binary labels (Decision 022) |
+
+**How to present this honestly:**
+- “Climate **does** improve outbreak-risk ranking in Module 2 — via Stage 1 features, not via a failed Stage 2 residual layer.”
+- “Stage 2 residual correction in probability space was **tested and rejected** — a documented negative result, not an unexamined gap.”
+- “The framework claim is **validated hybrid correction with documented limits**, not state-of-the-art on every metric.”
+
+**Symmetric ablation (M2-008, 2026-07-29):** Stage 1 retrained **without** climate (case history + seasonality only); climate routed **only** to Stage 2 stacked correction. **Result: stacked climate compensation still failed** — holdout PR-AUC 0.424 vs climate-free Stage 1 raw 0.462 (−3.8 pp), BSS −0.22. Platt/isotonic calibration on the weaker Stage 1 probabilities worked (Platt holdout PR-AUC 0.462, isotonic BSS 0.284), but the feature-based residual layer did not behave like Module 1. This strengthens the conclusion that classification’s bottleneck is not merely “climate was already in Stage 1” — even a Module 1–style split does not make stacked probability correction competitive.
+
+**Evidence:** Decision 022, M2-002/M2-003/M2-005, M2-007A (logit-residual rejected), M2-007D (M1-fed stacked improves PR-AUC but hurts BSS/precision), **M2-008** (`outputs/metrics/module2/m2_008_summary.csv`).
+
+---
+
+## Do we use weather/climate anomalies in Module 1 and Module 2?
+
+**Short answer:** **Yes, both modules use fold-aware rainfall, temperature, and humidity anomalies** — same definition, different placement in the pipeline.
+
+**Definition (Decision 003):**
+
+```text
+rainfall_anomaly   = current_week_rainfall   − long_term_mean(district, week)
+temperature_anomaly = current_week_temperature − long_term_mean(district, week)
+humidity_anomaly   = current_week_humidity   − long_term_mean(district, week)
+```
+
+The long-term mean is recomputed **per walk-forward fold** from training data only (`compute_fold_climate_anomalies`). Rainfall uses `precipitation_sum (mm)` (Decision 008). `weather_code` is excluded in both modules.
+
+| | Module 1 | Module 2 |
+|---|---|---|
+| **Stage 1** | **No** climate/anomalies (SARIMA, cases only — Decision 001) | **Yes** — anomalies + lagged/current raw climate in Stage 1 classifier |
+| **Stage 2 (production)** | **Yes** — anomalies in XGBoost residual model | **No** in isotonic (feature-free); anomalies appear only in non-production stacked ablations |
+| **Also used** | Lagged raw climate (Groups 1–2), seasonality; M1-006B reporting-delay features (not weather) | `case_anomaly_lag_1/2` (case z-scores — **not** weather anomalies) dominate Stage 1 importance |
+
+**Defense one-liner:** “Weather anomalies are used in both modules. Module 1 applies them in Stage 2 to explain SARIMA residuals; Module 2 applies them in Stage 1 to rank outbreak risk, because classification has no climate-free baseline requirement.”
+
+**Evidence:** `research_context/FEATURE_ENGINEERING_SPEC.md` (Groups 3 / M2-3), `src/module1_forecasting/feature_engineering.py`, `src/module2_classification/feature_engineering.py`.
+
+---
+
+## Why is Module 2 needed if Module 1 already forecasts case counts?
+
+**Short answer:** Module 1 answers **how many cases**; Module 2 answers **whether this district-week is epidemiologically abnormal** (relative to its own seasonal baseline). Those are different tasks. On holdout, deriving outbreak alerts from Module 1 forecasts **does not** match Module 2's discrimination or early-warning recall.
+
+**Conceptual distinction:**
+
+| | Module 1 | Module 2 |
+|---|---|---|
+| Target | Weekly case count (continuous) | Outbreak exceedance (binary, ~1.5% holdout prevalence) |
+| Optimized for | MASE / sMAPE | PR-AUC, alert recall (F2-optimal τ=0.14) |
+| “High value” meaning | Large expected count | **Unexpected** count for this district-week |
+
+Outbreak label (Decision 025):
+
+```text
+outbreak = 1 if cases > harmonic_seasonal_expectation(district, week) + 3 × SD
+```
+
+Colombo at 200 cases may be normal; a low-incidence district at 30 may be an outbreak. High predicted counts in high-baseline districts (Colombo, Gampaha) are often **not** outbreaks — on holdout, **240 of 260** top-decile M1 prediction weeks are non-outbreaks.
+
+**Empirical comparison (M2-009, holdout — 2,600 district-weeks, 40 true outbreaks):**
+
+| Alert / scoring rule | PR-AUC | Recall | Precision | F2 | Alerts |
+|---|---:|---:|---:|---:|---:|
+| **M2 production (isotonic, τ=0.14)** | **0.412** | **0.600** | 0.338 | **0.519** | 71 |
+| M1 forecast > **same epidemic threshold** | 0.063 | 0.225 | 0.563 | 0.256 | 16 |
+| M1 excess (pred − threshold) score | 0.280 | — | — | — | — |
+| M1 forecast > **fixed 100 cases** (naive) | 0.063 | 0.500 | 0.073 | 0.231 | 273 |
+| Oracle: actual > epidemic threshold | 0.302 | 1.000 | 1.000 | 1.000 | 40 |
+
+**Key findings:**
+
+- M2 ranks outbreak weeks **~6.5× better** on PR-AUC than M1-threshold (0.412 vs 0.063).
+- M2 recall **60%** vs M1-threshold **22.5%** — M2 catches **15 outbreaks M1 misses**; M1-threshold catches **zero** M2 misses.
+- Naive fixed cutoff (>100 cases) fires **273 alerts** at **7.3% precision** — not viable for surveillance.
+- M1-threshold has higher precision (56%) but misses most outbreaks — F2-optimal early warning favors M2 (Decision 024).
+
+**Defense one-liner:** “Module 1 quantifies expected cases; Module 2 detects relative epidemic exceedance. Thresholding M1 forecasts on holdout achieved 0.063 PR-AUC and 22.5% recall versus Module 2's 0.412 and 60% — Module 2 is not redundant.”
+
+**Evidence:** `scripts/m2_009_m1_alert_baseline.py`, `outputs/metrics/module2/m2_009_{m1_alert_baseline,summary,discordant_counts}.csv`, `module_2_classification/EXPERIMENT_LOG.md` M2-009.

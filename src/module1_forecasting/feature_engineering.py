@@ -52,6 +52,11 @@ from src.config import (  # noqa: E402
     MONSOON_WEEKS_NE,
     MONSOON_WEEKS_SW,
 )
+from src.preprocessing.reporting_anomalies import (  # noqa: E402
+    REPORTING_DELAY_FEATURE_COLUMNS,
+    compute_reporting_delay_features,
+    mask_untrusted_cases,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,27 +87,40 @@ WEEKS_PER_YEAR = 52
 # Fold-agnostic features (Feature Groups 1, 2, 4)
 # ---------------------------------------------------------------------------
 
-def build_fold_agnostic_features(df: pd.DataFrame) -> pd.DataFrame:
+def build_fold_agnostic_features(
+    df: pd.DataFrame,
+    *,
+    apply_nowcast_lag1: bool = True,
+) -> pd.DataFrame:
     """Build the Stage 2 features that are pure shifts/windows of
     already-observed values and are therefore safe to compute once, globally
-    (FEATURE_ENGINEERING_SPEC.md Feature Groups 1, 2, 4).
+    (FEATURE_ENGINEERING_SPEC.md Feature Groups 1, 2, 4, 6).
+
+    When ``apply_nowcast_lag1`` is True (M1-006B default), if week *t−1* is
+    ``is_reporting_anomaly``, ``cases_lag_1`` is imputed as
+    ``max(cases_lag_2, rolling_mean_cases_4w)`` for feature derivation only.
     """
     df = df.sort_values(["District", "Year", "Week"]).reset_index(drop=True)
     out = df.copy()
     grouped = df.groupby("District")
 
+    # Case-derived features ignore imputed and suspected reporting-anomaly
+    # weeks (Decision 026) — same principle as Module 2's is_imputed guard.
+    clean_cases = mask_untrusted_cases(df)
+    clean_grouped = clean_cases.groupby(df["District"])
+
     # --- Feature Group 1: case-trend features ---
     for lag in CASE_LAGS:
-        out[f"cases_lag_{lag}"] = grouped["Number_of_Cases"].shift(lag)
+        out[f"cases_lag_{lag}"] = clean_grouped.shift(lag)
 
     # Rolling stats use only the ROLLING_WINDOW weeks strictly BEFORE the
     # current row (shift(1) before rolling) - the current week's own case
     # count is exactly what Stage 2 is trying to correct, so it must never
     # leak into its own feature row.
-    out["rolling_mean_cases_4w"] = grouped["Number_of_Cases"].transform(
+    out["rolling_mean_cases_4w"] = clean_grouped.transform(
         lambda s: s.shift(1).rolling(ROLLING_WINDOW).mean()
     )
-    out["rolling_std_cases_4w"] = grouped["Number_of_Cases"].transform(
+    out["rolling_std_cases_4w"] = clean_grouped.transform(
         lambda s: s.shift(1).rolling(ROLLING_WINDOW).std()
     )
 
@@ -112,6 +130,24 @@ def build_fold_agnostic_features(df: pd.DataFrame) -> pd.DataFrame:
     # (see DATA_DICTIONARY.md Data Quality Notes) - this is an implementation
     # choice, not a settled research decision, flagged for future review.
     out["rate_of_change"] = out["cases_lag_1"] - out["cases_lag_2"]
+
+    # M1-006B optional nowcast: replace poisoned cases_lag_1 when prior week flagged.
+    if apply_nowcast_lag1 and "is_reporting_anomaly" in df.columns:
+        prior_flagged = grouped["is_reporting_anomaly"].shift(1).fillna(False).astype(bool)
+        lag2 = out["cases_lag_2"].to_numpy(dtype=float)
+        roll_mean = out["rolling_mean_cases_4w"].to_numpy(dtype=float)
+        nowcast = np.fmax(
+            np.where(np.isnan(lag2), -np.inf, lag2),
+            np.where(np.isnan(roll_mean), -np.inf, roll_mean),
+        )
+        nowcast = np.where(np.isinf(nowcast), np.nan, nowcast)
+        replace_mask = prior_flagged.to_numpy() & ~np.isnan(nowcast)
+        out.loc[replace_mask, "cases_lag_1"] = nowcast[replace_mask]
+
+    # --- Feature Group 6: reporting-delay / nowcasting state (M1-006B) ---
+    reporting_feats = compute_reporting_delay_features(out)
+    for col in REPORTING_DELAY_FEATURE_COLUMNS:
+        out[col] = reporting_feats[col].to_numpy()
 
     # --- Feature Group 2: lagged climate features ---
     for lag in RAINFALL_LAGS:

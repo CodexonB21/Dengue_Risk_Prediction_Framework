@@ -1,0 +1,3 @@
+architecture,pr_auc,roc_auc,brier_skill_score,alert_recall_at_0.14,alert_precision_at_0.14,n_obs_scored,era
+isotonic,0.4116575828696608,0.8822900390625,0.2315237751704754,0.6,0.3380281690140845,2600,pre_promotion
+isotonic,0.4116575828696608,0.8822900390625,0.2315237751704754,0.6,0.3380281690140845,2600,post_promotion
