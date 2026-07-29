@@ -1,0 +1,2 @@
+variant,tau,tau_ramp,rho,holdout_recall_baseline,holdout_precision_baseline,holdout_f2_baseline,holdout_recall_ramp,holdout_precision_ramp,holdout_f2_ramp,accept_criterion
+m2_007_c,0.14,0.1,2.0,0.6,0.3380281690140845,0.5194805194805194,0.6,0.3287671232876712,0.5150214592274678,False

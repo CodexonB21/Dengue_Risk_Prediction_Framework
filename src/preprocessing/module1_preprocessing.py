@@ -40,6 +40,7 @@ from src.config import (  # noqa: E402
     SHARED_EPI_WEEK_CALENDAR_PATH,
     SHARED_POPULATION_ANNUAL_PATH,
 )
+from src.preprocessing.reporting_anomalies import flag_reporting_anomalies  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -280,12 +281,16 @@ def validate_weekly_modeling_table(df: pd.DataFrame) -> None:
 
     if "is_imputed" not in df.columns:
         raise ValueError("is_imputed column missing.")
+    if "is_reporting_anomaly" not in df.columns:
+        raise ValueError("is_reporting_anomaly column missing.")
 
     logger.info(
         "Validation passed: %d rows, %d districts, interior years %d-%d each "
-        "have exactly %d weeks, %d rows flagged is_imputed.",
+        "have exactly %d weeks, %d rows flagged is_imputed, %d rows flagged "
+        "is_reporting_anomaly.",
         len(df), n_districts, min_year + 1, max_year - 1,
         CANONICAL_WEEKS_PER_YEAR, int(df["is_imputed"].sum()),
+        int(df["is_reporting_anomaly"].sum()),
     )
 
 
@@ -303,6 +308,7 @@ def run_module1_preprocessing() -> pd.DataFrame:
 
     missing = find_missing_weeks(epi)
     epi = impute_missing_weeks(epi, missing, calendar)
+    epi = flag_reporting_anomalies(epi)
 
     table = merge_climate(epi, climate)
     table = merge_population(table, population)

@@ -1,0 +1,2 @@
+variant,median_holdout_mase,median_holdout_smape,pooled_holdout_smape,baseline_median_mase,baseline_median_smape,baseline_pooled_smape,districts_improved_mase_vs_additive,districts_severely_harmed_mase_gt25pct,accept_mase_criterion,accept_smape_criterion
+m1_006_log,0.3747,35.23,42.45,0.386,35.0,42.3,15,1,False,False

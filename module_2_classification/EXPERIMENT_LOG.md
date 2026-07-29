@@ -959,3 +959,155 @@ Decision 021 reconfirmed on stronger empirical footing. No production code chang
 - New artifacts: `scripts/audit_smote_imbalance.py` (read-only, not wired into `main.py`),
   `outputs/metrics/module2/smote_imbalance_audit.csv`. `requirements.txt` gained
   `imbalanced-learn` (used only by this audit script).
+
+---
+
+## Experiment ID: M2-007 (IN PROGRESS)
+
+**Status:** M2-007A + M2-007C + M2-007D complete (2026-07-29); M2-007B/E not started.  
+**Spec:** `research_context/STAGE2_UPGRADE_EXPERIMENT_PLAN.md`.
+
+### Research Question
+Can logit-residual correction (M2-007A), cost-sensitive Stage 2 (M2-007B), consecutive-week alert rules (M2-007C), and leakage-safe M1-fed features (M2-007D) improve holdout PR-AUC and alert recall/precision beyond isotonic calibration?
+
+### Baseline to Beat
+Holdout isotonic PR-AUC **0.412**; alert recall **~0.60** / precision **~0.34** at threshold **0.14**.
+
+---
+
+## Experiment ID: M2-007C
+
+### Date
+2026-07-29
+
+### Research Question
+Does a consecutive-week ramp alert rule improve holdout recall/precision vs single-threshold alerting at no retrain cost?
+
+### Change
+Post-processing rule (validation-tuned):
+```text
+alert = (p >= 0.14) OR (p >= 0.10 AND cases_lag_1 / max(cases_lag_2, 1) >= 2.0)
+```
+Implemented in `src/module2_classification/alert_rules.py`; evaluation via `scripts/m2_007c_evaluate.py`. Case lags masked per Decision 028.
+
+### Metrics (holdout, isotonic architecture)
+| Rule | Precision | Recall | F2 | Alerts |
+|---|---:|---:|---:|---:|
+| Single threshold (τ=0.14) | **0.338** | 0.600 | **0.519** | 71 |
+| Ramp rule (τ_ramp=0.10, ρ=2.0) | 0.329 | 0.600 | 0.515 | 73 |
+
+Grid search: `outputs/metrics/module2/m2_007_c_ramp_grid_search.csv`.  
+Holdout comparison: `outputs/metrics/module2/m2_007_c_holdout_comparison.csv`.
+
+### Leakage Checks
+- τ_ramp and ρ selected on validation folds 2–13 only; holdout untouched.
+- `cases_lag_1/2` from pre-computed masked feature table (no current-week cases).
+
+### Interpretation
+Ramp branch adds 2 holdout alerts but **does not increase recall** (still 0.60) and **slightly lowers precision** (−0.9 pp). Validation F2 gain from the ramp grid does not transfer to holdout — same validation-improves/holdout-flat pattern seen in M2-006 SMOTE audit. Likely cause: ramp ratio signal is partially redundant with `case_anomaly_lag_*` and calibrated probability already encodes recent case momentum indirectly.
+
+### Decision
+**Reject** ramp alert rule for production (Decision 031 not proposed). Keep single F2-optimal threshold (τ=0.14). Code retained for ablation / live-scoring optional hook in `scoring_utils.apply_risk_tiers`.
+
+---
+
+## Experiment ID: M2-007A
+
+### Date
+2026-07-29
+
+### Research Question
+Can a feature-dependent logit-space residual correction improve holdout PR-AUC and alert metrics beyond isotonic calibration?
+
+### Change
+New Stage 2 architecture `logit_residual`:
+```text
+logit(p_final) = logit(p_stage1) + g(features)
+p_final = sigmoid(logit(p_final))
+```
+`g` = pooled XGBoost regressor on OOS Stage 1 rows; target = `logit(y_clipped) − logit(p_stage1)`. Same contextual features as `stacked_xgboost`. Benchmarked but excluded from official architecture selection.
+
+### Metrics (holdout)
+| Architecture | PR-AUC | BSS | Alert recall @ 0.14 | Alert precision @ 0.14 |
+|---|---:|---:|---:|---:|
+| isotonic (official) | **0.412** | **0.232** | **0.600** | 0.338 |
+| logit_residual | 0.324 | 0.023 | 0.125 | 0.417 |
+
+Validation median BSS: isotonic 0.215 vs logit_residual −0.006.  
+Artifacts: `outputs/metrics/module2/m2_007_a_vs_baseline.csv`.
+
+### Leakage Checks
+Prior-fold OOS training only; logit_residual never promoted to official; no current-week cases in features.
+
+### Interpretation
+Decisive failure on ranking (PR-AUC −0.09) and alert recall (0.125 vs 0.60). Clipped binary logit targets are too noisy at ~1.5% holdout prevalence; isotonic already captures most calibration gain. M1-style residual analogy does not transfer to bounded probabilities (consistent with Decision 022).
+
+### Decision
+**Reject** logit-residual (Decision 031 not proposed). Official Stage 2 remains isotonic.
+
+---
+
+## Experiment ID: M2-007D
+
+### Date
+2026-07-29
+
+### Research Question
+Do leakage-safe Module 1 OOS forecast features improve tree-based Stage 2 ranking and alert metrics beyond isotonic calibration?
+
+### Change
+Joined M1 walk-forward OOS `final_prediction` from `final_combined_predictions.csv` (M1-005 baseline) into Module 2 Stage 2 for tree architectures only:
+- `m1_final_prediction_lag_1` — full-calendar reindex + `shift(1)` within district
+- `m1_forecast_momentum` = `m1_final_prediction_lag_1 − cases_lag_2`
+
+Implementation: `src/module2_classification/m1_forecast_join.py`; wired via `assemble_stage2_table(include_m1_forecast_features=True)` and `--feature-variant m2_007_d`. Isotonic/Platt unchanged (feature-free).
+
+### Metrics (holdout)
+| Architecture | PR-AUC | ROC-AUC | BSS | Alert recall @ 0.14 | Alert precision @ 0.14 |
+|---|---:|---:|---:|---:|---:|
+| isotonic (official baseline) | **0.412** | 0.882 | **0.232** | 0.600 | **0.338** |
+| stacked_xgboost + M1 features | **0.465** | **0.916** | −0.067 | **0.775** | 0.194 |
+| logit_residual + M1 features | 0.352 | 0.707 | 0.073 | 0.175 | 0.636 |
+
+PR-AUC delta (best tree vs isotonic): **+0.054** (passes ≥ 0.02 gate).  
+2026 Wk20–25 slice PR-AUC: isotonic 0.471 → stacked 0.566.  
+Validation median BSS still selects **isotonic** (0.215 vs stacked −0.048).  
+Artifacts: `outputs/metrics/module2/m2_007_d_vs_baseline.csv`, `m2_007_d_summary.csv`, `stage2_compensation_metrics_m2_007_d.csv`.
+
+### Leakage Checks
+- M1 predictions sourced from fold OOS `final_combined_predictions.csv`, not production refit-on-all-data model.
+- Join keys `(District, Year, Week)`; lag-1 construction via full-calendar reindex before shift.
+- 20 671 / 25 450 calendar rows populated with `m1_final_prediction_lag_1` (expected gaps at series starts / missing M1 coverage).
+
+### Interpretation
+M1-fed features materially improve **discrimination** for `stacked_xgboost` (+5.4 pp PR-AUC, +17.5 pp alert recall at fixed τ=0.14) but **hurt calibration** (BSS −0.067) and **collapse alert precision** (0.19 vs 0.34) at the F2-optimal threshold. Isotonic — which cannot consume these features — remains best on validation BSS and holdout calibration. The pre-registered PR-AUC acceptance gate passes, but a production switch to stacked_xgboost+M1 would require threshold retuning and/or a calibration layer; not recommended without that follow-up.
+
+### Decision
+**Accept feature signal; defer production architecture switch.** Pre-registered PR-AUC criterion met; **Decision 031 not proposed** for official Stage 2 (keep isotonic). Retain `m2_007_d` variant path for ablation; optional follow-ups: M2-007B cost-sensitive stacked model or holdout threshold scan on stacked+M1 probabilities.
+
+### Phases Remaining
+- **M2-007B:** Cost-sensitive / focal-loss variants
+- **M2-007E:** (Optional) Ramp-sensitive label ablation
+
+See experiment plan for metrics, leakage checks, and acceptance criteria.
+
+---
+
+## Production stack promotion (2026-07-29)
+
+**Module 1:** M1-006B Feature Group 6 promoted to default paths (Decision 030 accepted).  
+**Module 2:** isotonic Stage 2, alert threshold **τ=0.14**, high-confidence **0.35**, no ramp rule.
+
+Holdout confirmation after default-path refit:
+| Module | Metric | Pre-promotion | Post-promotion |
+|---|---:|---:|---:|
+| M1 | Median MASE | 0.386 | **0.374** |
+| M1 | Median sMAPE | 35.0 | **34.2** |
+| M1 | Districts improved (MASE) | — | 22/25 |
+| M2 | PR-AUC (isotonic) | 0.412 | 0.412 |
+| M2 | Alert recall @ 0.14 | 0.600 | 0.600 |
+| M2 | Alert precision @ 0.14 | 0.338 | 0.338 |
+
+Artifacts: `outputs/metrics/production_stack_evaluation_summary.csv`, backup at
+`outputs/metrics/production_promotion_backup_2026-07-29/`. Ablations unchanged at
+variant paths (`_m1_006_a`, `_m1_006_b`, `_m2_007_d`).

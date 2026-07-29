@@ -220,7 +220,7 @@ One row should represent:
 District + Epidemiological Week + Year
 ```
 
-Each row also carries an `is_imputed` flag (see Decision 011) marking whether `Number_of_Cases` for that row was imputed due to a missing source week.
+Each row also carries an `is_imputed` flag (see Decision 011) marking whether `Number_of_Cases` for that row was imputed due to a missing source week, and an `is_reporting_anomaly` flag (Decision 028) marking suspected delayed-reporting catch-up weeks (sharp drop ≥75% after ≥100 prior-week cases, followed by ≥2.5× rebound). The latter is used only to mask case-derived features — raw counts are retained for labels and metrics.
 
 ---
 

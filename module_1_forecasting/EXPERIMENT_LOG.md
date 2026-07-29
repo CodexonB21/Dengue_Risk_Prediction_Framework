@@ -551,3 +551,189 @@ follow-ups.
 - `src/config.py` (`MODULE1_FUTURE_FORECAST_PATH` added).
 - `src/module1_forecasting/forecast_future.py` (new file).
 - `research_context/CHANGELOG.md` (new entry).
+
+---
+
+## Experiment ID: M1-005
+
+### Date
+2026-07-29
+
+### Research Question
+After closing the climate gap (weather through 2026 Wk25), can we fix the two
+main operational failure modes behind poor 2026 outbreak-week performance: (1)
+reporting-lag dips poisoning case lags, and (2) flat 104-week SARIMA holdout
+misrepresenting weekly refit deployment?
+
+### Districts
+All 25 for pipeline rerun; Colombo/Gampaha spot-checked for 2026 Wk22–25 rolling
+comparison (full 25-district rolling run deferred — ~26 s for 2 districts).
+
+### Data Period
+Full history through 2026 Wk25; climate complete through Wk25 post-refresh.
+
+### Stage 1 Model
+Unchanged SARIMA configs. Rolling evaluator refits per week on pre-*t* history.
+
+### Stage 2 Model
+Unchanged XGBoost architecture; retrained end-to-end after reporting guard +
+residual-lag masking. Frozen `xgboost_final_model.json` used by rolling scorer.
+
+### Features Used
+Same `FEATURE_COLUMNS`; new `is_reporting_anomaly` mask via `mask_untrusted_cases()`
+(M1 Groups 1–2, M2 case lags/anomalies, M1 `residual_lag_1/2`).
+
+### Metrics
+Holdout MASE/sMAPE (flat 104-week combine) vs rolling 1-step sMAPE by period.
+
+### Results
+- **Reporting guard:** 33 M1 / 26 M2 rows flagged (`is_reporting_anomaly=True`);
+  Colombo/Gampaha 2026 Wk24 flagged. Wk25 `cases_lag_1` now `NaN` (masked Wk24);
+  `cases_lag_2` carries Wk23 values (~507/502) instead of poisoned Wk24 dip.
+- **Holdout (post-fix, all districts):** 23/25 districts improved MASE vs Stage 1
+  only; median improvement 32.9%.
+- **Colombo/Gampaha flat holdout sMAPE:** all holdout 17.8%/21.3%; 2026 Wk22–23
+  21.5%/19.8%; 2026 Wk22–25 block 88.7%/94.5%; Wk25 alone 129%/158% (actual
+  1,138/1,294 vs pred 246/153).
+- **Colombo/Gampaha rolling 1-step sMAPE:** all holdout 21.2%/26.7%; 2026 Wk22–23
+  **13.4%/13.1%** (improved vs flat); 2026 Wk22–25 93.5%/95.6%; Wk25 alone
+  161.5%/172.7% (pred 121/95) — spike still ~7× underestimated.
+- **Full 25-district rolling run (2026-07-29 follow-up):** 2,600 rows;
+  median holdout-all sMAPE 39.0% (rolling mode; not comparable to MASE).
+  ACF diagnostic plots regenerated via atomic save fix in `combine.py`.
+
+### Residual Diagnostics
+Not re-run (combine ACF plot step failed on one district PNG save — non-blocking;
+metrics CSV written).
+
+### Interpretation
+Fix 1 removes a clear data-quality failure mode and improves near-outbreak weeks
+(Wk22–23). Fix 2 gives an honest operational deployment counterfactual; it does
+**not** magically predict catch-up spikes. Wk25 remains a documented limit for
+both modes — consistent with abrupt reporting catch-up exceeding any lag-only
+feature set.
+
+### Decision
+**Accepted** Decisions 028 (reporting guard) and 029 (rolling 1-step evaluator).
+Do not cite rolling sMAPE alongside holdout MASE as the same estimand. Full
+25-district rolling run optional for thesis appendix.
+
+### Documentation Updated
+Decisions 028–029, `CHANGELOG.md`, `FEATURE_ENGINEERING_SPEC.md`,
+`DATA_DICTIONARY.md`, `PIPELINE_ARCHITECTURE_PLAN.md`, this entry,
+`MODULE_CONTEXT.md`.
+
+---
+
+## Experiment ID: M1-006 (IN PROGRESS)
+
+**Status:** M1-006A/B complete (2026-07-29); M1-006C not started.  
+**Spec:** `research_context/STAGE2_UPGRADE_EXPERIMENT_PLAN.md`.
+
+### Research Question
+Do log-scale residual compensation (M1-006A) and reporting-delay features (M1-006B) improve holdout MASE/sMAPE beyond additive residual compensation (M1-005 baseline)?
+
+### Baseline to Beat (M1-005)
+Median holdout MASE **0.386**, median sMAPE **35.0%**, pooled holdout sMAPE **42.3%**, 23/25 districts improved vs SARIMA-only.
+
+---
+
+## Experiment ID: M1-006A
+
+### Date
+2026-07-29
+
+### Research Question
+Does log-scale (multiplicative) Stage 2 residual compensation improve holdout forecast accuracy vs additive `residual = actual − sarima_prediction`?
+
+### Change
+```text
+r_log = log1p(actual) − log1p(sarima_prediction)
+final_prediction = expm1(log1p(sarima_prediction) + predicted_r_log)
+```
+Implemented in `src/module1_forecasting/residual_transform.py`; wired through `compensation_model.py`, `combine.py`, `rolling_one_step.py`, `forecast_future.py`. Variant artifacts use `_m1_006_log` suffix (production additive baseline unchanged).
+
+### Metrics (holdout, 25 districts, non-imputed)
+| Metric | M1-005 additive | M1-006A log | Delta |
+|---|---:|---:|---:|
+| Median MASE | 0.386 | **0.375** | −2.9% |
+| Median sMAPE | **35.0%** | 35.2% | +0.2 pp |
+| Pooled holdout sMAPE | **42.3%** | 42.5% | +0.2 pp |
+| Districts improved MASE vs additive | — | **15/25** | — |
+| Districts severely harmed (>25% MASE) | — | **1** (Jaffna) | — |
+
+**Notable regressions vs additive:** Colombo MASE +15.9%, Gampaha +9.0% — the high-volume districts most relevant to 2026 outbreak-week narrative.
+
+**Slice (flat holdout, Colombo/Gampaha 2026 Wk22–25):** Log variant does not materially fix Wk25 catch-up underestimate (same structural limit as M1-005).
+
+Full per-district table: `outputs/metrics/module1/m1_006_log_vs_baseline.csv`.
+
+### Leakage Checks
+- Stage 2 target uses OOS SARIMA preds only (unchanged Decision 010).
+- Log residual lags built from masked OOS residuals on full calendar (Decision 028 masking preserved).
+- Feature columns unchanged.
+
+### Interpretation
+Log-scale compensation yields a **modest pooled median MASE gain** but **fails pre-registered adoption criteria**: only 15/25 districts beat additive (need ≥20/25 not worse by >5% relative MASE), median sMAPE is flat-to-slightly worse, and Colombo/Gampaha — the thesis-critical districts — regress. The multiplicative transform helps sparse/high-variance districts (Mannar, Kilinochchi, Matale) but hurts where Stage 1 already uses mixed raw/log configs at high volume. Wk25 catch-up spike remains hard; honest limit documented.
+
+### Decision
+**Reject** log-scale as production default (Decision 030 not proposed). Keep additive residual (M1-005) as official Module 1 Stage 2. M1-006A code retained as ablation switch (`--residual-mode log`).
+
+---
+
+## Experiment ID: M1-006B
+
+### Date
+2026-07-29
+
+### Research Question
+Do reporting-delay state features and nowcast-imputed `cases_lag_1` improve holdout forecast accuracy beyond Decision 028 masking alone?
+
+### Change
+Feature Group 6 (M1-006B):
+- `weeks_since_reporting_anomaly` (cap 4)
+- `reporting_rebound_ratio_lag1` (when prior week flagged)
+- `suspected_backfill_week` (= `is_reporting_anomaly`)
+- Nowcast: when week *t−1* flagged, `cases_lag_1 ← max(cases_lag_2, rolling_mean_cases_4w)` (features only)
+
+Implemented in `reporting_anomalies.py`, `feature_engineering.py`; variant artifacts `_m1_006_b`.
+
+### Metrics (holdout vs M1-005 additive)
+| Metric | M1-005 | M1-006B | Delta |
+|---|---:|---:|---:|
+| Median MASE | 0.386 | **0.374** | −3.1% |
+| Median sMAPE | 35.0% | **34.2%** | −0.9 pp |
+| Pooled holdout sMAPE | 42.3% | **41.7%** | −0.6 pp |
+| Districts improved MASE | — | **22/25** | — |
+| Pooled sMAPE 2026 Wk22–23 | 40.0% | 38.6% | −1.4 pp |
+
+**Thesis-critical districts:** Colombo MASE −0.7%, Gampaha −3.5% (both improve vs M1-005).  
+**Regressions:** Kilinochchi (+2.2% MASE), Mannar (+1.7%), Vavuniya (+1.4%) — sparse districts, small absolute impact.
+
+`weeks_since_reporting_anomaly` ranks **10th** by XGBoost gain (M1-006B model) — non-trivial signal.
+
+Full table: `outputs/metrics/module1/m1_006_b_vs_baseline.csv`.
+
+### Leakage Checks
+- Rebound/ramp features use only past weeks; nowcast uses only lags/rolling stats available before week *t*.
+- Raw `Number_of_Cases` unchanged in evaluation tables.
+- Residual targets unchanged (additive, OOS SARIMA).
+
+### Interpretation
+Reporting-delay features **pass pre-registered acceptance** (median holdout MASE improves). Gains are broad-based (22/25 districts) including Colombo/Gampaha, unlike M1-006A. Wk22–23 slice improves modestly (−1.4 pp, not the ≥5 pp alternate criterion); Wk25 catch-up spike remains a documented limit (not re-evaluated here in isolation). Feature importance confirms the model uses reporting-state signal rather than ignoring new columns.
+
+### Decision
+**Accept for production promotion** — **Decision 030 accepted** (2026-07-29 default-path refit).
+
+### Production promotion (2026-07-29)
+Default-path refit (`feature_engineering` → `stage2_xgboost` → `combine`):
+holdout median MASE **0.374** vs pre-promotion **0.386**, median sMAPE **34.2** vs **35.0**,
+**22/25** districts improved. Evaluation: `scripts/evaluate_production_stack.py`,
+`outputs/metrics/production_stack_m1_summary.csv`. Pre-promotion backup:
+`outputs/metrics/production_promotion_backup_2026-07-29/`.
+
+### Documentation Updated
+`FEATURE_ENGINEERING_SPEC.md` (Group 6), `CHANGELOG.md`, this entry.
+
+### Phases Remaining
+- **M1-006C:** (Stretch) Quantile/distributional Stage 2

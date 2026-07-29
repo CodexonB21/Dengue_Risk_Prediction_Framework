@@ -1,0 +1,26 @@
+District,baseline_mase,variant_mase,mase_delta_pct,baseline_smape,variant_smape,smape_delta_pp,variant_improved_mase,severely_harmed_mase
+Ampara,0.2852,0.2682,-5.97,41.58,40.59,-0.99,True,False
+Anuradhapura,0.3861,0.3726,-3.47,47.59,46.93,-0.66,True,False
+Badulla,0.3529,0.3347,-5.14,38.77,36.75,-2.02,True,False
+Batticaloa,0.2613,0.2553,-2.3,30.12,29.25,-0.88,True,False
+Colombo,0.3039,0.352,15.85,17.83,20.77,2.93,False,False
+Galle,0.5337,0.5447,2.07,24.4,26.25,1.85,False,False
+Gampaha,0.3438,0.3747,9.01,21.27,23.65,2.38,False,False
+Hambantota,0.5175,0.5001,-3.38,34.84,34.85,0.01,True,False
+Jaffna,0.1693,0.2151,27.06,31.6,38.21,6.61,False,True
+Kalutara,0.4444,0.4765,7.22,27.14,28.34,1.2,False,False
+Kandy,0.2979,0.299,0.38,22.14,22.28,0.15,False,False
+Kegalle,0.273,0.2889,5.8,30.65,31.92,1.27,False,False
+Kilinochchi,2.4201,1.9716,-18.53,102.68,99.45,-3.23,True,False
+Kurunegala,0.2762,0.2572,-6.87,27.43,26.88,-0.56,True,False
+Mannar,1.1589,0.9328,-19.51,78.9,72.29,-6.61,True,False
+Matale,1.0365,0.8613,-16.91,36.85,35.09,-1.76,True,False
+Matara,0.6506,0.6759,3.89,35.49,36.37,0.89,False,False
+Monaragala,0.5478,0.5459,-0.34,35.37,36.25,0.87,True,False
+Mullaitivu,0.464,0.4323,-6.83,95.25,93.78,-1.47,True,False
+Nuwara Eliya,1.031,1.0375,0.63,48.67,48.86,0.19,False,False
+Polonnaruwa,0.5939,0.5827,-1.89,48.93,48.83,-0.1,True,False
+Puttalam,0.1882,0.1816,-3.49,31.81,31.98,0.17,True,False
+Ratnapura,0.4846,0.5204,7.37,24.37,26.03,1.66,False,False
+Trincomalee,0.1921,0.1907,-0.73,34.98,35.23,0.24,True,False
+Vavuniya,0.3601,0.3376,-6.25,88.94,90.45,1.51,True,False

@@ -42,7 +42,9 @@ correctly-scoped value as a training input for a later model is not leakage.
 from __future__ import annotations
 
 import logging
+import os
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -55,18 +57,20 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.config import (  # noqa: E402
     DISTRICTS,
+    M1_STAGE2_RESIDUAL_MODE,
     MODULE1_SARIMA_PREDICTIONS_PATH,
     MODULE1_STAGE2_FEATURE_TABLE_PATH,
     MODULE1_WEEKLY_MODELING_TABLE_PATH,
-    MODULE1_XGBOOST_FEATURE_IMPORTANCE_PATH,
-    MODULE1_XGBOOST_FINAL_MODEL_PATH,
-    MODULE1_XGBOOST_METRICS_PATH,
-    MODULE1_XGBOOST_MODELS_DIR,
-    MODULE1_XGBOOST_PREDICTIONS_PATH,
+    module1_stage2_paths,
 )
 from src.module1_forecasting.evaluate import mae, rmse, smape  # noqa: E402
 from src.module1_forecasting.feature_engineering import (  # noqa: E402
+    REPORTING_DELAY_FEATURE_COLUMNS,
     compute_fold_climate_anomalies,
+)
+from src.module1_forecasting.residual_transform import (  # noqa: E402
+    compute_stage2_target,
+    validate_residual_mode,
 )
 from src.module1_forecasting.validation import (  # noqa: E402
     DEFAULT_HOLDOUT_YEARS,
@@ -79,7 +83,7 @@ from src.module1_forecasting.validation import (  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-TARGET_COL = "residual"
+TARGET_COL = "stage2_target"
 IMPUTED_COL = "is_imputed"
 
 WEEKS_PER_YEAR = DEFAULT_WEEKS_PER_YEAR
@@ -97,7 +101,7 @@ FOLD_AGNOSTIC_FEATURE_COLUMNS = [
     "temperature_lag_1", "temperature_lag_2", "temperature_lag_3", "temperature_lag_4",
     "humidity_lag_1", "humidity_lag_2", "humidity_lag_3", "humidity_lag_4",
     "sin_week", "cos_week", "monsoon_indicator_SW", "monsoon_indicator_NE",
-]
+] + REPORTING_DELAY_FEATURE_COLUMNS
 
 # Feature Group 3 (fold-aware anomalies), Group 5 (SARIMA prediction +
 # residual lags), plus District - a deliberate, documented extension of the
@@ -256,7 +260,12 @@ def build_fold_scoped_anomalies(
 # Residual lags (Feature Group 5) - leakage-safe, gap-aware construction
 # ---------------------------------------------------------------------------
 
-def build_residual_lags(weekly_df: pd.DataFrame, predictions_df: pd.DataFrame) -> pd.DataFrame:
+def build_residual_lags(
+    weekly_df: pd.DataFrame,
+    predictions_df: pd.DataFrame,
+    *,
+    residual_mode: str = M1_STAGE2_RESIDUAL_MODE,
+) -> pd.DataFrame:
     """Leakage-safe `residual_lag_1/2`: reindex each district's out-of-sample
     residual onto the FULL weekly calendar (not just the sparse validation +
     holdout rows) before taking `shift(1)/shift(2)`.
@@ -277,11 +286,29 @@ def build_residual_lags(weekly_df: pd.DataFrame, predictions_df: pd.DataFrame) -
     handling - not fabricated.
     """
     calendar = weekly_df[["District", "Year", "Week"]].copy()
-    residuals = predictions_df[["District", "Year", "Week", "residual"]]
-    merged = calendar.merge(residuals, on=["District", "Year", "Week"], how="left")
+    if "is_reporting_anomaly" in weekly_df.columns:
+        calendar = calendar.merge(
+            weekly_df[["District", "Year", "Week", "is_reporting_anomaly"]],
+            on=["District", "Year", "Week"],
+            how="left",
+        )
+    residuals = predictions_df[["District", "Year", "Week", "Number_of_Cases", "sarima_prediction", "residual"]].copy()
+    residuals["stage2_residual"] = compute_stage2_target(
+        residuals["Number_of_Cases"].to_numpy(),
+        residuals["sarima_prediction"].to_numpy(),
+        mode=residual_mode,
+    )
+    merged = calendar.merge(
+        residuals[["District", "Year", "Week", "stage2_residual"]],
+        on=["District", "Year", "Week"],
+        how="left",
+    )
     merged = merged.sort_values(["District", "Year", "Week"]).reset_index(drop=True)
 
-    grouped = merged.groupby("District")["residual"]
+    if "is_reporting_anomaly" in merged.columns:
+        merged.loc[merged["is_reporting_anomaly"].astype(bool), "stage2_residual"] = np.nan
+
+    grouped = merged.groupby("District")["stage2_residual"]
     merged["residual_lag_1"] = grouped.shift(1)
     merged["residual_lag_2"] = grouped.shift(2)
 
@@ -292,7 +319,8 @@ def build_residual_lags(weekly_df: pd.DataFrame, predictions_df: pd.DataFrame) -
 # Assemble the full Stage 2 working table
 # ---------------------------------------------------------------------------
 
-def assemble_stage2_table() -> pd.DataFrame:
+def assemble_stage2_table(*, residual_mode: str = M1_STAGE2_RESIDUAL_MODE) -> pd.DataFrame:
+    validate_residual_mode(residual_mode)
     weekly_df = pd.read_csv(
         MODULE1_WEEKLY_MODELING_TABLE_PATH, parse_dates=["Week_Start_Date", "Week_End_Date"]
     )
@@ -301,6 +329,12 @@ def assemble_stage2_table() -> pd.DataFrame:
     )
     predictions_df = pd.read_csv(MODULE1_SARIMA_PREDICTIONS_PATH)
 
+    predictions_df["stage2_target"] = compute_stage2_target(
+        predictions_df["Number_of_Cases"].to_numpy(),
+        predictions_df["sarima_prediction"].to_numpy(),
+        mode=residual_mode,
+    )
+
     # fold_id is a mixed int/"holdout" string column on disk - read back as
     # object/string dtype by pandas. Keep the original for output fidelity,
     # add a numeric helper column (NaN for "holdout") for internal fold logic.
@@ -308,7 +342,7 @@ def assemble_stage2_table() -> pd.DataFrame:
 
     fold_train_keys, fold_val_keys, pre_holdout_keys, holdout_keys = compute_fold_boundaries(weekly_df)
     anomalies = build_fold_scoped_anomalies(feature_df, fold_train_keys, fold_val_keys, pre_holdout_keys, holdout_keys)
-    residual_lags = build_residual_lags(weekly_df, predictions_df)
+    residual_lags = build_residual_lags(weekly_df, predictions_df, residual_mode=residual_mode)
 
     feature_subset = feature_df[["District", "Year", "Week"] + FOLD_AGNOSTIC_FEATURE_COLUMNS]
 
@@ -464,9 +498,9 @@ def _build_output_rows(df_subset: pd.DataFrame, predicted_residual: np.ndarray, 
     return out
 
 
-def _stage2_own_metrics(predictions_df: pd.DataFrame) -> pd.DataFrame:
+def _stage2_own_metrics(predictions_df: pd.DataFrame, *, residual_mode: str = M1_STAGE2_RESIDUAL_MODE) -> pd.DataFrame:
     """Per-district, per-fold (+ per-district aggregate) RMSE/MAE/sMAPE of
-    `predicted_residual` vs the actual SARIMA residual - a diagnostic on how
+    `predicted_residual` vs the Stage 2 training target - a diagnostic on how
     well Stage 2 predicts the error itself. MASE is intentionally NOT
     computed here (its seasonal-naive scale assumes a single ordered
     per-district time series, which doesn't have a clean meaning for a
@@ -479,13 +513,18 @@ def _stage2_own_metrics(predictions_df: pd.DataFrame) -> pd.DataFrame:
         fold_maes = []
         for fold_id, fold_df in district_df.groupby("fold_id"):
             mask = ~fold_df["is_imputed"].to_numpy()
+            y_true = compute_stage2_target(
+                fold_df["Number_of_Cases"].to_numpy(),
+                fold_df["sarima_prediction"].to_numpy(),
+                mode=residual_mode,
+            )
             row = {
                 "District": district,
                 "fold_id": fold_id,
                 "stage2_trained": bool(fold_df["stage2_trained"].iloc[0]),
-                "rmse": rmse(fold_df["residual"], fold_df["predicted_residual"], mask=mask),
-                "mae": mae(fold_df["residual"], fold_df["predicted_residual"], mask=mask),
-                "smape": smape(fold_df["residual"], fold_df["predicted_residual"], mask=mask),
+                "rmse": rmse(y_true, fold_df["predicted_residual"], mask=mask),
+                "mae": mae(y_true, fold_df["predicted_residual"], mask=mask),
+                "smape": smape(y_true, fold_df["predicted_residual"], mask=mask),
                 "n_obs_scored": int(mask.sum()),
                 "n_obs_total": int(len(fold_df)),
             }
@@ -509,16 +548,45 @@ def _stage2_own_metrics(predictions_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _save_xgboost_model(model: xgb.XGBRegressor, path: Path, *, retries: int = 3) -> None:
+    """Persist an XGBoost booster with retry + atomic replace (Windows-safe)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Keep the `.json` suffix on the temp file so XGBoost writes text JSON, not UBJSON.
+    tmp_path = path.with_name(f"{path.stem}.tmp{path.suffix}")
+    last_error: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+            model.save_model(tmp_path.as_posix())
+            os.replace(tmp_path, path)
+            return
+        except xgb.core.XGBoostError as exc:
+            last_error = exc
+            if attempt < retries:
+                time.sleep(0.5 * attempt)
+            elif tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
+    raise last_error  # type: ignore[misc]
+
+
 # ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 
-def run_stage2_pipeline() -> pd.DataFrame:
-    logger.info("Assembling Stage 2 feature table (residuals + features + fold-scoped anomalies + residual lags)...")
-    stage2_df = assemble_stage2_table()
+def run_stage2_pipeline(
+    *,
+    residual_mode: str | None = None,
+    feature_variant: str | None = None,
+) -> pd.DataFrame:
+    mode = validate_residual_mode(residual_mode or M1_STAGE2_RESIDUAL_MODE)
+    paths = module1_stage2_paths(mode, feature_variant=feature_variant)
 
-    MODULE1_XGBOOST_MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    MODULE1_XGBOOST_METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    logger.info("Assembling Stage 2 feature table (residual mode=%s)...", mode)
+    stage2_df = assemble_stage2_table(residual_mode=mode)
+
+    paths["xgboost_models_dir"].mkdir(parents=True, exist_ok=True)
+    paths["xgboost_metrics"].parent.mkdir(parents=True, exist_ok=True)
 
     output_frames: list[pd.DataFrame] = []
 
@@ -531,22 +599,23 @@ def run_stage2_pipeline() -> pd.DataFrame:
         target_rows = stage2_df.loc[stage2_df["fold_id_numeric"] == fold_num]
         output_frames.append(_build_output_rows(target_rows, predicted, trained))
         if model is not None:
-            model.save_model(str(MODULE1_XGBOOST_MODELS_DIR / f"fold_{fold_num}.json"))
+            _save_xgboost_model(model, paths["xgboost_models_dir"] / f"fold_{fold_num}.json")
         logger.info("Fold %d: trained on folds 1-%d, predicted %d rows.", fold_num, fold_num - 1, len(target_rows))
 
     predicted_holdout, holdout_model = train_and_predict_holdout(stage2_df)
     holdout_rows = stage2_df.loc[stage2_df["split"] == "holdout"]
     output_frames.append(_build_output_rows(holdout_rows, predicted_holdout, stage2_trained=True))
-    holdout_model.save_model(str(MODULE1_XGBOOST_MODELS_DIR / "holdout.json"))
+    _save_xgboost_model(holdout_model, paths["xgboost_models_dir"] / "holdout.json")
     logger.info("Holdout: trained on all %d folds, predicted %d rows.", N_FOLDS, len(holdout_rows))
 
     predictions_df = pd.concat(output_frames, ignore_index=True)
-    predictions_df.to_csv(MODULE1_XGBOOST_PREDICTIONS_PATH, index=False)
-    logger.info("Wrote %d Stage 2 prediction rows to %s.", len(predictions_df), MODULE1_XGBOOST_PREDICTIONS_PATH)
+    predictions_df["residual_mode"] = mode
+    predictions_df.to_csv(paths["xgboost_predictions"], index=False)
+    logger.info("Wrote %d Stage 2 prediction rows to %s.", len(predictions_df), paths["xgboost_predictions"])
 
     logger.info("Training final production model on all available out-of-sample residuals...")
     final_model = train_final_production_model(stage2_df)
-    final_model.save_model(str(MODULE1_XGBOOST_FINAL_MODEL_PATH))
+    _save_xgboost_model(final_model, paths["xgboost_final_model"])
 
     importance = final_model.get_booster().get_score(importance_type="gain")
     importance_df = (
@@ -561,21 +630,32 @@ def run_stage2_pipeline() -> pd.DataFrame:
         importance_df = pd.concat(
             [importance_df, pd.DataFrame({"feature": sorted(missing), "gain": 0.0})], ignore_index=True
         )
-    importance_df.to_csv(MODULE1_XGBOOST_FEATURE_IMPORTANCE_PATH, index=False)
+    importance_df.to_csv(paths["xgboost_feature_importance"], index=False)
 
-    metrics_df = _stage2_own_metrics(predictions_df)
-    metrics_df.to_csv(MODULE1_XGBOOST_METRICS_PATH, index=False)
+    metrics_df = _stage2_own_metrics(predictions_df, residual_mode=mode)
+    metrics_df.to_csv(paths["xgboost_metrics"], index=False)
 
     logger.info(
-        "Stage 2 complete: predictions -> %s | final model -> %s | feature importance -> %s | metrics -> %s",
-        MODULE1_XGBOOST_PREDICTIONS_PATH,
-        MODULE1_XGBOOST_FINAL_MODEL_PATH,
-        MODULE1_XGBOOST_FEATURE_IMPORTANCE_PATH,
-        MODULE1_XGBOOST_METRICS_PATH,
+        "Stage 2 complete (mode=%s): predictions -> %s | final model -> %s | feature importance -> %s | metrics -> %s",
+        mode,
+        paths["xgboost_predictions"],
+        paths["xgboost_final_model"],
+        paths["xgboost_feature_importance"],
+        paths["xgboost_metrics"],
     )
     return predictions_df
 
 
 if __name__ == "__main__":
+    import argparse
+
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    run_stage2_pipeline()
+    parser = argparse.ArgumentParser(description="Module 1 Stage 2 XGBoost residual compensation.")
+    parser.add_argument(
+        "--residual-mode",
+        choices=["additive", "log"],
+        default=None,
+        help="Stage 2 target transform: additive (M1-005 baseline) or log (M1-006A).",
+    )
+    args = parser.parse_args()
+    run_stage2_pipeline(residual_mode=args.residual_mode)

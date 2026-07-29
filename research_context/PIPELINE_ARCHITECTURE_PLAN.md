@@ -333,6 +333,25 @@ per `FEATURE_ENGINEERING_SPEC.md`, writes to `data/features/module1/`.
 | `src/module1_forecasting/combine.py` | `final_prediction = sarima_prediction + predicted_residual` |
 | `src/module1_forecasting/evaluate.py` | RMSE/MAE/sMAPE/MASE, filtering out `is_imputed == True` rows first |
 | `src/module1_forecasting/main.py` | Orchestrates the full Module 1 pipeline end to end |
+| `src/module1_forecasting/rolling_one_step.py` | Rolling 1-step-ahead operational evaluation (Decision 029; standalone CLI, not a `main.py` stage) |
+
+## `src/module1_forecasting/rolling_one_step.py` (new, standalone — Decision 029)
+
+Answers: "if we refit SARIMA each week on all data strictly before week *t* and
+forecast only *t*, then apply the frozen Stage 2 checkpoint, how accurate are we?"
+— the evaluation mode closest to real weekly production deployment. Distinct from
+`baseline_sarima.forecast_holdout()` (single SARIMA fit → 104-week multi-step block)
+and from walk-forward fold scoring (fixed fold structure for model selection).
+
+Per week *t* per district: refit SARIMA on pre-*t* history using stored order/config;
+1-step forecast; build fold-agnostic features with `is_imputed` + `is_reporting_anomaly`
+masking; compute fold-scoped climate anomalies from the train-only window ending at
+*t*−1; score with frozen `xgboost_final_model.json`; clip `final_prediction` ≥ 0.
+
+CLI: `python -m src.module1_forecasting.rolling_one_step [--districts ...] [--scope holdout|all]`
+
+Outputs: `data/processed/module1/rolling_one_step_predictions.csv`,
+`outputs/metrics/module1/rolling_one_step_metrics.csv`.
 
 ---
 

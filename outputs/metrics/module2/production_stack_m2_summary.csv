@@ -1,0 +1,2 @@
+module,architecture,alert_threshold,ramp_rule,post_pr_auc,post_alert_recall,post_alert_precision,baseline_pr_auc,baseline_alert_recall,baseline_alert_precision,holdout_alert_count,alert_threshold_used
+M2,isotonic,0.14,False,0.4117,0.6,0.338,0.412,0.6,0.338,71,0.14
