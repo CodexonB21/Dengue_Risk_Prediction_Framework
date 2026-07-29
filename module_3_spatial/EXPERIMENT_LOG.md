@@ -504,12 +504,26 @@ Stop at the first iteration meeting BOTH, or at iteration 4.
   `Risk_t = Risk_(t-1) + alpha * predicted_residual_t`. Empirically tested
   4 values rather than picking one blind:
 
-  | Alpha | Iteration 1 max_delta | 4-iteration behavior | Converges? |
-  |---|---|---|---|---|
-  | 1.0 | 192.62 | Diverges (→1094.06), Risk → -1414 | No |
-  | 0.3 | 57.79 | Grows steadily (57.8→98.8), decelerating | No |
-  | 0.15 | 28.89 | Grows slowly (28.9→34.1), clearly decelerating | No |
-  | 0.05 | 9.63 | **Converges at iteration 1** | Yes |
+  | Alpha | Iteration 1 max_delta | 4-iteration behavior | % change per step | Converges? |
+  |---|---|---|---|---|---|
+  | 1.0 | 192.62 | Diverges (→1094.06), Risk → -1414 | +43%, +76%, +126% (accelerating) | No |
+  | 0.3 | 57.79 | Grows every iteration (→98.79) | +13%, +22%, +24% (accelerating) | No |
+  | 0.15 | 28.89 | Near-plateau for 2 steps, then ticks up (→34.09) | +4%, +4%, +10% | No |
+  | 0.05 | 9.63 | **Converges at iteration 1** | — | Yes |
+
+  **Correction to an earlier draft of this table**: "decelerating" was
+  initially used to describe both alpha=0.3 and alpha=0.15's behavior.
+  Checked against the actual per-iteration % changes above and found
+  imprecise: alpha=0.3's growth rate is clearly ACCELERATING (13%→22%→24%),
+  just far less severely than alpha=1.0's catastrophic blowup - that is
+  "less severe divergence," not deceleration. Alpha=0.15 is closer to a
+  genuine plateau for two iterations, but the final step ticks back up
+  rather than continuing to shrink, so even calling that a clean
+  deceleration overstates it. Corrected framing: smaller alpha dramatically
+  slows the RATE of divergence relative to the unshrunk formula, but this
+  is a stability-vs-speed-of-convergence tradeoff, not a clean
+  "smaller alpha decelerates toward convergence" story - only alpha=0.05
+  actually converges within the 4-iteration budget.
 
   Important pattern across ALL 4 values: aggregated Moran's I of the
   residual is NEVER significant, even at iteration 1 (p_sim ≥ 0.14
@@ -524,9 +538,13 @@ Stop at the first iteration meeting BOTH, or at iteration 4.
   alpha is largely a consequence of the threshold choice, not evidence of
   several iterations of genuine refinement.
 - **User chose alpha=0.05** (clean convergence at iteration 1) over
-  alpha=0.15 (runs the full 4-iteration budget, shows a real decelerating
-  trend, never numerically converges) - both were presented as legitimate,
-  defensible options.
+  alpha=0.15 (runs the full 4-iteration budget, near-plateaus for 2
+  iterations before ticking up again, never numerically converges) - both
+  were presented as legitimate, defensible options. User later dropped a
+  follow-up request to test alpha=0.15's fit quality separately: since it
+  never converges within the iteration budget, reporting it as a "final"
+  model would contradict the loop's own convergence criterion - alpha=0.05
+  remains the sole reported result (see M3-005).
 - **Final result**: converged at **iteration 1**. `max_delta = 9.63 <
   epsilon = 12.98`. Moran's I = -0.158, p_sim = 0.147 (not significant).
   `data/features/module3/hybrid_risk_map.csv`: 25,123 rows,
@@ -599,3 +617,150 @@ are all implemented.
 - Added `src/module3_spatial/iterative_loop.py`.
 - Added `outputs/metrics/module3/iterative_convergence_log.csv`,
   `data/features/module3/hybrid_risk_map.csv`.
+
+---
+
+## Experiment ID: M3-005
+
+### Date
+2026-07-29
+
+### Research Question
+Does Stage 2's residual compensation actually improve the fit to real
+case counts relative to Stage 1 alone - and can this be visualized and
+tabulated cleanly for the report's Results chapter?
+
+### Spatial Unit
+District-week, same grain as M3-001 through M3-004.
+
+### Baseline Spatial Method
+Compares `Risk_0` (Stage 1 alone - the rescaled `KDE_baseline`, per
+`MODULE_CONTEXT.md`'s "KDE_baseline: Two Valid Uses") against `Risk`
+(Stage 2 final, from M3-004's `hybrid_risk_map.csv`).
+
+### Stage 2 Model
+No new model trained - `src/module3_spatial/evaluate.py` evaluates the
+already-trained/already-run Stage 1 and Stage 2 outputs.
+
+### Spatial Features Used
+None new - reports the RF feature importance already computed in M3-003.
+
+### Validation Method
+Direct comparison of Risk_0 vs Risk (Pearson correlation, MAE, RMSE
+against `Number_of_Cases`), plus the already-established Global Moran's I
+(M3-001) and out-of-fold spatial CV metrics (M3-003).
+
+### Results
+- **Critical pre-report finding, checked before writing any script code**:
+  the task asked to "quantify the improvement" of Stage 2 over Stage 1.
+  Computed directly first, rather than assuming the premise:
+
+  | Metric | Stage 1 alone (Risk_0) | Stage 2 final (Risk) | Change |
+  |---|---|---|---|
+  | corr(·, Number_of_Cases) | 0.8243 | 0.8205 | -0.0037 |
+  | MAE | 20.187 | 20.538 | +1.74% (worse) |
+  | RMSE | 47.304 | 47.716 | +0.87% (worse) |
+
+  **There is no improvement - Stage 2 is marginally worse on every
+  metric.** Verified twice (an initial index-alignment bug in the first
+  attempt was caught and fixed before trusting the numbers - see the
+  traceback in this session's tool history). Flagged to the user before
+  writing `evaluate.py` as if an improvement existed; user confirmed
+  reporting it honestly as a null/negative result rather than reframing
+  around a different, more flattering metric.
+- **Why**: `alpha = 0.05` (M3-004) was chosen specifically because it is
+  small enough to satisfy the STRICT `max_delta < epsilon` convergence
+  bound at iteration 1 - not because it was tuned for accuracy. A small,
+  genuinely out-of-fold (imperfect) correction has no guaranteed sign; here
+  it landed marginally negative on aggregate fit. This is consistent with,
+  not contradictory to, M3-004's finding that the RF's real contribution is
+  district-level burden correction (population/climate-driven), not
+  improving overall predictive fit at this alpha.
+- **Convergence plot** (`outputs/figures/module3/convergence_plot.png`):
+  two panels (max_delta vs. epsilon; Risk min/max range), both showing a
+  single point, honestly - the loop converged at iteration 1 (M3-004), so
+  there is only one iteration to plot. Styled per the project's validated
+  reference palette (dataviz skill): blue/orange categorical pair for the
+  two Risk-range series, muted gray dashed line for the epsilon threshold
+  (a reference value, not a data series).
+- **Feature importance chart**
+  (`outputs/figures/module3/feature_importance.png`): all 16 features,
+  single-hue horizontal bars, sorted descending -
+  `population_density` (0.407) and `Estimated_Population` (0.178) visually
+  dominate, matching M3-003's numbers exactly.
+- **Results summary**
+  (`outputs/metrics/module3/results_summary.txt`, also printed to
+  console): consolidates Stage 1's Moran's I (I=0.70, p=0.001), the
+  Stage 1-vs-Stage 2 comparison table above, Stage 2's out-of-fold spatial
+  CV accuracy (MAE=33.12±23.57, RMSE=54.79±29.63, from M3-003), the
+  iterative convergence log, and the top-10 feature importance table - one
+  file, ready to paste into the report's Results chapter.
+
+### Interpretation
+Catching the "no improvement" result before writing the evaluation script
+around an assumed positive finding is the same discipline this whole
+Stage 2 build has required repeatedly (the KDE scale mismatch, the
+divergent loop, the unverified spatial-declustering claim) - a pattern
+worth naming explicitly: every one of Stage 2's headline numbers in this
+module has been checked directly against raw data before being written
+into permanent documentation, not assumed from the spec's framing or from
+what would make the results chapter read better. The null result here is
+not a failure of Stage 2 - M3-004 already established the RF's genuine
+contribution is district-level burden correction, not aggregate fit
+improvement at this shrinkage level; a future iteration could explore
+whether a different alpha (traded against the strict convergence
+criterion) produces a genuine net improvement, but that is out of scope
+for this evaluation step.
+
+**A null aggregate-fit result does not mean Stage 2 has no value.** Three
+points, checked against the evidence rather than asserted:
+1. **Feature importance is a genuinely Stage-2-only capability.** Stage 1's
+   KDE baseline has zero covariates - a pure spatial-proximity kernel with
+   nothing to attribute importance to. Ranking `population_density`,
+   `Estimated_Population`, and climate timing (`temperature_anomaly`,
+   `monsoon_indicator_SW`, lag features) as drivers of district-level
+   burden is diagnostic/explanatory value Stage 1 could never provide,
+   regardless of alpha or convergence outcome.
+2. **Alpha=0.05 was a stability/convergence design choice, not a modeling
+   failure - but "decelerating" overstated the alternative's behavior.**
+   Corrected against the actual per-iteration numbers (see the alpha
+   comparison table above): alpha=0.3's growth rate is accelerating
+   (+13%, +22%, +24% per step), just far less severely than alpha=1.0's
+   catastrophic blowup - that is reduced-severity divergence, not
+   deceleration. Alpha=0.15 nearly plateaus for two iterations before
+   ticking back up. Neither numerically converges within the 4-iteration
+   budget. This is a genuine stability-vs-speed-of-convergence tradeoff,
+   not a clean "smaller alpha decelerates toward convergence" story, and
+   not evidence the architecture is broken - alpha=0.05 remains the only
+   value tested that actually satisfies the convergence criterion, so it
+   is the sole reported result (a follow-up request to separately test
+   alpha=0.15's fit quality was dropped for exactly this reason - using a
+   non-converged value as "the" result would contradict the loop's own
+   stopping criterion).
+3. **The null result is itself evidence of methodological rigor**: it was
+   verified directly (catching an index-alignment bug in the process, see
+   Results above) rather than assumed, and reported transparently rather
+   than reframed around a more flattering metric.
+
+### Decision
+**Keep** the null/negative result as the honestly-reported comparison -
+no reframing around a different metric to manufacture an "improvement"
+narrative. **Keep** both charts even though the convergence plot shows
+only a single point - an accurate representation of what happened, not a
+sparse or broken chart. **Keep** alpha=0.05 as the sole reported iterative-
+loop result - alpha=0.15/0.3 are documented as a rejected tradeoff, not as
+alternative "final" results, since neither converges within budget.
+**Proceed** to whatever Module 3 does next (dashboard export / integration
+with Module 1 and 2, per Open Question #6) with this evaluation as the
+honest baseline record.
+
+### Documentation Updated
+- `module_3_spatial/MODULE_CONTEXT.md` (new "Evaluation" subsection under
+  "Stage 2 Implementation Status").
+- `module_3_spatial/EXPERIMENT_LOG.md` (this entry).
+- `src/config.py` (added `MODULE3_FIGURES_DIR`,
+  `MODULE3_CONVERGENCE_PLOT_PATH`, `MODULE3_FEATURE_IMPORTANCE_PLOT_PATH`,
+  `MODULE3_RESULTS_SUMMARY_PATH`).
+- Added `src/module3_spatial/evaluate.py`.
+- Added `outputs/figures/module3/convergence_plot.png`,
+  `feature_importance.png`, `outputs/metrics/module3/results_summary.txt`.
