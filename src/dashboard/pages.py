@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import folium
 import geopandas as gpd
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from folium.plugins import HeatMap
+from streamlit_folium import st_folium
 
 from src.config import (
     DASHBOARD_REFRESH_MANIFEST_PATH,
@@ -272,6 +275,71 @@ def _hybrid_risk_choropleth(
     return fig
 
 
+# Google-Maps-style intensity gradient (blue -> green -> yellow -> orange ->
+# red), distinct in kind from the choropleth's discrete-polygon YlOrRd scale -
+# leaflet.heat expects fractional stop keys as strings.
+HEATMAP_GRADIENT = {"0.2": "blue", "0.4": "lime", "0.6": "yellow", "0.8": "orange", "1.0": "red"}
+
+
+def _hybrid_risk_folium_heatmap(
+    geometry: gpd.GeoDataFrame, latest: pd.DataFrame, district: str
+) -> folium.Map:
+    """Continuous heat-cloud view of Hybrid Risk, centered on each district's
+    centroid (native EPSG:4326, same geometry the choropleth uses) - a
+    plume-style complement to the choropleth's precise district boundaries,
+    not a replacement for it.
+    """
+    merged = geometry.merge(latest[["District", "Risk", "Number_of_Cases"]], on="District", how="left")
+    centroids = merged.geometry.centroid
+
+    # leaflet.heat's `max` option defaults to 1.0 - passing raw Risk values
+    # (up to ~1300) unnormalized would saturate every point to full
+    # intensity, collapsing the gradient to solid red. Min-max scaling to
+    # [0, 1] here (rather than relying on an internal default) guarantees
+    # the full blue->red gradient is actually used across the data.
+    max_risk = merged["Risk"].max()
+    heat_data = [
+        [pt.y, pt.x, float(risk) / float(max_risk)]
+        for pt, risk in zip(centroids, merged["Risk"])
+        if pd.notna(risk) and max_risk > 0
+    ]
+
+    # A fixed zoom_start, not fit_bounds() - fit_bounds computes its zoom
+    # from the EMBEDDING IFRAME's measured width at the moment the map
+    # script runs, which races against streamlit-folium's own container
+    # sizing (observed: it consistently under-zoomed to show most of
+    # southern India alongside Sri Lanka, regardless of
+    # use_container_width). zoom_start=8 is tuned directly against Sri
+    # Lanka's actual extent (~435km N-S, ~225km E-W) and has no such race.
+    fmap = folium.Map(
+        location=[centroids.y.mean(), centroids.x.mean()], zoom_start=8, tiles="OpenStreetMap"
+    )
+
+    HeatMap(heat_data, radius=45, blur=35, max_zoom=8, gradient=HEATMAP_GRADIENT).add_to(fmap)
+
+    for _, row in merged.iterrows():
+        pt = row.geometry.centroid
+        is_selected = row["District"] == district
+        risk_text = f"{row['Risk']:.1f}" if pd.notna(row["Risk"]) else "—"
+        cases_text = int(row["Number_of_Cases"]) if pd.notna(row["Number_of_Cases"]) else "—"
+        folium.Marker(
+            location=[pt.y, pt.x],
+            popup=folium.Popup(
+                f"<b>{row['District']}</b><br>"
+                f"Hybrid Risk Score: {risk_text}<br>"
+                f"Actual Cases: {cases_text}",
+                max_width=220,
+            ),
+            tooltip=row["District"],
+            icon=folium.Icon(
+                color="red" if is_selected else "blue",
+                icon="star" if is_selected else "info-sign",
+            ),
+        ).add_to(fmap)
+
+    return fmap
+
+
 def render_operational_page(
     *,
     live: pd.DataFrame,
@@ -450,8 +518,23 @@ def render_operational_page(
             f"(selected district **{district}** outlined in black)."
         )
 
-        fig = _hybrid_risk_choropleth(district_geometry, latest, district, latest_year, latest_week)
-        st.plotly_chart(fig, use_container_width=True)
+        tab_choropleth, tab_heatmap = st.tabs(
+            ["District boundaries (choropleth)", "Heat cloud (Folium)"]
+        )
+
+        with tab_choropleth:
+            fig = _hybrid_risk_choropleth(district_geometry, latest, district, latest_year, latest_week)
+            st.plotly_chart(fig, use_container_width=True)
+
+        with tab_heatmap:
+            st.caption(
+                "Continuous heat-cloud intensity weighted by Hybrid Risk, centered on each "
+                "district's centroid over an OpenStreetMap base layer — complements the "
+                "choropleth's precise district boundaries with a plume-style view of where "
+                "risk clusters spatially. Click a pin for that district's exact values."
+            )
+            heatmap = _hybrid_risk_folium_heatmap(district_geometry, latest, district)
+            st_folium(heatmap, use_container_width=True, height=600, returned_objects=[])
 
         district_row = latest.loc[latest["District"] == district]
         if not district_row.empty:

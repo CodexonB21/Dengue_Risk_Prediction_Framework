@@ -17,5 +17,6 @@ rasterio
 xarray
 shapely
 folium
+streamlit-folium
 libpysal
 esda
