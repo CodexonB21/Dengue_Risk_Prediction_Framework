@@ -17,6 +17,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import geopandas as gpd
 import pandas as pd
 import streamlit as st
 
@@ -27,13 +28,16 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.config import (  # noqa: E402
     DASHBOARD_REFRESH_MANIFEST_PATH,
     DISTRICTS,
+    GADM_LEVEL1_SHAPEFILE_PATH,
     MODULE1_FUTURE_FORECAST_PATH,
     MODULE1_WEEKLY_MODELING_TABLE_PATH,
     MODULE2_FUTURE_RISK_PREDICTIONS_PATH,
     MODULE2_LIVE_RISK_PREDICTIONS_PATH,
+    MODULE3_HYBRID_RISK_MAP_PATH,
     SHARED_CLIMATE_WEEKLY_PATH,
 )
 from src.dashboard.pages import render_evidence_page, render_operational_page  # noqa: E402
+from src.module3_spatial.kde_baseline import GADM_NAME_FIXES  # noqa: E402
 
 REFRESH_SCRIPT = PROJECT_ROOT / "scripts" / "refresh_dashboard_data.py"
 
@@ -62,6 +66,19 @@ def _file_mtime(path: Path) -> float | None:
 
 def _load(path: Path) -> pd.DataFrame:
     return load_csv(str(path), _file_mtime(path))
+
+
+@st.cache_data(show_spinner=False)
+def load_district_geometry() -> gpd.GeoDataFrame:
+    """District polygons in native EPSG:4326 (lat/lon) - NOT the UTM-reprojected
+    version kde_baseline.py's load_district_boundaries() returns, which is in
+    meters and wrong for Plotly's choropleth (expects geographic coordinates).
+    """
+    if not GADM_LEVEL1_SHAPEFILE_PATH.exists():
+        return gpd.GeoDataFrame()
+    gdf = gpd.read_file(GADM_LEVEL1_SHAPEFILE_PATH)
+    gdf["District"] = gdf["NAME_1"].replace(GADM_NAME_FIXES)
+    return gdf[["District", "geometry"]]
 
 
 def _latest_case_week(modeling: pd.DataFrame) -> tuple[int | None, int | None]:
@@ -137,6 +154,8 @@ def main() -> None:
     m1_weekly = _load(MODULE1_WEEKLY_MODELING_TABLE_PATH)
     climate = _load(SHARED_CLIMATE_WEEKLY_PATH)
     manifest = _load(DASHBOARD_REFRESH_MANIFEST_PATH)
+    hybrid_risk = _load(MODULE3_HYBRID_RISK_MAP_PATH)
+    district_geometry = load_district_geometry()
 
     case_y, case_w = _latest_case_week(m1_weekly)
     clim_y, clim_w = _latest_climate_week(climate)
@@ -155,6 +174,8 @@ def main() -> None:
         m1_weekly=m1_weekly,
         climate=climate,
         manifest=manifest,
+        hybrid_risk=hybrid_risk,
+        district_geometry=district_geometry,
         case_y=case_y,
         case_w=case_w,
         clim_y=clim_y,

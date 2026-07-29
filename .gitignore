@@ -216,3 +216,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Model artifacts (large binaries, reproducible from code + already-committed
+# data via each module's training script - e.g. module3's rf_final_model.joblib
+# exceeds GitHub's 100MB push limit). Note: models/module1/ and models/module2/
+# already have model binaries committed from before this pattern existed -
+# this does not retroactively untrack those, it only stops future additions.
+models/module1/
+models/module2/
+models/module3/
