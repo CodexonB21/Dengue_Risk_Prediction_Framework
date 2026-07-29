@@ -29,6 +29,27 @@ Accepted / Rejected / Experimental / Superseded
 
 ---
 
+## 2026-07-29 - Module 1 Completion Scope: Non-Seasonal SARIMA Flagged for Supervisor; Other Follow-Ups Deferred
+
+### Module
+Module 1
+
+### Change
+Documented the non-seasonal SARIMA finding (18/25 districts, Open Question #12) as an explicit supervisor-facing flag rather than a silent limitation. Added a prepared defense answer in `research_context/QUESTIONS_FOR_DEFENSE.md` and a "Supervisor Flag" section in `module_1_forecasting/MODULE_CONTEXT.md`. Confirmed no Stage 1 rework — Stage 2 already compensates more for non-seasonal districts.
+
+Team decision: defer remaining Module 1 follow-ups (climate currency refresh, rolling 1-week-ahead evaluation, STL+SARIMA ablation, Ljung-Box follow-up features, rainfall lag ablation, holdout divergence investigation) as not blocking thesis completion given the validated compensation-framework results.
+
+### Reason
+Thesis scope is historical validation of the residual-compensation hypothesis, not operational early-warning certification. The non-seasonal SARIMA issue must be disclosed honestly because 12/25 Stage-1-only configs fail seasonal naive, but empirical evidence shows Stage 2 addresses it — reworking Stage 1 is not justified.
+
+### Impact
+Documentation only — no code or pipeline rerun. Updated `research_context/QUESTIONS_FOR_DEFENSE.md`, `module_1_forecasting/MODULE_CONTEXT.md`, `research_context/CHANGELOG.md`.
+
+### Status
+Accepted
+
+---
+
 ## 2026-07-28 - Module 2 Live/Production Risk Scoring Added; New Climate-Currency-Gap Finding
 
 ### Module

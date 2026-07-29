@@ -939,6 +939,20 @@ re-evaluation - both remain open, higher-rigor follow-ups.
 
 ---
 
+## Supervisor Flag: Non-Seasonal SARIMA (2026-07-29)
+
+**Status:** Documented limitation — no Stage 1 rework planned.
+
+**Finding:** 18/25 districts selected `seasonal_order=(0,0,0,52)` despite `m=52`. Stage 1 alone underperforms seasonal naive for 12/25 districts (validation MASE > 1).
+
+**Why not fixed:** Stage 2 diagnostic (Open Question #12, M1-002) showed non-seasonal districts benefit *more* from compensation, not less. Combined pipeline: 25/25 validation MASE improvement, 23/25 holdout improvement.
+
+**Thesis framing:** Present Stage 1 as an intentionally simple univariate baseline; the research contribution is residual compensation, not optimal SARIMA order selection. Do not claim Stage 1 alone is a strong forecaster for all districts.
+
+**Deferred follow-ups (accepted, not blocking Module 1 completion):** climate data currency refresh, rolling 1-week-ahead evaluation, STL+SARIMA ablation, extra residual lags, rainfall lag-window ablation, holdout-vs-validation divergence investigation. See team discussion 2026-07-29 — thesis scope is validated backtest of the compensation framework, not operational deployment certification.
+
+---
+
 ## Documentation Rule
 
 Update this file when Module 1 architecture, features, decisions, or evaluation method changes.
