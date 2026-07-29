@@ -1032,3 +1032,151 @@ MODULE_CONTEXT.md` (Open Question #4 addendum reconfirming Decision 021),
 `research_context/CHANGELOG.md` (new entry). New artifacts: `scripts/audit_smote_imbalance.py`,
 `outputs/metrics/module2/smote_imbalance_audit.csv`. No production pipeline artifact
 regenerated — `baseline_classifier.py` and all its outputs are unchanged.
+
+---
+
+## Decision 027: Module 2 Forward Operational Risk Uses Module 1 Case Forecasts + Forecast Climate (Operational Tier)
+
+**Module:** Module 2 (cross-module with Module 1, Integration layer)
+**Status:** Accepted (implemented 2026-07-29)
+**Date:** 2026-07-29
+
+### Decision
+For **operational** multi-week-ahead outbreak risk (dashboard consumption), Module 2's
+forward scoring script (`forecast_future_risk.py`) may use:
+1. **Module 1 `final_prediction`** from `future_forecast.csv` to populate case-derived lag
+   features when real case counts are unavailable (weeks t+2 onward in the forward horizon).
+2. **Open-Meteo forecast daily weather** (tagged `climate_data_source=forecast`) aggregated
+   through the shared climate pipeline for weeks not yet observed.
+
+This is **explicitly separate** from the holdout-validated walk-forward evaluation pipeline.
+No Module 1 or Module 2 models are retrained. All forward outputs carry
+`evidence_tier=operational`.
+
+### Reason
+Module 2's Stage 1 features are lags of prior-week cases/climate — never the current week's
+case count (leakage guard). For true forward weeks, case lags must come from somewhere;
+Module 1's recursive case forecast is the user-approved source. Climate for future weeks
+requires the Forecast API extension, not just Archive gap-fill.
+
+### Implication
+- Does **not** supersede Decision 019/022's deferral of M1 integration in **training/evaluation**.
+- Forward risk CSV must never be cited alongside holdout PR-AUC/BSS/recall figures.
+- Error compounding (M1 recursive cases + forecast climate uncertainty) is flagged per-row
+  via `uses_module1_cases`, `cases_source`, `climate_source`, `feature_completeness_pct`.
+
+### Documentation Updated
+`research_context/CHANGELOG.md`, `research_context/PIPELINE_ARCHITECTURE_PLAN.md`,
+`research_context/CURRENT_ARCHITECTURE.md`, `module_2_classification/MODULE_CONTEXT.md`,
+`module_1_forecasting/MODULE_CONTEXT.md`, `research_context/DATA_DICTIONARY.md`,
+`research_context/QUESTIONS_FOR_DEFENSE.md`.
+
+---
+
+## Decision 028: Reporting-Anomaly Guard for Case-Derived Features
+
+**Module:** Module 1 + Module 2 (shared preprocessing column)
+**Status:** Accepted (implemented 2026-07-29)
+**Date:** 2026-07-29
+
+### Decision
+Add `is_reporting_anomaly` to both modules' `weekly_modeling_table.csv`, computed by
+`src/preprocessing/reporting_anomalies.py` using a three-week pattern rule (≥75% drop
+after ≥100 prior-week cases, followed by ≥2.5× rebound or recovery to prior level).
+All case-derived lag/rolling/anomaly features must treat flagged weeks like
+`is_imputed` rows: mask to `NaN` before shifting (`mask_untrusted_cases()`), but
+**do not** drop the row from labels, evaluation, or raw case counts. M1 Stage 2
+`residual_lag_1/2` also null residuals on reporting-anomaly weeks before the
+full-calendar reindex shift (Decision 015 extension).
+
+### Reason
+The 2026 Colombo/Gampaha Wk24→Wk25 pattern (507→20→1,138 cases) is consistent with
+delayed reporting catch-up, not epidemiological collapse. Letting Wk24 flow into
+Wk25's `cases_lag_1` systematically poisoned both forecasting and risk features.
+
+### Implication
+- Thresholds are heuristic, not MoH-validated — flag count is small (33 M1 rows total)
+  but targets the highest-impact weeks.
+- Does **not** fix abrupt true outbreaks with no prior dip signature.
+- M2 live/forward scoring benefits indirectly once feature tables are regenerated.
+
+### Documentation Updated
+`research_context/FEATURE_ENGINEERING_SPEC.md`, `research_context/DATA_DICTIONARY.md`,
+`module_1_forecasting/EXPERIMENT_LOG.md` (M1-005), `module_1_forecasting/MODULE_CONTEXT.md`,
+`research_context/CHANGELOG.md`.
+
+---
+
+## Decision 029: Rolling 1-Step-Ahead Operational Evaluation (Module 1)
+
+**Module:** Module 1
+**Status:** Accepted (implemented 2026-07-29)
+**Date:** 2026-07-29
+
+### Decision
+Add a standalone evaluator `src/module1_forecasting/rolling_one_step.py` that, for each
+holdout (or all) week *t*, refits SARIMA on all strictly prior data, produces a
+1-step SARIMA forecast, applies the frozen `xgboost_final_model.json` Stage 2
+checkpoint with fold-scoped climate anomalies and masked case/residual lags, and
+writes `rolling_one_step_predictions.csv` + period sMAPE summaries. This is the
+**operational deployment analogue** — distinct from the flat 104-week multi-step
+holdout (`baseline_sarima.forecast_holdout()`) and from walk-forward fold scoring.
+
+### Reason
+The flat holdout fits SARIMA once and forecasts 104 weeks ahead in one call — a
+deliberately pessimistic/optimistic hybrid that misrepresents weekly refit deployment.
+Rolling 1-step is the honest counterfactual for "what would we have predicted each
+Monday?"
+
+### Implication
+- **Not** a replacement for holdout MASE/DM-test evidence (different estimand).
+- Runtime: ~0.2 s/week/district — full 25-district holdout run is feasible but slow;
+  default CLI supports `--districts` subset for spot checks.
+- Wk25 outbreak spike remains largely unpredictable under either mode; rolling helps
+  Wk22–23 (~13% sMAPE vs ~21% flat) but not the catch-up spike itself.
+
+### Documentation Updated
+`research_context/PIPELINE_ARCHITECTURE_PLAN.md`, `module_1_forecasting/EXPERIMENT_LOG.md`
+(M1-005), `module_1_forecasting/MODULE_CONTEXT.md`, `src/config.py`,
+`research_context/CHANGELOG.md`.
+
+---
+
+## Decision 030: Reporting-Delay Feature Group for Module 1 Stage 2 (M1-006B)
+
+**Module:** Module 1
+**Status:** Accepted (production promotion 2026-07-29)
+**Date:** 2026-07-29
+
+### Decision
+Adopt Feature Group 6 (reporting-delay / nowcasting state) for Module 1 Stage 2
+XGBoost on **additive** residual compensation:
+
+- `weeks_since_reporting_anomaly` (cap 4)
+- `reporting_rebound_ratio_lag1`
+- `suspected_backfill_week`
+- Nowcast imputation: when week *t−1* is `is_reporting_anomaly`, set
+  `cases_lag_1 = max(cases_lag_2, rolling_mean_cases_4w)` for feature derivation only
+
+Reject M1-006A log-scale residuals as production default (see M1-006A experiment log).
+
+### Reason
+M1-006B holdout evaluation vs M1-005: median MASE **0.374** vs **0.386** (−3.1%),
+median sMAPE **34.2%** vs **35.0%**, **22/25** districts improved MASE, Colombo/Gampaha
+both improve. Pre-registered acceptance criterion (median holdout MASE improves) met.
+
+### Implication
+- Stage 1 SARIMA unchanged; Stage 2 XGBoost retrained on default paths (2026-07-29).
+- Production artifacts: default `stage2_feature_table.csv`, `xgboost_final_model.json`,
+  `final_combined_predictions.csv` (no `_m1_006_b` suffix).
+- Variant `_m1_006_b` paths retained for ablation replay.
+- Wk25 catch-up spike remains a documented limit.
+
+### Production promotion (2026-07-29)
+Default-path refit confirmed holdout median MASE **0.374** vs pre-promotion **0.386**
+(22/25 districts improved); M2 unchanged (isotonic, τ=0.14). Evaluation:
+`outputs/metrics/production_stack_evaluation_summary.csv`.
+
+### Documentation Updated
+`FEATURE_ENGINEERING_SPEC.md`, `module_1_forecasting/EXPERIMENT_LOG.md` (M1-006B),
+`research_context/CHANGELOG.md`.

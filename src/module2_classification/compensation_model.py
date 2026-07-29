@@ -21,6 +21,12 @@ record):
      features, District, probability_residual_lag_1/2]` -> `label` directly
      - the resolved form of "residual/probability correction model" from
      `MODULE_CONTEXT.md`'s "Possible Stage 2 Models" list.
+   - `logit_residual` (M2-007A ablation): pooled XGBoost **regressor** predicting
+     a logit-space correction ``g(features)`` such that
+     ``p_final = sigmoid(logit(p_stage1) + g)`` - mirrors Module 1's residual
+     compensation in probability space. Benchmarked alongside the three
+     production candidates but excluded from official architecture selection
+     unless holdout-gated adoption (Decision 031) passes.
    Selected by median Brier Skill Score (Stage 2's primary metric, mirrors
    Stage 1's use of PR-AUC), gated by a logged (not silently ignored) check
    that PR-AUC/ROC-AUC don't regress vs. Stage 1's raw probability.
@@ -74,6 +80,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.config import (  # noqa: E402
     DISTRICTS,
+    MODULE1_FINAL_PREDICTIONS_PATH,
     MODULE2_BASELINE_PREDICTIONS_PATH,
     MODULE2_FIGURES_DIR,
     MODULE2_STAGE1_FEATURE_TABLE_PATH,
@@ -82,9 +89,15 @@ from src.config import (  # noqa: E402
     MODULE2_STAGE2_MODELS_DIR,
     MODULE2_STAGE2_POOLED_VS_DISTRICT_PATH,
     MODULE2_STAGE2_PREDICTIONS_PATH,
+    module2_stage2_paths,
 )
 from src.module1_forecasting.feature_engineering import (  # noqa: E402
     compute_fold_climate_anomalies,
+)
+from src.module2_classification.m1_forecast_join import (  # noqa: E402
+    M1_FORECAST_FEATURE_COLUMNS,
+    build_m1_forecast_lags,
+    load_m1_oos_predictions,
 )
 from src.module2_classification import evaluate  # noqa: E402
 from src.module2_classification.baseline_classifier import (  # noqa: E402
@@ -103,9 +116,11 @@ logger = logging.getLogger(__name__)
 TARGET_COL = "label"
 BASE_PROB_COL = "predicted_probability"
 
-ARCHITECTURE_NAMES = ["isotonic", "platt", "stacked_xgboost"]
+PRODUCTION_ARCHITECTURE_NAMES = ["isotonic", "platt", "stacked_xgboost"]
+ARCHITECTURE_NAMES = PRODUCTION_ARCHITECTURE_NAMES + ["logit_residual"]
 PRIMARY_METRIC = "brier_skill_score"
 SECONDARY_THRESHOLD = 0.5
+LOGIT_EPS = 1e-6
 
 # Fold 1 has no prior out-of-sample Stage 1 data at all - documented no-op,
 # mirrors Module 1 Stage 2's fold-1 no-op (see module docstring point 2).
@@ -114,19 +129,48 @@ FIRST_TRAINABLE_STAGE2_FOLD = 2
 FOLD_AWARE_ANOMALY_COLUMNS = ["rainfall_anomaly", "temperature_anomaly", "humidity_anomaly"]
 PROBABILITY_LAG_COLUMNS = ["probability_residual_lag_1", "probability_residual_lag_2"]
 
-# Feature set for the `stacked_xgboost` architecture only - isotonic/platt
-# are feature-free by design (see module docstring point 1).
+# Feature set for tree-based Stage 2 architectures (`stacked_xgboost`,
+# `logit_residual`) - isotonic/platt are feature-free by design.
 STACKED_FEATURE_COLUMNS = (
     FOLD_AGNOSTIC_FEATURE_COLUMNS + FOLD_AWARE_ANOMALY_COLUMNS + [BASE_PROB_COL] + PROBABILITY_LAG_COLUMNS
 )
 CATEGORICAL_FEATURE_COLUMNS = ["District"]
 STACKED_ALL_COLUMNS = STACKED_FEATURE_COLUMNS + CATEGORICAL_FEATURE_COLUMNS
+LOGIT_RESIDUAL_ALL_COLUMNS = STACKED_ALL_COLUMNS
+
+
+def tree_stage2_all_columns(include_m1_forecast: bool = False) -> list[str]:
+    base = list(STACKED_FEATURE_COLUMNS)
+    if include_m1_forecast:
+        base = base + M1_FORECAST_FEATURE_COLUMNS
+    return base + CATEGORICAL_FEATURE_COLUMNS
+
+
+def _resolve_tree_columns(df: pd.DataFrame, feature_columns: list[str] | None) -> list[str]:
+    if feature_columns is not None:
+        return feature_columns
+    include_m1 = "m1_final_prediction_lag_1" in df.columns
+    return tree_stage2_all_columns(include_m1_forecast=include_m1)
 
 # Fixed, conservative hyperparameters - not tuned per fold, same philosophy
 # as Stage 1 (baseline_classifier.py) and Module 1 Stage 2.
 XGB_STAGE2_PARAMS = dict(
     objective="binary:logistic",
     eval_metric="aucpr",
+    tree_method="hist",
+    enable_categorical=True,
+    max_depth=4,
+    learning_rate=0.05,
+    n_estimators=300,
+    subsample=0.8,
+    colsample_bytree=0.8,
+    reg_lambda=1.0,
+    min_child_weight=5,
+    random_state=42,
+)
+
+XGB_LOGIT_RESIDUAL_PARAMS = dict(
+    objective="reg:absoluteerror",
     tree_method="hist",
     enable_categorical=True,
     max_depth=4,
@@ -146,22 +190,48 @@ PREDICTION_OUTPUT_COLUMNS = ["District", "Year", "Week", "Number_of_Cases", "is_
 # Logit helper (Platt scaling operates on the log-odds, not raw probability)
 # ---------------------------------------------------------------------------
 
-def _logit(p: np.ndarray, eps: float = 1e-6) -> np.ndarray:
+def _logit(p: np.ndarray, eps: float = LOGIT_EPS) -> np.ndarray:
     p_clipped = np.clip(np.asarray(p, dtype=float), eps, 1 - eps)
     return np.log(p_clipped / (1 - p_clipped))
+
+
+def _sigmoid(x: np.ndarray) -> np.ndarray:
+    x_arr = np.asarray(x, dtype=float)
+    return 1.0 / (1.0 + np.exp(-x_arr))
+
+
+def _prepare_tree_stage2_xy(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    feature_columns: list[str],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    use_district = "District" in feature_columns
+    numeric_cols = [c for c in feature_columns if c != "District"]
+    select_cols = numeric_cols + (["District"] if use_district else [])
+
+    X_train = train_df[select_cols].copy()
+    X_val = val_df[select_cols].copy()
+    if use_district:
+        X_train["District"] = pd.Categorical(X_train["District"], categories=DISTRICTS)
+        X_val["District"] = pd.Categorical(X_val["District"], categories=DISTRICTS)
+    return X_train, X_val
 
 
 # ---------------------------------------------------------------------------
 # Data assembly
 # ---------------------------------------------------------------------------
 
-def assemble_stage2_base_table(full_feature_df: pd.DataFrame) -> pd.DataFrame:
+def assemble_stage2_base_table(
+    full_feature_df: pd.DataFrame,
+    *,
+    baseline_predictions_path: Path | None = None,
+) -> pd.DataFrame:
     """Read Stage 1's predictions, keep only the OFFICIAL model's rows (the
     one Stage 2 exists to correct), and attach Module 2's fold-agnostic
     contextual features (already present in `full_feature_df`, Stage 1's own
     feature table).
     """
-    preds = pd.read_csv(MODULE2_BASELINE_PREDICTIONS_PATH)
+    preds = pd.read_csv(baseline_predictions_path or MODULE2_BASELINE_PREDICTIONS_PATH)
     preds = preds[preds["is_selected_model"]].copy()
     preds["fold_id_numeric"] = pd.to_numeric(preds["fold_id"], errors="coerce")
 
@@ -254,17 +324,35 @@ def build_probability_residual_lags(full_feature_df: pd.DataFrame, stage2_base: 
     return merged[["District", "Year", "Week"] + PROBABILITY_LAG_COLUMNS]
 
 
-def assemble_stage2_table() -> tuple[pd.DataFrame, dict[int, set], dict[int, set], set, set]:
+def assemble_stage2_table(
+    *,
+    include_m1_forecast_features: bool = False,
+    m1_predictions_path: Path | None = None,
+    baseline_predictions_path: Path | None = None,
+) -> tuple[pd.DataFrame, dict[int, set], dict[int, set], set, set]:
     full_feature_df = pd.read_csv(MODULE2_STAGE1_FEATURE_TABLE_PATH, parse_dates=["Week_Start_Date", "Week_End_Date"])
 
     fold_train_keys, fold_val_keys, pre_holdout_keys, holdout_keys = compute_fold_boundaries(full_feature_df)
 
-    base = assemble_stage2_base_table(full_feature_df)
+    base = assemble_stage2_base_table(full_feature_df, baseline_predictions_path=baseline_predictions_path)
     anomalies = build_fold_scoped_anomalies(full_feature_df, fold_train_keys, fold_val_keys, pre_holdout_keys, holdout_keys)
     probability_lags = build_probability_residual_lags(full_feature_df, base)
 
     stage2_df = base.merge(anomalies, on=["District", "Year", "Week"], how="left")
     stage2_df = stage2_df.merge(probability_lags, on=["District", "Year", "Week"], how="left")
+
+    if include_m1_forecast_features:
+        m1_path = m1_predictions_path or MODULE1_FINAL_PREDICTIONS_PATH
+        m1_preds = load_m1_oos_predictions(m1_path)
+        m1_feats = build_m1_forecast_lags(full_feature_df, m1_preds)
+        stage2_df = stage2_df.merge(m1_feats, on=["District", "Year", "Week"], how="left")
+        stage2_df["m1_forecast_momentum"] = (
+            stage2_df["m1_final_prediction_lag_1"] - stage2_df["cases_lag_2"]
+        )
+        logger.info(
+            "Joined M1 OOS forecast features from %s (join keys: District, Year, Week).",
+            m1_path,
+        )
 
     return stage2_df, fold_train_keys, fold_val_keys, pre_holdout_keys, holdout_keys
 
@@ -299,16 +387,8 @@ def fit_and_calibrate(
         return model.predict_proba(X_val)[:, 1], model
 
     if architecture == "stacked_xgboost":
-        cols = feature_columns or STACKED_ALL_COLUMNS
-        use_district = "District" in cols
-        numeric_cols = [c for c in cols if c != "District"]
-        select_cols = numeric_cols + (["District"] if use_district else [])
-
-        X_train = train_df[select_cols].copy()
-        X_val = val_df[select_cols].copy()
-        if use_district:
-            X_train["District"] = pd.Categorical(X_train["District"], categories=DISTRICTS)
-            X_val["District"] = pd.Categorical(X_val["District"], categories=DISTRICTS)
+        cols = _resolve_tree_columns(train_df, feature_columns)
+        X_train, X_val = _prepare_tree_stage2_xy(train_df, val_df, cols)
 
         y_train = train_df[TARGET_COL].to_numpy(dtype=int)
         n_pos = int(y_train.sum())
@@ -318,6 +398,21 @@ def fit_and_calibrate(
         model = xgb.XGBClassifier(**XGB_STAGE2_PARAMS, scale_pos_weight=scale_pos_weight)
         model.fit(X_train, y_train)
         return model.predict_proba(X_val)[:, 1], model
+
+    if architecture == "logit_residual":
+        cols = _resolve_tree_columns(train_df, feature_columns)
+        X_train, X_val = _prepare_tree_stage2_xy(train_df, val_df, cols)
+
+        y_clipped = np.clip(train_df[TARGET_COL].to_numpy(dtype=float), LOGIT_EPS, 1 - LOGIT_EPS)
+        y_residual = _logit(y_clipped) - _logit(train_df[BASE_PROB_COL].to_numpy(dtype=float))
+
+        model = xgb.XGBRegressor(**XGB_LOGIT_RESIDUAL_PARAMS)
+        model.fit(X_train, y_residual)
+
+        g_pred = model.predict(X_val)
+        logit_base = _logit(val_df[BASE_PROB_COL].to_numpy(dtype=float))
+        calibrated = np.clip(_sigmoid(logit_base + g_pred), 0.0, 1.0)
+        return calibrated, model
 
     raise ValueError(f"Unknown architecture: {architecture!r}")
 
@@ -375,7 +470,11 @@ def _build_prediction_rows(
 # Main benchmark (folds 2-13 x 3 architectures, plus fold-1 no-op passthrough)
 # ---------------------------------------------------------------------------
 
-def run_stage2_benchmark(stage2_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, dict[int, object]]]:
+def run_stage2_benchmark(
+    stage2_df: pd.DataFrame,
+    *,
+    stacked_feature_columns: list[str] | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, dict[int, object]]]:
     """Benchmark all `ARCHITECTURE_NAMES` across Stage 2's 12 trainable folds
     (2-13), plus a documented fold-1 no-op passthrough. Also computes
     `architecture="stage1_raw"` rows at every fold (Stage 1's own
@@ -418,7 +517,8 @@ def run_stage2_benchmark(stage2_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Data
         )
 
         for architecture in ARCHITECTURE_NAMES:
-            proba, fitted = fit_and_calibrate(architecture, trainable_train, val_rows_all)
+            tree_cols = stacked_feature_columns if architecture in ("stacked_xgboost", "logit_residual") else None
+            proba, fitted = fit_and_calibrate(architecture, trainable_train, val_rows_all, feature_columns=tree_cols)
             prediction_frames.append(_build_prediction_rows(val_rows_all, proba, architecture, fold_num, "validation", stage2_trained=True))
             scores = _score_predictions(val_rows_all[TARGET_COL], proba)
             metric_rows.append({"architecture": architecture, "fold_id": fold_num, "split": "validation", **scores})
@@ -523,7 +623,10 @@ def select_official_architecture(metrics_df: pd.DataFrame) -> str:
     probability, since only isotonic/Platt provably cannot hurt ranking;
     `stacked_xgboost` in principle could.
     """
-    aggregate = metrics_df[(metrics_df["fold_id"] == "validation_aggregate") & (metrics_df["architecture"] != "stage1_raw")]
+    aggregate = metrics_df[
+        (metrics_df["fold_id"] == "validation_aggregate")
+        & (metrics_df["architecture"].isin(PRODUCTION_ARCHITECTURE_NAMES))
+    ]
     if aggregate.empty:
         raise ValueError("metrics_df has no candidate 'validation_aggregate' rows to select from.")
 
@@ -554,7 +657,12 @@ def select_official_architecture(metrics_df: pd.DataFrame) -> str:
 # Held-out final block
 # ---------------------------------------------------------------------------
 
-def run_holdout_evaluation(stage2_df: pd.DataFrame, official_architecture: str) -> tuple[pd.DataFrame, pd.DataFrame, object]:
+def run_holdout_evaluation(
+    stage2_df: pd.DataFrame,
+    official_architecture: str,
+    *,
+    stacked_feature_columns: list[str] | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, object]:
     """Train all 3 architectures on ALL 13 folds' pooled out-of-sample rows,
     score against the untouched holdout block. Returns `(predictions_df,
     metrics_df, official_fitted_model)`."""
@@ -571,7 +679,8 @@ def run_holdout_evaluation(stage2_df: pd.DataFrame, official_architecture: str) 
     official_fitted = None
 
     for architecture in ARCHITECTURE_NAMES:
-        proba, fitted = fit_and_calibrate(architecture, trainable_train, val_rows_all)
+        tree_cols = stacked_feature_columns if architecture in ("stacked_xgboost", "logit_residual") else None
+        proba, fitted = fit_and_calibrate(architecture, trainable_train, val_rows_all, feature_columns=tree_cols)
         prediction_frames.append(_build_prediction_rows(val_rows_all, proba, architecture, "holdout", "holdout", stage2_trained=True))
         scores = _score_predictions(val_rows_all[TARGET_COL], proba)
         metric_rows.append({"architecture": architecture, "fold_id": "holdout", "split": "holdout", **scores})
@@ -589,7 +698,12 @@ def run_holdout_evaluation(stage2_df: pd.DataFrame, official_architecture: str) 
 # Final production model
 # ---------------------------------------------------------------------------
 
-def train_final_production_model(stage2_df: pd.DataFrame, official_architecture: str):
+def train_final_production_model(
+    stage2_df: pd.DataFrame,
+    official_architecture: str,
+    *,
+    stacked_feature_columns: list[str] | None = None,
+):
     """Train one final `official_architecture` model on ALL available
     out-of-sample rows (13 folds + holdout, defined-label only), for
     potential future live scoring. Not used for any reported metric."""
@@ -600,18 +714,19 @@ def train_final_production_model(stage2_df: pd.DataFrame, official_architecture:
 
     # fit_and_calibrate requires a val_df; reuse a throwaway trainable row
     # as a discarded prediction target (mirrors baseline_classifier.py).
-    _, model = fit_and_calibrate(official_architecture, trainable, trainable.iloc[[0]])
+    tree_cols = stacked_feature_columns if official_architecture in ("stacked_xgboost", "logit_residual") else None
+    _, model = fit_and_calibrate(official_architecture, trainable, trainable.iloc[[0]], feature_columns=tree_cols)
     return model
 
 
 def _model_file_path(base_dir: Path, stem: str, architecture: str) -> Path:
-    suffix = ".json" if architecture == "stacked_xgboost" else ".joblib"
+    suffix = ".json" if architecture in ("stacked_xgboost", "logit_residual") else ".joblib"
     return base_dir / f"{stem}{suffix}"
 
 
 def _save_model(model, path: Path, architecture: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    if architecture == "stacked_xgboost":
+    if architecture in ("stacked_xgboost", "logit_residual"):
         model.save_model(str(path))
     else:
         joblib.dump(model, path)
@@ -667,15 +782,38 @@ def plot_reliability_diagrams(
 # Orchestration
 # ---------------------------------------------------------------------------
 
-def run_stage2_pipeline() -> pd.DataFrame:
-    logger.info("Assembling Stage 2 table (Stage 1 probabilities + contextual features + fold-scoped anomalies + probability-residual lags)...")
-    stage2_df, _, _, _, _ = assemble_stage2_table()
+def run_stage2_pipeline(
+    *,
+    include_m1_forecast_features: bool = False,
+    m1_predictions_path: Path | None = None,
+    feature_variant: str | None = None,
+    baseline_predictions_path: Path | None = None,
+    stacked_feature_columns: list[str] | None = None,
+) -> pd.DataFrame:
+    paths = module2_stage2_paths(feature_variant)
+    use_m1 = include_m1_forecast_features or feature_variant == "m2_007_d"
+    stage1_preds_path = baseline_predictions_path
+    if stage1_preds_path is None and feature_variant == "m2_008":
+        from src.config import module2_stage1_paths
+        stage1_preds_path = module2_stage1_paths("m2_008")["predictions"]
+
+    logger.info(
+        "Assembling Stage 2 table (M1-fed features=%s)...",
+        use_m1,
+    )
+    stage2_df, _, _, _, _ = assemble_stage2_table(
+        include_m1_forecast_features=use_m1,
+        m1_predictions_path=m1_predictions_path,
+        baseline_predictions_path=stage1_preds_path,
+    )
 
     logger.info(
         "Running Stage 2 benchmark across architectures: %s (folds %d-%d trainable, fold 1 is a no-op passthrough)...",
         ARCHITECTURE_NAMES, FIRST_TRAINABLE_STAGE2_FOLD, STAGE1_N_FOLDS,
     )
-    predictions_df, metrics_df, fitted_models = run_stage2_benchmark(stage2_df)
+    predictions_df, metrics_df, fitted_models = run_stage2_benchmark(
+        stage2_df, stacked_feature_columns=stacked_feature_columns,
+    )
 
     official_architecture = select_official_architecture(metrics_df)
 
@@ -687,17 +825,19 @@ def run_stage2_pipeline() -> pd.DataFrame:
     comparison_df = run_pooled_vs_per_district_comparison(stage2_df, pooled_bss_by_fold)
 
     logger.info("Running Stage 2 held-out final-block evaluation...")
-    holdout_predictions_df, holdout_metrics_df, official_holdout_model = run_holdout_evaluation(stage2_df, official_architecture)
+    holdout_predictions_df, holdout_metrics_df, official_holdout_model = run_holdout_evaluation(
+        stage2_df, official_architecture, stacked_feature_columns=stacked_feature_columns,
+    )
 
     predictions_df = pd.concat([predictions_df, holdout_predictions_df], ignore_index=True)
     predictions_df["is_selected_architecture"] = predictions_df["architecture"] == official_architecture
     metrics_df = pd.concat([metrics_df, holdout_metrics_df], ignore_index=True)
     metrics_df["selected"] = metrics_df["architecture"] == official_architecture
 
-    MODULE2_STAGE2_METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    predictions_df.to_csv(MODULE2_STAGE2_PREDICTIONS_PATH, index=False)
-    metrics_df.to_csv(MODULE2_STAGE2_METRICS_PATH, index=False)
-    comparison_df.to_csv(MODULE2_STAGE2_POOLED_VS_DISTRICT_PATH, index=False)
+    paths["metrics"].parent.mkdir(parents=True, exist_ok=True)
+    predictions_df.to_csv(paths["predictions"], index=False)
+    metrics_df.to_csv(paths["metrics"], index=False)
+    comparison_df.to_csv(paths["pooled_vs_district"], index=False)
 
     # Per-fold model files - official architecture only, reusing the
     # already-fitted models from run_stage2_benchmark rather than refitting.
@@ -708,9 +848,13 @@ def run_stage2_pipeline() -> pd.DataFrame:
     _save_model(official_holdout_model, _model_file_path(MODULE2_STAGE2_MODELS_DIR, "holdout", official_architecture), official_architecture)
 
     logger.info("Training final Stage 2 production model (%s) on all available out-of-sample data...", official_architecture)
-    final_model = train_final_production_model(stage2_df, official_architecture)
+    final_model = train_final_production_model(
+        stage2_df, official_architecture, stacked_feature_columns=stacked_feature_columns,
+    )
     _save_model(
-        final_model, MODULE2_STAGE2_FINAL_MODEL_PATH.with_suffix(".json" if official_architecture == "stacked_xgboost" else ".joblib"), official_architecture,
+        final_model, MODULE2_STAGE2_FINAL_MODEL_PATH.with_suffix(
+            ".json" if official_architecture in ("stacked_xgboost", "logit_residual") else ".joblib"
+        ), official_architecture,
     )
 
     logger.info("Plotting reliability diagrams (Stage 1 raw vs. Stage 2 %s)...", official_architecture)
@@ -719,12 +863,35 @@ def run_stage2_pipeline() -> pd.DataFrame:
     logger.info(
         "Stage 2 complete: official_architecture=%s | predictions -> %s | metrics -> %s | "
         "pooled-vs-district -> %s | reliability diagrams -> %s",
-        official_architecture, MODULE2_STAGE2_PREDICTIONS_PATH, MODULE2_STAGE2_METRICS_PATH,
-        MODULE2_STAGE2_POOLED_VS_DISTRICT_PATH, MODULE2_FIGURES_DIR,
+        official_architecture, paths["predictions"], paths["metrics"],
+        paths["pooled_vs_district"], MODULE2_FIGURES_DIR,
     )
     return predictions_df
 
 
 if __name__ == "__main__":
+    import argparse
+
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    run_stage2_pipeline()
+    parser = argparse.ArgumentParser(description="Module 2 Stage 2 compensation benchmark.")
+    parser.add_argument(
+        "--feature-variant",
+        default=None,
+        help="Ablation suffix for output paths (e.g. m2_007_d).",
+    )
+    parser.add_argument(
+        "--include-m1-forecast-features",
+        action="store_true",
+        help="Join leakage-safe M1 OOS forecast lags (M2-007D).",
+    )
+    parser.add_argument(
+        "--m1-predictions-path",
+        default=None,
+        help="Optional path to M1 final_combined_predictions CSV.",
+    )
+    args = parser.parse_args()
+    run_stage2_pipeline(
+        include_m1_forecast_features=args.include_m1_forecast_features,
+        m1_predictions_path=Path(args.m1_predictions_path) if args.m1_predictions_path else None,
+        feature_variant=args.feature_variant,
+    )

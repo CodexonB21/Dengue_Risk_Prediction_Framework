@@ -267,19 +267,11 @@ residual = actual_cases - sarima_prediction
     extends to 2026 week 25 — the actual outbreak spike (Colombo 1,138
     cases, Gampaha 1,294 cases at week 25) falls inside the untouched
     holdout block, giving a genuine real-world test. Two findings:
-    - **Shared climate data pipeline has not been refreshed past 2026 week
-      21**, while case-count data extends to week 25. This leaves every
-      climate feature (rainfall, temperature, humidity, and all their lags)
-      entirely `NaN` for weeks 22-25 — the exact weeks containing the
-      spike. Quantified impact: Stage 1+2's sMAPE is 14-24% for every period
-      checked where climate data is complete (Dec 2025: Colombo 13.9%/
-      Gampaha 20.1%; all 2025: 15.9%/16.6%; 2026 weeks 1-21 excluding a
-      week-14 reporting-dip artifact: 17.9%/23.8%) but jumps to **~97% for
-      both districts** the moment climate data disappears (2026 weeks
-      22-25). **Action needed**: re-run the shared climate preprocessing
-      pipeline (Open-Meteo fetch) to close this gap before drawing any
-      further conclusion about real-time outbreak-tracking accuracy — this
-      is a fixable data-currency problem, not a modeling limitation.
+    - **Shared climate data pipeline refresh (2026-07-29, Decision 027):**
+      `scripts/fetch_open_meteo_weather.py` closes the observed-week gap through
+      2026 Wk25. Forward epi-week climate beyond the master calendar and beyond
+      the ~16-day Forecast API window remains a documented operational
+      limitation.
     - Even during the accuracy-decent weeks 1-21 stretch (climate data
       present, cases already well above the historical Jan-Jun baseline),
       the framework still completely missed the acute week-25 explosion
@@ -832,7 +824,26 @@ Stage 1's error is itself autocorrelated (consistent with the Ljung-Box
 finding above), and Stage 2's residual-lag features are what's actually
 being exploited to capture that.
 
-### Real-world check against the ongoing 2026 Colombo/Gampaha outbreak (2026-07-27)
+### Real-world check against the ongoing 2026 Colombo/Gampaha outbreak (updated 2026-07-29, M1-005)
+
+See Open Question #16 for the full analysis. **Climate gap closed 2026-07-29**
+(weather through 2026 Wk25). **Reporting guard added (Decision 028):**
+Colombo/Gampaha 2026 Wk24 flagged; Wk25 case lags no longer poisoned by the
+507→20 / 502→24 dips.
+
+| Mode | Colombo Wk22–23 sMAPE | Gampaha Wk22–23 | Wk25 (actual→pred) |
+|---|---|---|---|
+| Flat 104-wk holdout | 21.5% | 19.8% | 1,138→246 / 1,294→153 |
+| Rolling 1-step (Decision 029) | **13.4%** | **13.1%** | 1,138→121 / 1,294→95 |
+
+Headline: with complete climate + reporting guard, near-outbreak weeks (Wk22–23)
+forecast well under rolling 1-step (~13% sMAPE). The Wk25 catch-up spike remains
+largely unpredictable (~7× underestimate) — a documented limit, not a modeling
+bug fixable by masking alone. Rolling 1-step is the honest operational analogue;
+flat holdout MASE (23/25 districts improved, median 32.9%) remains the primary
+validated backtest evidence.
+
+### Real-world check against the ongoing 2026 Colombo/Gampaha outbreak (2026-07-27, superseded numbers)
 
 See Open Question #16 for the full analysis. Headline: the dataset already
 extends to 2026 week 25, which includes the actual outbreak spike (Colombo
@@ -933,9 +944,23 @@ districts x 8 weeks: `sarima_prediction`, `predicted_residual`,
 Kept as a separate, clearly-labeled deliverable (see Decision 018) - not
 merged into `main.py`'s validated walk-forward/holdout orchestration, since
 it answers a fundamentally different question at a fundamentally different
-evidence standard. Does **not** close Open Question #16 (climate data
-currency gap) or substitute for the still-not-built rolling 1-week-ahead
-re-evaluation - both remain open, higher-rigor follow-ups.
+evidence standard. **Module 1 outputs now also feed Module 2 forward operational
+risk** (`forecast_future_risk.py`, Decision 027) — not training/evaluation.
+Climate refresh via `scripts/fetch_open_meteo_weather.py` (Decision 027).
+Rolling 1-week-ahead re-evaluation implemented (`rolling_one_step.py`, Decision 029).
+
+---
+
+## Rolling 1-Step Operational Evaluation (2026-07-29, Decision 029)
+
+`src/module1_forecasting/rolling_one_step.py` refits SARIMA each week on all
+data strictly before week *t*, forecasts only *t*, and scores with the frozen
+Stage 2 checkpoint — the deployment-faithful counterfactual to the flat 104-week
+multi-step holdout. CLI: `python -m src.module1_forecasting.rolling_one_step
+[--districts ...] [--scope holdout|all]`. Outputs:
+`data/processed/module1/rolling_one_step_predictions.csv`,
+`outputs/metrics/module1/rolling_one_step_metrics.csv`. See M1-005 for Colombo/
+Gampaha spot-check results. **Not** interchangeable with holdout MASE/DM evidence.
 
 ---
 
@@ -949,7 +974,7 @@ re-evaluation - both remain open, higher-rigor follow-ups.
 
 **Thesis framing:** Present Stage 1 as an intentionally simple univariate baseline; the research contribution is residual compensation, not optimal SARIMA order selection. Do not claim Stage 1 alone is a strong forecaster for all districts.
 
-**Deferred follow-ups (accepted, not blocking Module 1 completion):** climate data currency refresh, rolling 1-week-ahead evaluation, STL+SARIMA ablation, extra residual lags, rainfall lag-window ablation, holdout-vs-validation divergence investigation. See team discussion 2026-07-29 — thesis scope is validated backtest of the compensation framework, not operational deployment certification.
+**Deferred follow-ups (accepted, not blocking Module 1 completion):** STL+SARIMA ablation, extra residual lags, rainfall lag-window ablation, holdout-vs-validation divergence investigation, full 25-district rolling 1-step run. ~~climate data currency refresh~~ (done 2026-07-29), ~~rolling 1-week-ahead evaluation~~ (Decision 029). See team discussion 2026-07-29 — thesis scope is validated backtest of the compensation framework plus operational evaluation artifacts, not operational deployment certification.
 
 ---
 

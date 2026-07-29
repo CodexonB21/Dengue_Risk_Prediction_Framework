@@ -28,7 +28,9 @@ where Stage 2 does not help - rather than only surfacing favorable results.
 from __future__ import annotations
 
 import logging
+import os
 import sys
+import time
 from pathlib import Path
 
 import matplotlib
@@ -45,14 +47,13 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.config import (  # noqa: E402
     DISTRICTS,
-    MODULE1_COMBINED_METRICS_PATH,
-    MODULE1_DM_TEST_PATH,
+    M1_STAGE2_RESIDUAL_MODE,
     MODULE1_FIGURES_DIR,
-    MODULE1_FINAL_PREDICTIONS_PATH,
     MODULE1_WEEKLY_MODELING_TABLE_PATH,
-    MODULE1_XGBOOST_PREDICTIONS_PATH,
+    module1_stage2_paths,
 )
 from src.module1_forecasting.evaluate import compute_all_metrics, dm_test, ljung_box_diagnostics  # noqa: E402
+from src.module1_forecasting.residual_transform import combine_stage2_forecast, validate_residual_mode  # noqa: E402
 from src.module1_forecasting.validation import (  # noqa: E402
     DEFAULT_HOLDOUT_YEARS,
     DEFAULT_MIN_TRAIN_YEARS,
@@ -81,17 +82,29 @@ DM_MAX_LAG = 12
 # Final forecast
 # ---------------------------------------------------------------------------
 
-def build_final_predictions() -> pd.DataFrame:
-    """`final_prediction = sarima_prediction + predicted_residual`
-    (Decision 010). Clipped to a 0 floor for the same reason Stage 1's own
-    forecasts are (`baseline_sarima.py` design decision 2) - case counts
-    cannot be negative, and adding a negative predicted residual can push an
-    already-small SARIMA forecast below zero.
+def build_final_predictions(
+    *,
+    xgboost_predictions_path: Path | None = None,
+    residual_mode: str | None = None,
+    feature_variant: str | None = None,
+) -> pd.DataFrame:
+    """Assemble final forecast from Stage 1 + Stage 2.
+
+    Additive (Decision 010): ``final = sarima + predicted_residual``.
+    Log-scale (M1-006A): ``final = expm1(log1p(sarima) + predicted_r_log)``.
     """
-    df = pd.read_csv(MODULE1_XGBOOST_PREDICTIONS_PATH)
+    mode = validate_residual_mode(residual_mode or M1_STAGE2_RESIDUAL_MODE)
+    paths = module1_stage2_paths(mode, feature_variant=feature_variant)
+    pred_path = xgboost_predictions_path or paths["xgboost_predictions"]
+    df = pd.read_csv(pred_path)
     df["fold_id_numeric"] = pd.to_numeric(df["fold_id"], errors="coerce")
-    df["final_prediction"] = (df["sarima_prediction"] + df["predicted_residual"]).clip(lower=0.0)
+    df["final_prediction"] = combine_stage2_forecast(
+        df["sarima_prediction"].to_numpy(),
+        df["predicted_residual"].to_numpy(),
+        mode=mode,
+    )
     df["final_residual"] = df["Number_of_Cases"] - df["final_prediction"]
+    df["residual_mode"] = mode
     return df
 
 
@@ -245,6 +258,27 @@ def compute_dm_results(predictions_df: pd.DataFrame, districts: list[str] = DIST
 # Final Ljung-Box + ACF diagnostics
 # ---------------------------------------------------------------------------
 
+def _save_figure(fig: plt.Figure, path: Path, *, dpi: int = 150, retries: int = 3) -> None:
+    """Save a matplotlib figure with retry + atomic replace (Windows-safe)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.stem}.tmp{path.suffix}")
+    last_error: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+            fig.savefig(tmp_path, dpi=dpi)
+            os.replace(tmp_path, path)
+            return
+        except OSError as exc:
+            last_error = exc
+            if attempt < retries:
+                time.sleep(0.5 * attempt)
+            elif tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
+    raise last_error  # type: ignore[misc]
+
+
 def plot_final_acf_diagnostics(
     residuals_by_district: dict[str, np.ndarray],
     districts: tuple[str, ...] = ACF_DIAGNOSTIC_DISTRICTS,
@@ -262,7 +296,7 @@ def plot_final_acf_diagnostics(
         plot_acf(residuals, lags=max_lags, ax=ax, title=f"Final combined residual ACF (post Stage 2) - {district}")
         fig.tight_layout()
         safe_name = district.replace(" ", "_")
-        fig.savefig(output_dir / f"acf_residuals_final_{safe_name}.png", dpi=150)
+        _save_figure(fig, output_dir / f"acf_residuals_final_{safe_name}.png")
         plt.close(fig)
         logger.info("Saved final-residual ACF diagnostic plot for %s.", district)
 
@@ -271,22 +305,29 @@ def plot_final_acf_diagnostics(
 # Orchestration
 # ---------------------------------------------------------------------------
 
-def run_combine_pipeline(districts: list[str] = DISTRICTS) -> None:
+def run_combine_pipeline(
+    districts: list[str] = DISTRICTS,
+    *,
+    residual_mode: str | None = None,
+    feature_variant: str | None = None,
+) -> None:
+    mode = validate_residual_mode(residual_mode or M1_STAGE2_RESIDUAL_MODE)
+    paths = module1_stage2_paths(mode, feature_variant=feature_variant)
     weekly_df = pd.read_csv(MODULE1_WEEKLY_MODELING_TABLE_PATH, parse_dates=["Week_Start_Date", "Week_End_Date"])
-    predictions_df = build_final_predictions()
+    predictions_df = build_final_predictions(residual_mode=mode, feature_variant=feature_variant)
 
-    MODULE1_FINAL_PREDICTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    MODULE1_COMBINED_METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    paths["final_predictions"].parent.mkdir(parents=True, exist_ok=True)
+    paths["combined_metrics"].parent.mkdir(parents=True, exist_ok=True)
 
     final_output = predictions_df[
         [
             "District", "Year", "Week", "split", "fold_id", "Number_of_Cases", "is_imputed",
             "sarima_prediction", "residual", "predicted_residual", "stage2_trained",
-            "final_prediction", "final_residual",
+            "final_prediction", "final_residual", "residual_mode",
         ]
     ]
-    final_output.to_csv(MODULE1_FINAL_PREDICTIONS_PATH, index=False)
-    logger.info("Wrote %d final combined prediction rows to %s.", len(final_output), MODULE1_FINAL_PREDICTIONS_PATH)
+    final_output.to_csv(paths["final_predictions"], index=False)
+    logger.info("Wrote %d final combined prediction rows to %s.", len(final_output), paths["final_predictions"])
 
     all_fold_rows: list[dict] = []
     final_ljung_box_by_district: dict[str, dict] = {}
@@ -324,12 +365,12 @@ def run_combine_pipeline(districts: list[str] = DISTRICTS) -> None:
         for key, value in diag.items():
             metrics_df.loc[row_mask, key] = value
 
-    metrics_df.to_csv(MODULE1_COMBINED_METRICS_PATH, index=False)
-    logger.info("Wrote %d combined-vs-baseline metric rows to %s.", len(metrics_df), MODULE1_COMBINED_METRICS_PATH)
+    metrics_df.to_csv(paths["combined_metrics"], index=False)
+    logger.info("Wrote %d combined-vs-baseline metric rows to %s.", len(metrics_df), paths["combined_metrics"])
 
     dm_results = compute_dm_results(predictions_df, districts=districts)
-    dm_results.to_csv(MODULE1_DM_TEST_PATH, index=False)
-    logger.info("Wrote %d Diebold-Mariano test rows to %s.", len(dm_results), MODULE1_DM_TEST_PATH)
+    dm_results.to_csv(paths["dm_test"], index=False)
+    logger.info("Wrote %d Diebold-Mariano test rows to %s.", len(dm_results), paths["dm_test"])
 
     plot_final_acf_diagnostics(final_residuals_by_district)
 
@@ -343,11 +384,22 @@ def run_combine_pipeline(districts: list[str] = DISTRICTS) -> None:
         .sum()
     )
     logger.info(
-        "Combine complete: %d/%d districts show a lower validation-aggregate MASE with Stage 2 than without.",
+        "Combine complete (mode=%s): %d/%d districts show a lower validation-aggregate MASE with Stage 2 than without.",
+        mode,
         int(n_improved), len(districts),
     )
 
 
 if __name__ == "__main__":
+    import argparse
+
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    run_combine_pipeline()
+    parser = argparse.ArgumentParser(description="Module 1 combine Stage 1 + Stage 2 forecasts.")
+    parser.add_argument(
+        "--residual-mode",
+        choices=["additive", "log"],
+        default=None,
+        help="Stage 2 target transform used in upstream predictions.",
+    )
+    args = parser.parse_args()
+    run_combine_pipeline(residual_mode=args.residual_mode)

@@ -4,7 +4,7 @@
 Living document. Update this file whenever the accepted architecture changes.
 
 ## Last Updated
-2026-07-26
+2026-07-29 (Early warning dashboard + climate refresh + M2 forward risk — Decision 027)
 
 ## Architecture Version
 v1.0-initial-living-context
@@ -134,14 +134,27 @@ Correct baseline spatial risk using environmental and demographic context such a
 
 # Integration Layer
 
-The three modules are expected to feed into an early warning dashboard.
+The three modules feed into an **operational early-warning dashboard** (implemented
+2026-07-29, Decision 027):
 
-Integrated outputs may include:
+```text
+scripts/fetch_open_meteo_weather.py     → raw daily weather (observed + forecast)
+scripts/refresh_dashboard_data.py     → full refresh orchestrator
+src/module1_forecasting/forecast_future.py → future_forecast.csv
+src/module2_classification/live_scoring.py   → live_risk_predictions.csv (recent weeks)
+src/module2_classification/forecast_future_risk.py → future_risk_predictions.csv (M1-fed)
+src/dashboard/app.py                    → Streamlit dashboard (read-only CSV consumer)
+```
 
-- Predicted weekly dengue case counts
-- Outbreak risk category or probability
-- Spatial hotspot map
+Integrated outputs include:
+
+- Predicted weekly dengue case counts (Module 1 forward forecast)
+- Outbreak risk category or probability (Module 2 live + forward operational scoring)
+- Spatial hotspot map (Module 3 — planned)
 - Alerts and decision-support summaries
+
+**Evidence tiers:** holdout-validated metrics (walk-forward/holdout) vs. operational
+forward outputs (`evidence_tier=operational`) — must never be conflated in reporting.
 
 ---
 

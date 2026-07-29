@@ -61,16 +61,16 @@ def _run_stage1() -> None:
     run_stage1_pipeline()
 
 
-def _run_stage2() -> None:
+def _run_stage2(residual_mode: str | None = None) -> None:
     from src.module1_forecasting.compensation_model import run_stage2_pipeline
 
-    run_stage2_pipeline()
+    run_stage2_pipeline(residual_mode=residual_mode)
 
 
-def _run_combine() -> None:
+def _run_combine(residual_mode: str | None = None) -> None:
     from src.module1_forecasting.combine import run_combine_pipeline
 
-    run_combine_pipeline()
+    run_combine_pipeline(residual_mode=residual_mode)
 
 
 # Ordered (name, output-file-to-check, run-function) - each stage's output is
@@ -89,7 +89,7 @@ PIPELINE_STAGES: list[tuple[str, Path, callable]] = [
 STAGE_NAMES = [name for name, _, _ in PIPELINE_STAGES]
 
 
-def run_pipeline(force: bool = False, stages: list[str] | None = None) -> None:
+def run_pipeline(force: bool = False, stages: list[str] | None = None, residual_mode: str | None = None) -> None:
     selected = set(stages) if stages else set(STAGE_NAMES)
     unknown = selected - set(STAGE_NAMES)
     if unknown:
@@ -98,11 +98,21 @@ def run_pipeline(force: bool = False, stages: list[str] | None = None) -> None:
     for name, output_path, run_fn in PIPELINE_STAGES:
         if name not in selected:
             continue
-        if not force and output_path.exists():
-            logger.info("Skipping '%s' - output already exists at %s (use --force to rerun).", name, output_path)
+        check_path = output_path
+        if residual_mode and residual_mode != "additive" and name in ("stage2_xgboost", "combine"):
+            from src.config import module1_stage2_paths
+
+            check_path = module1_stage2_paths(residual_mode)[
+                "xgboost_predictions" if name == "stage2_xgboost" else "final_predictions"
+            ]
+        if not force and check_path.exists():
+            logger.info("Skipping '%s' - output already exists at %s (use --force to rerun).", name, check_path)
             continue
         logger.info("Running '%s'...", name)
-        run_fn()
+        if name in ("stage2_xgboost", "combine"):
+            run_fn(residual_mode=residual_mode)
+        else:
+            run_fn()
         logger.info("Finished '%s'.", name)
 
     logger.info("Module 1 pipeline complete.")
@@ -118,10 +128,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--stages", nargs="+", choices=STAGE_NAMES, default=None,
         help=f"Run only these stages (default: all). Choices: {STAGE_NAMES}.",
     )
+    parser.add_argument(
+        "--residual-mode",
+        choices=["additive", "log"],
+        default=None,
+        help="Stage 2 target transform for stage2_xgboost/combine (default: additive).",
+    )
     return parser.parse_args(argv)
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     args = _parse_args()
-    run_pipeline(force=args.force, stages=args.stages)
+    run_pipeline(force=args.force, stages=args.stages, residual_mode=args.residual_mode)

@@ -1,0 +1,2 @@
+variant,median_holdout_mase,median_holdout_smape,pooled_holdout_smape,baseline_median_mase,baseline_median_smape,baseline_pooled_smape,districts_improved_mase,pooled_smape_2026_wk22_23,baseline_smape_2026_wk22_23,wk22_23_smape_delta_pp,accept_criterion
+m1_006_b,0.3741,34.15,41.73,0.386,35.0,42.3,22,38.58,39.97,-1.38,True

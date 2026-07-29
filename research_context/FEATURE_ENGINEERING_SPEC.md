@@ -59,6 +59,8 @@ rate_of_change
 Purpose:
 Capture short-term momentum, volatility, and acceleration that SARIMA may underrepresent during nonlinear outbreak growth.
 
+**Untrusted-case masking (Decision 011 + Decision 028):** Groups 1–2 case lags and rolling stats are derived from `Number_of_Cases` after nulling rows where `is_imputed == True` **or** `is_reporting_anomaly == True` (`mask_untrusted_cases()` in `src/preprocessing/reporting_anomalies.py`). Labels and evaluation still use the raw count; only feature derivation is masked. M1 Stage 2 `residual_lag_1/2` apply the same reporting-anomaly mask to residuals before full-calendar reindexing (Decision 015 extension).
+
 ---
 
 ## Feature Group 2: Lagged Climate Features
@@ -137,6 +139,31 @@ monsoon_indicator_NE = 1 for weeks 44-52 or 1-8, else 0
 ### 53-Week Year Handling
 
 Sri Lanka MoH epi-week years occasionally contain 53 weeks. Per Decision 007 (`RESEARCH_DECISIONS.md`), week 53 is merged into week 52 (cases summed, climate averaged) before computing the above cyclic features, so `Week` is always in `[1, 52]` and the seasonal period stays fixed for SARIMA.
+
+---
+
+## Feature Group 6: Reporting-Delay / Nowcasting State (M1-006B)
+
+```text
+weeks_since_reporting_anomaly
+reporting_rebound_ratio_lag1
+suspected_backfill_week
+```
+
+Purpose:
+Encode suspected reporting-lag / catch-up dynamics (Decision 028 extension) so Stage 2 can adjust residuals when recent case lags are untrusted.
+
+Definitions (week *t*, per district):
+
+```text
+suspected_backfill_week = 1 if is_reporting_anomaly at t else 0
+weeks_since_reporting_anomaly = weeks since most recent flagged week (0 if t flagged; capped at 4; NaN if none prior)
+reporting_rebound_ratio_lag1 = cases[t−1] / max(cases[t−2], 1) when week t−1 was flagged (raw counts)
+```
+
+**Nowcast imputation (M1-006B, feature derivation only):** when week *t−1* is `is_reporting_anomaly`, `cases_lag_1` is replaced with `max(cases_lag_2, rolling_mean_cases_4w)` before Stage 2 scoring. Raw `Number_of_Cases` in evaluation tables is never modified.
+
+Implemented in `src/preprocessing/reporting_anomalies.py` (`compute_reporting_delay_features`) and `src/module1_forecasting/feature_engineering.py`.
 
 ---
 
@@ -424,12 +451,10 @@ first implementation pass.
 ## Explicitly Independent of Module 1 (Decision 019, reaffirmed Decision 022)
 
 Module 2's Stage 1 does **not** consume Module 1's SARIMA/XGBoost forecast
-output as an input feature. Stage 2 also defers this (Decision 022) — Module
-1 (14 folds, `MIN_TRAIN_YEARS=3`) and Module 2 Stage 1 (13 folds,
-`MIN_TRAIN_YEARS=4`) have misaligned fold boundaries, so merging Module 1's
-`final_prediction` in requires a dedicated fold-alignment leakage audit, not
-a simple merge. Planned as an optional post-Stage-2 ablation, not
-implemented now.
+output as an input feature. Stage 2 deferred M1 integration in Decision 022;
+**M2-007D (2026-07-29)** adds an evaluation-safe join for tree-based Stage 2
+only — see Feature Group M2-S2-3 below. Official production architecture
+remains isotonic (feature-free).
 
 ---
 
@@ -449,7 +474,9 @@ inside `[0, 1]` without ad hoc clipping):
 isotonic:        IsotonicRegression(predicted_probability) -> calibrated_probability
 platt:           sigmoid(LogisticRegression(logit(predicted_probability))) -> calibrated_probability
 stacked_xgboost: XGBClassifier([predicted_probability, contextual features,
-                                 District, probability_residual_lag_1/2]) -> calibrated_probability
+                                 District, probability_residual_lag_1/2,
+                                 m1_final_prediction_lag_1, m1_forecast_momentum]) -> calibrated_probability
+                                 ^ M2-007D optional; tree architectures only
 ```
 
 Selected by median Brier Skill Score across the 12 trainable walk-forward
@@ -494,6 +521,23 @@ start and across any structural gap, rather than silently pulling in a
 stale value. Used only by `stacked_xgboost` (isotonic/Platt take no
 features beyond `predicted_probability` itself).
 
+## Feature Group M2-S2-3: M1 OOS Forecast Lags (M2-007D, experimental)
+
+Used only by `stacked_xgboost` and `logit_residual` when
+`include_m1_forecast_features=True`:
+
+```text
+m1_final_prediction_lag_1   - Module 1 final_prediction (SARIMA + Stage 2 residual),
+                               lagged 1 week within district (full-calendar reindex)
+m1_forecast_momentum        - m1_final_prediction_lag_1 − cases_lag_2
+```
+
+Source: `data/processed/module1/final_combined_predictions.csv` (walk-forward OOS
+rows only). Join keys `(District, Year, Week)`. Implementation: `m1_forecast_join.py`.
+
+Holdout ablation (M2-007D): stacked_xgboost PR-AUC +0.054 vs isotonic but BSS
+regresses; precision @ τ=0.14 collapses. Not promoted to official Stage 2.
+
 ## Not Yet Included (deferred, tracked as an open question)
 
 - An XGBoost variant with `base_margin = logit(predicted_probability)`
@@ -501,9 +545,8 @@ features beyond `predicted_probability` itself).
   literal translation of Module 1's residual-compensation metaphor that
   stays numerically well-posed. Considered during Decision 022's design but
   deferred as a future ablation, not built in the initial benchmark.
-- Module 1's `final_prediction` (or its own anomaly) as a Stage 2 feature —
-  deferred as a post-Stage-2 ablation (Decision 022), pending a
-  fold-alignment audit between the two modules' differing fold structures.
+- ~~Module 1's `final_prediction` as a Stage 2 feature~~ — implemented M2-007D
+  (Group M2-S2-3); experimental only, not official Stage 2.
 
 ---
 
@@ -541,6 +584,9 @@ Record major feature changes here or in `CHANGELOG.md`.
 | 2026-07-27 | Module 1 | `District` added as a categorical feature (new Group 5b) | Required to support the Stage 2 pooled-model architecture | Accepted (Decision 014) |
 | 2026-07-27 | Module 1 | `residual_lag_1/2` construction specified as full-calendar reindex + shift, not a naive concatenated-rows shift | A real ~26-week per-district gap between the last walk-forward fold and the holdout block would otherwise leak a stale value | Accepted (Decision 015) |
 | 2026-07-28 | Module 2 | Outbreak label made concrete: fold-aware epidemic-threshold method (`mean + k*SD` per District+Week, strictly-prior-years only) | Defensible, district-specific statistical threshold; retires the arbitrary `OUTBREAK_THRESHOLD` placeholder | Accepted (Decision 019); `k` value pending empirical audit |
+| 2026-07-29 | Module 1 | `is_reporting_anomaly` masking for all case-derived features + residual lags (Decision 028) | 2026 Wk24 reporting dips poisoned Wk25 lags | Accepted |
+| 2026-07-29 | Module 2 | M1 OOS forecast lags in tree Stage 2 (M2-007D) | Leakage-safe join improves stacked PR-AUC but hurts BSS/precision @ fixed τ | Experimental |
+| 2026-07-29 | Module 1 | Feature Group 6 reporting-delay + nowcast lag1 (M1-006B) | Catch-up/backfill weeks need explicit state beyond masking | Accepted (Decision 030) |
 | 2026-07-28 | Module 2 | Preprocessing review: week 53 kept unmerged (reverses kickoff default); `is_imputed` masking made consistent across all case-derived features (Groups M2-1, M2-5) | Merging week 53 risked spuriously tripping/contaminating the week-52 threshold across all years; masking gap let a fabricated case count silently flow into neighboring weeks' features | Accepted (Decision 020) |
 | 2026-07-28 | Module 2 | Stage 2 feature groups defined: reused Stage 1 contextual features + `predicted_probability` + `probability_residual_lag_1/2` (full-calendar-reindex-then-shift construction, Decision-015-style) | A literal residual-regression target (`label - predicted_probability`) is ill-posed for a binary label; three well-posed architectures benchmarked instead, only one of which (`stacked_xgboost`) uses contextual features | Accepted (Decision 022); implementation pending |
 | 2026-07-28 | Module 2 | Label/Group-M2-5 `historical_mean`/`historical_sd` estimator replaced: per-exact-`(District, Week)` sample mean/SD -> per-district harmonic-regression seasonal curve (`n_harmonics=1`); `k` re-audited `2.0` -> `3.0` | Exact-per-week estimator was too noisy from small samples (18-25% pooled outbreak prevalence, well above WHO/CDC single-digit norm); harmonic regression pools a whole season's data, reducing prevalence to 8.6% while also lowering the undefined-label rate | Accepted (Decision 025); old estimator kept, not deleted, for audit/comparison |

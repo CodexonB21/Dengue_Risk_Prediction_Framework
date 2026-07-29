@@ -248,7 +248,10 @@ def attach_fold_anomalies(df: pd.DataFrame, train_mask: pd.Series) -> pd.DataFra
 # Model fit/predict helpers
 # ---------------------------------------------------------------------------
 
-def build_sklearn_preprocessor(include_scaler: bool) -> ColumnTransformer:
+def build_sklearn_preprocessor(
+    include_scaler: bool,
+    numeric_feature_columns: list[str] | None = None,
+) -> ColumnTransformer:
     """Shared preprocessing for Logistic Regression / Random Forest - neither
     accepts NaN or raw categorical strings natively (Decision 021 correction:
     sklearn's RandomForestClassifier does NOT handle missing values, unlike
@@ -265,9 +268,10 @@ def build_sklearn_preprocessor(include_scaler: bool) -> ColumnTransformer:
     categorical_pipeline = Pipeline(
         [("onehot", OneHotEncoder(categories=[DISTRICTS], handle_unknown="ignore"))]
     )
+    numeric_cols = numeric_feature_columns or NUMERIC_FEATURE_COLUMNS
     return ColumnTransformer(
         [
-            ("num", numeric_pipeline, NUMERIC_FEATURE_COLUMNS),
+            ("num", numeric_pipeline, numeric_cols),
             ("cat", categorical_pipeline, CATEGORICAL_FEATURE_COLUMNS),
         ]
     )
@@ -317,7 +321,10 @@ def fit_and_predict(
 
     X_train = train_df[numeric_cols + CATEGORICAL_FEATURE_COLUMNS]
     X_val = val_df[numeric_cols + CATEGORICAL_FEATURE_COLUMNS]
-    preprocessor = build_sklearn_preprocessor(include_scaler=(model_name == "logistic_regression"))
+    preprocessor = build_sklearn_preprocessor(
+        include_scaler=(model_name == "logistic_regression"),
+        numeric_feature_columns=numeric_cols,
+    )
     if model_name == "logistic_regression":
         clf = LogisticRegression(**LR_PARAMS)
     elif model_name == "random_forest":
@@ -386,6 +393,7 @@ def _build_prediction_rows(
 
 def run_benchmark(
     df: pd.DataFrame, fold_train_keys: dict[int, set], fold_val_keys: dict[int, set],
+    feature_columns: list[str] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, dict[int, object]]]:
     """Benchmark all `MODEL_NAMES` across all `N_FOLDS` walk-forward folds,
     pooled across all 25 districts (`District` as a categorical feature).
@@ -414,7 +422,9 @@ def run_benchmark(
             raise ValueError(f"Fold {fold_num} has zero trainable (defined-label) rows - MIN_TRAIN_YEARS is too small.")
 
         for model_name in MODEL_NAMES:
-            proba, fitted = fit_and_predict(model_name, trainable_train, val_rows_all)
+            proba, fitted = fit_and_predict(
+                model_name, trainable_train, val_rows_all, feature_columns=feature_columns,
+            )
             prediction_frames.append(_build_prediction_rows(val_rows_all, proba, model_name, fold_num, "validation"))
 
             scores = _score_predictions(val_rows_all[TARGET_COL], proba)
@@ -532,6 +542,7 @@ def select_official_model(metrics_df: pd.DataFrame) -> str:
 
 def run_holdout_evaluation(
     df: pd.DataFrame, official_model: str, pre_holdout_keys: set, holdout_keys: set,
+    feature_columns: list[str] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, object]:
     """Train all 3 models on the full pre-holdout window, score against the
     untouched final holdout block. Returns `(predictions_df, metrics_df,
@@ -551,7 +562,9 @@ def run_holdout_evaluation(
     official_fitted = None
 
     for model_name in MODEL_NAMES:
-        proba, fitted = fit_and_predict(model_name, trainable_train, val_rows_all)
+        proba, fitted = fit_and_predict(
+            model_name, trainable_train, val_rows_all, feature_columns=feature_columns,
+        )
         prediction_frames.append(_build_prediction_rows(val_rows_all, proba, model_name, "holdout", "holdout"))
         scores = _score_predictions(val_rows_all[TARGET_COL], proba)
         metric_rows.append({"model": model_name, "fold_id": "holdout", "split": "holdout", **scores})
@@ -567,7 +580,9 @@ def run_holdout_evaluation(
 # Final production model + feature importance
 # ---------------------------------------------------------------------------
 
-def train_final_production_model(df: pd.DataFrame, official_model: str):
+def train_final_production_model(
+    df: pd.DataFrame, official_model: str, feature_columns: list[str] | None = None,
+):
     """Train one final model of `official_model`'s type on ALL available
     defined-label rows (folds + holdout), for potential future live scoring.
     Not used for any reported metric - holdout has already served its
@@ -580,7 +595,7 @@ def train_final_production_model(df: pd.DataFrame, official_model: str):
 
     # fit_and_predict requires a val_df; reuse a single trainable row as a
     # throwaway prediction target (its prediction is discarded here).
-    _, model = fit_and_predict(official_model, trainable, trainable.iloc[[0]])
+    _, model = fit_and_predict(official_model, trainable, trainable.iloc[[0]], feature_columns=feature_columns)
     # Refit is unnecessary above (fit_and_predict already fits on `trainable`
     # in full) - `model` is already the desired final production model.
     return model
@@ -637,7 +652,16 @@ def compute_feature_importance(model, model_name: str) -> pd.DataFrame:
 # Orchestration
 # ---------------------------------------------------------------------------
 
-def run_stage1_pipeline() -> pd.DataFrame:
+def run_stage1_pipeline(
+    *,
+    feature_variant: str | None = None,
+    feature_columns: list[str] | None = None,
+) -> pd.DataFrame:
+    from src.config import module2_stage1_paths
+
+    paths = module2_stage1_paths(feature_variant)
+    stage1_features = feature_columns or ALL_FEATURE_COLUMNS
+
     logger.info("Assembling labeled Stage 1 feature table...")
     df = assemble_labeled_feature_table()
 
@@ -645,7 +669,9 @@ def run_stage1_pipeline() -> pd.DataFrame:
     fold_train_keys, fold_val_keys, pre_holdout_keys, holdout_keys = compute_fold_boundaries(df)
 
     logger.info("Running %d-fold benchmark across models: %s", N_FOLDS, MODEL_NAMES)
-    predictions_df, metrics_df, fitted_models = run_benchmark(df, fold_train_keys, fold_val_keys)
+    predictions_df, metrics_df, fitted_models = run_benchmark(
+        df, fold_train_keys, fold_val_keys, feature_columns=stage1_features,
+    )
 
     official_model = select_official_model(metrics_df)
 
@@ -658,7 +684,7 @@ def run_stage1_pipeline() -> pd.DataFrame:
 
     logger.info("Running held-out final-block evaluation...")
     holdout_predictions_df, holdout_metrics_df, official_holdout_model = run_holdout_evaluation(
-        df, official_model, pre_holdout_keys, holdout_keys
+        df, official_model, pre_holdout_keys, holdout_keys, feature_columns=stage1_features,
     )
 
     predictions_df = pd.concat([predictions_df, holdout_predictions_df], ignore_index=True)
@@ -666,31 +692,41 @@ def run_stage1_pipeline() -> pd.DataFrame:
     metrics_df = pd.concat([metrics_df, holdout_metrics_df], ignore_index=True)
     metrics_df["selected"] = metrics_df["model"] == official_model
 
-    MODULE2_BASELINE_METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    predictions_df.to_csv(MODULE2_BASELINE_PREDICTIONS_PATH, index=False)
-    metrics_df.to_csv(MODULE2_BASELINE_METRICS_PATH, index=False)
-    comparison_df.to_csv(MODULE2_POOLED_VS_DISTRICT_PATH, index=False)
+    paths["metrics"].parent.mkdir(parents=True, exist_ok=True)
+    predictions_df.to_csv(paths["predictions"], index=False)
+    metrics_df.to_csv(paths["metrics"], index=False)
+    comparison_df.to_csv(paths["pooled_vs_district"], index=False)
 
-    # Per-fold model files - official model type only, reusing the already-
-    # fitted models from run_benchmark rather than refitting.
-    MODULE2_BASELINE_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    paths["models_dir"].mkdir(parents=True, exist_ok=True)
     for fold_num in range(1, N_FOLDS + 1):
         fold_model = fitted_models[official_model][fold_num]
-        _save_model(fold_model, _model_file_path(MODULE2_BASELINE_MODELS_DIR, f"fold_{fold_num}", official_model), official_model)
-    _save_model(official_holdout_model, _model_file_path(MODULE2_BASELINE_MODELS_DIR, "holdout", official_model), official_model)
+        _save_model(
+            fold_model,
+            _model_file_path(paths["models_dir"], f"fold_{fold_num}", official_model),
+            official_model,
+        )
+    _save_model(
+        official_holdout_model,
+        _model_file_path(paths["models_dir"], "holdout", official_model),
+        official_model,
+    )
 
     logger.info("Training final production model (%s) on all available labeled data...", official_model)
-    final_model = train_final_production_model(df, official_model)
-    _save_model(final_model, MODULE2_BASELINE_FINAL_MODEL_PATH.with_suffix(".json" if official_model == "xgboost" else ".joblib"), official_model)
+    final_model = train_final_production_model(df, official_model, feature_columns=stage1_features)
+    _save_model(
+        final_model,
+        paths["final_model"].with_suffix(".json" if official_model == "xgboost" else ".joblib"),
+        official_model,
+    )
 
     importance_df = compute_feature_importance(final_model, official_model)
-    importance_df.to_csv(MODULE2_BASELINE_FEATURE_IMPORTANCE_PATH, index=False)
+    importance_df.to_csv(paths["importance"], index=False)
 
     logger.info(
         "Stage 1 complete: official_model=%s | predictions -> %s | metrics -> %s | "
         "pooled-vs-district -> %s | feature importance -> %s",
-        official_model, MODULE2_BASELINE_PREDICTIONS_PATH, MODULE2_BASELINE_METRICS_PATH,
-        MODULE2_POOLED_VS_DISTRICT_PATH, MODULE2_BASELINE_FEATURE_IMPORTANCE_PATH,
+        official_model, paths["predictions"], paths["metrics"],
+        paths["pooled_vs_district"], paths["importance"],
     )
     return predictions_df
 

@@ -11,6 +11,7 @@ matplotlib
 seaborn
 jupyter
 streamlit
+plotly
 geopandas
 rasterio
 xarray
