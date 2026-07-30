@@ -455,16 +455,77 @@ Two consumers:
   with real reported data. A future map would require feeding Module 1/2's
   forecasts in as a hypothetical input - real new cross-module work, not a
   visualization change - decided not to pursue this (2026-07-30).
-- **Dashboard** — `pages.py::_hybrid_risk_folium_heatmap` renders a
-  1500m-resolution grid as a geographically-anchored raster image
-  (`risk_surface.py::risk_surface_rgba` + `grid_lonlat_bounds`, added via
-  `folium.raster_layers.ImageOverlay`) — **not** Leaflet's point-based
-  `HeatMap` plugin (see the root-cause note below for why that was
-  replaced). District boundaries are drawn on top as a no-fill
-  `folium.GeoJson` outline layer (thick black for the selected district,
-  thin white otherwise) SOLELY so a viewer can see where the borders
-  actually are and confirm the raster color visibly crosses them — the
-  raster itself deliberately ignores district shape entirely.
+- **Dashboard — four switchable views** (`render_operational_page()`,
+  `pages.py`), all real data (`hybrid_risk_map.csv` + the same GADM
+  centroids), no synthetic values in any of the four:
+  1. **District boundaries (choropleth)** — `_hybrid_risk_choropleth()`,
+     precise polygons colored by Hybrid Risk (`px.choropleth`,
+     `color_continuous_scale="YlOrRd"`), thick black outline on the
+     selected district. The original view, restored 2026-07-30 (see the
+     root-cause note below for why it was removed and then brought back).
+  2. **Heat cloud (Folium)** — `_hybrid_risk_folium_heatmap()` renders a
+     1500m-resolution grid as a geographically-anchored raster image
+     (`risk_surface.py::risk_surface_rgba` + `grid_lonlat_bounds`, added
+     via `folium.raster_layers.ImageOverlay`) — **not** Leaflet's
+     point-based `HeatMap` plugin (see the root-cause note below for why
+     that was replaced). District boundaries drawn on top as a no-fill
+     `folium.GeoJson` outline (thick black for the selected district, thin
+     white otherwise) SOLELY so a viewer can see the raster color visibly
+     crossing them — the raster itself deliberately ignores district shape.
+  3. **Hotspot markers (precise)** — `_hybrid_risk_circle_map()`, added
+     2026-07-30: one `folium.CircleMarker` per district centroid, radius
+     AND fill color both driven by that district's real Hybrid Risk value
+     (8-25px, `branca.colormap.linear.YlOrRd_09` - same color family as
+     the choropleth, with its legend added via `colormap.add_to(fmap)`).
+     Selection is marked via the marker's OWN BORDER (thick black vs. thin
+     white), not its fill, so the fill stays purely risk-driven (no
+     conflict with the size/color double-encoding). A precise, exact-value
+     complement to the heat-cloud's smoothed, border-blended interpolation
+     - this view makes no spatial claim beyond each district's own number.
+  4. **Heat glow (Uber-style)** — `_hybrid_risk_uber_heatmap()`, added
+     2026-07-30 at the user's explicit spec, then revised twice more on
+     direct visual feedback the same day. A purely stylistic view -
+     deliberately kept separate from `_hybrid_risk_folium_heatmap()`
+     rather than modifying it.
+
+     **v1 (as originally specced)**: dark CartoDB basemap
+     (`tiles='https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'`)
+     + Leaflet's POINT-BASED `HeatMap` plugin (`radius=30, blur=25,
+     max_zoom=13`) over the 25 district centroids.
+
+     **v2, feedback "not dark blue, glow should follow each district's
+     shape, not always a circle"**: replaced the point-based `HeatMap`
+     (which can only ever render CIRCULAR gradients - no concept of a
+     district's real shape) with a `folium.GeoJson` fill of each
+     district's ACTUAL polygon, colored by its Risk value, with a CSS
+     `blur()` on the SVG paths to soften the hard edges into a glow -
+     genuinely spreads from within each district's own footprint now, not
+     a generic circle. (Reintroducing the point-based `HeatMap` at all was
+     already a known-risky choice - it's exactly what `ImageOverlay`
+     replaced in the 2026-07-29 "equal bubbles" fix below; ONLY safe here
+     because this view is now built without it.)
+
+     **v3, dark-blue fix (took two real, verified bugs, not one)**:
+     - CSS wasn't reaching the page AT ALL, regardless of content -
+       verified by inspecting the live rendered iframe DOM directly (not
+       assumed from a screenshot). Traced into `branca.element` source:
+       `folium.Element(css).add_to(m)` and `m.get_root().html.add_child(...)`
+       both silently do nothing when rendered as a descendant of a `Map` -
+       only `MacroElement.render()` (what `TileLayer`/`GeoJson` actually
+       are, hence why THEY already worked) has the side effect of
+       registering a child's `html`/`script` macro onto the current root
+       Figure. Fixed with `_InlineCss`, a two-line `MacroElement`
+       subclass, `.add_to(m)`'d like every other layer.
+     - Once injection was fixed, a `mix-blend-mode: screen` colored
+       overlay `<div>` (tried first, assuming the basemap was pure black)
+       still showed no visible tint - likely a z-index/stacking-context
+       mismatch against Leaflet's transform-positioned panes. Sampled
+       actual rendered pixels directly (not assumed): CartoDB `dark_all`'s
+       ocean tiles are dark GREY (~RGB 30-38), not pure black. Replaced
+       with a direct `filter: sepia(1) hue-rotate(190deg) saturate(3)
+       brightness(0.6)` on `.leaflet-tile-pane` instead - simpler, no
+       separate element's stacking position to get right - confirmed via
+       screenshot to produce a genuine navy-blue basemap.
 
 **Root-caused and fixed (2026-07-29): map rendered totally blank.** The
 Folium map used to sit inside the second panel of `st.tabs(["District
@@ -480,6 +541,23 @@ and the Folium map is now the single, always-visible view under "Module 3
 — spatial hotspot map", mounted while visible from the first render.
 `_hybrid_risk_choropleth` was deleted from `pages.py` (was otherwise
 unused after this).
+
+**Choropleth restored + a third view added, without reintroducing the
+tabs bug (2026-07-30).** Asked to add a third "Hotspot markers (precise)"
+view alongside a restored choropleth tab - i.e. exactly the 3-panel
+layout whose panel-hiding behaviour caused the blank-map bug above.
+`_hybrid_risk_choropleth` was recovered verbatim from git history (commit
+`5c9d5fd`, pre-dating its removal) rather than rewritten from memory.
+Instead of `st.tabs()` again, switched to `st.radio(..., horizontal=True,
+key="module3_map_view")`: Python only constructs the ONE currently-selected
+map each script rerun (a plain `if/elif/else` branch), so the other two
+views are never mounted hidden at all - structurally the same bug class
+cannot recur, regardless of how many views get added later. Verified live
+(2026-07-30): switching between all three renders correctly with no blank
+panels and no console errors; the circle-marker view specifically
+confirmed via `page.frame_locator("iframe")` - found all 25
+`path.leaflet-interactive` elements, clicked one, and got the expected
+popup text (`"Anuradhapura\nHybrid Risk Score: 20.4\nActual Cases: 13"`).
 
 **Root-caused and fixed (2026-07-29): heat-cloud showed separate uniform
 circles ("equal bubbles") instead of a continuous surface, once zoomed in
