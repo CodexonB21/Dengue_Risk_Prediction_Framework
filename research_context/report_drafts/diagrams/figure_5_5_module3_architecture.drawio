@@ -1,0 +1,140 @@
+<mxfile host="app.diagrams.net" agent="Codexon FYP" version="22.1.0" type="device">
+  <diagram id="figure-5-5-module3" name="Figure 5.5 Module 3">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="720" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Module 3: Hybrid Spatial Hotspot Detection" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontStyle=1;fontSize=18;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="280" y="10" width="600" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Figure 5.5 — High-level architecture (KDE + Moran’s I baseline → RF residual compensation → iterative risk update)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#4B5563;" vertex="1" parent="1">
+          <mxGeometry x="160" y="38" width="840" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="col1_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F3F4F6;strokeColor=#D1D5DB;opacity=40;" vertex="1" parent="1">
+          <mxGeometry x="20" y="70" width="270" height="590" as="geometry" />
+        </mxCell>
+        <mxCell id="col2_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#93C5FD;opacity=35;" vertex="1" parent="1">
+          <mxGeometry x="300" y="70" width="270" height="590" as="geometry" />
+        </mxCell>
+        <mxCell id="col3_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EDE9FE;strokeColor=#C4B5FD;opacity=35;" vertex="1" parent="1">
+          <mxGeometry x="580" y="70" width="280" height="590" as="geometry" />
+        </mxCell>
+        <mxCell id="col4_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#86EFAC;opacity=35;" vertex="1" parent="1">
+          <mxGeometry x="870" y="70" width="270" height="590" as="geometry" />
+        </mxCell>
+
+        <mxCell id="h1" value="Inputs" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontStyle=1;fontSize=14;fontColor=#374151;" vertex="1" parent="1">
+          <mxGeometry x="20" y="75" width="270" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="h2" value="Stage 1 — Spatial Baseline" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontStyle=1;fontSize=13;fontColor=#1E40AF;" vertex="1" parent="1">
+          <mxGeometry x="300" y="75" width="270" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="h3" value="Stage 2 — Compensation" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontStyle=1;fontSize=14;fontColor=#5B21B6;" vertex="1" parent="1">
+          <mxGeometry x="580" y="75" width="280" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="h4" value="Output" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontStyle=1;fontSize=14;fontColor=#166534;" vertex="1" parent="1">
+          <mxGeometry x="870" y="75" width="270" height="26" as="geometry" />
+        </mxCell>
+
+        <!-- INPUTS -->
+        <mxCell id="in_cases" value="&lt;b&gt;Weekly Dengue Cases&lt;/b&gt;&lt;br&gt;District-week counts&lt;br&gt;(25 districts)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#86EFAC;strokeColor=#15803D;fontColor=#14532D;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="45" y="115" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="in_climate" value="&lt;b&gt;Climate Features&lt;/b&gt;&lt;br&gt;Rainfall / temperature lags&lt;br&gt;Climate anomalies · monsoon" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="45" y="195" width="220" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="in_spatial" value="&lt;b&gt;Spatial Covariates&lt;/b&gt;&lt;br&gt;Elevation · population density&lt;br&gt;District centroids (GADM L1)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="45" y="280" width="220" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="in_pre" value="&lt;b&gt;Module 3 Preprocessing&lt;/b&gt;&lt;br&gt;Master table · epi-week climate&lt;br&gt;GADM Level-1 boundaries" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#4F46E5;fontColor=#312E81;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="45" y="365" width="220" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="in_src" value="&lt;b&gt;Data Sources&lt;/b&gt;&lt;br&gt;Epidemiology Unit, MoH&lt;br&gt;Open-Meteo · Census · GADM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6B7280;fontColor=#374151;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="45" y="455" width="220" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="in_note" value="District-level only&lt;br&gt;(not DS-division)" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#FEE2E2;strokeColor=#DC2626;fontColor=#991B1B;fontSize=10;size=12;align=center;" vertex="1" parent="1">
+          <mxGeometry x="60" y="545" width="190" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- STAGE 1 -->
+        <mxCell id="s1_kde" value="&lt;b&gt;KDE Baseline&lt;/b&gt;&lt;br&gt;Gaussian kernel over centroids&lt;br&gt;(case-weighted · Silverman bw)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1E3A8A;strokeColor=#1E3A8A;fontColor=#FFFFFF;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="325" y="130" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="s1_moran" value="&lt;b&gt;Moran’s I Check&lt;/b&gt;&lt;br&gt;Global clustering validation&lt;br&gt;(queen contiguity)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FECACA;strokeColor=#DC2626;fontColor=#7F1D1D;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="325" y="240" width="220" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="s1_base" value="&lt;b&gt;KDE_baseline&lt;/b&gt;&lt;br&gt;Per district-week&lt;br&gt;spatial risk surface" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E5E7EB;strokeColor=#4B5563;fontColor=#111827;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="325" y="350" width="220" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="s1_note" value="Raw form → Moran’s I&lt;br&gt;Rescaled form → Stage 2" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#FEF3C7;strokeColor=#D97706;fontColor=#92400E;fontSize=10;size=12;align=center;" vertex="1" parent="1">
+          <mxGeometry x="340" y="450" width="190" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- STAGE 2 -->
+        <mxCell id="s2_rf" value="&lt;b&gt;Random Forest&lt;/b&gt;&lt;br&gt;Spatial residual learner&lt;br&gt;(env. + demographic features)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1E3A8A;strokeColor=#1E3A8A;fontColor=#FFFFFF;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="610" y="130" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_resid" value="&lt;b&gt;Residual&lt;/b&gt;&lt;br&gt;Actual − Current_Risk" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FECACA;strokeColor=#DC2626;fontColor=#7F1D1D;fontSize=12;align=center;" vertex="1" parent="1">
+          <mxGeometry x="610" y="240" width="220" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_loop" value="&lt;b&gt;Iterative Update&lt;/b&gt;&lt;br&gt;Risk&lt;sub&gt;t&lt;/sub&gt; = Risk&lt;sub&gt;t−1&lt;/sub&gt; + α · Δ̂&lt;br&gt;(α = 0.05 shrinkage)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E5E7EB;strokeColor=#4B5563;fontColor=#111827;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="610" y="335" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_note" value="Stop when risk change&lt;br&gt;&amp; residual Moran’s I converge" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#FEF3C7;strokeColor=#D97706;fontColor=#92400E;fontSize=10;size=12;align=center;" vertex="1" parent="1">
+          <mxGeometry x="625" y="440" width="190" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- OUTPUT -->
+        <mxCell id="out_map" value="&lt;b&gt;Hybrid Hotspot / Risk Map&lt;/b&gt;&lt;br&gt;Converged district-week&lt;br&gt;spatial risk surface" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#86EFAC;strokeColor=#15803D;fontColor=#14532D;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="895" y="150" width="220" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="out_eval" value="&lt;b&gt;Evaluation&lt;/b&gt;&lt;br&gt;Moran’s I · spatial CV&lt;br&gt;MAE / RMSE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6B7280;fontColor=#374151;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="895" y="280" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="out_idw" value="IDW continuous surface&lt;br&gt;(visualization only)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F9FAFB;strokeColor=#9CA3AF;fontColor=#374151;fontSize=10;align=center;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="895" y="400" width="220" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Edges -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#15803D;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="in_cases" target="s1_kde">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#4B5563;strokeWidth=1;dashed=1;endArrow=block;endFill=1;" edge="1" parent="1" source="in_spatial" target="s1_kde">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#1E40AF;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="s1_kde" target="s1_moran">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#1E40AF;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="s1_moran" target="s1_base">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2563EB;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="in_climate" target="s2_rf">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2563EB;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="in_spatial" target="s2_rf">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5B21B6;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="s1_base" target="s2_resid">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5B21B6;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="s2_resid" target="s2_rf">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5B21B6;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="s2_rf" target="s2_loop">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#15803D;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="s2_loop" target="out_map">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6B7280;strokeWidth=1;endArrow=block;endFill=1;" edge="1" parent="1" source="out_map" target="out_eval">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6B7280;strokeWidth=1;dashed=1;endArrow=block;endFill=1;" edge="1" parent="1" source="out_map" target="out_idw">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

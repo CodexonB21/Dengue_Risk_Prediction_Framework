@@ -31,8 +31,8 @@ Every figure or table used in the final report should have:
 
 ## Figure 4.1: Overview of the Proposed Dengue Risk Prediction Framework
 
-Chapter: Chapter 4 - Proposed Research Framework
-Status: Planned
+Chapter: Chapter 4 - Our Approach
+Status: Planned (caption/text ready in expanded Chapter 4 draft)
 
 Purpose:
 
@@ -42,18 +42,21 @@ Show the three-module structure of the proposed framework:
 2. Hybrid Outbreak Risk Classification
 3. Hybrid Spatial Hotspot Detection
 
+plus the early-warning dashboard integration layer.
+
 Notes:
 
 - Should show how epidemiological, climate, temporal, and spatial data enter the framework.
 - Should show outputs such as case forecasts, outbreak risk levels, and hotspot maps.
 - Must match `CURRENT_ARCHITECTURE.md`.
+- Caption: Figure 4.1: High-level residual compensation framework for dengue risk prediction.
 
 ---
 
-## Figure 4.2: Residual Compensation Workflow
+## Figure 4.2: Module 1 Residual Compensation Workflow
 
-Chapter: Chapter 4 - Proposed Research Framework
-Status: Planned
+Chapter: Chapter 4 - Our Approach
+Status: Planned (caption/text ready)
 
 Purpose:
 
@@ -68,7 +71,7 @@ SARIMA baseline forecast
         ↓
 Residual calculation
         ↓
-Machine learning residual prediction
+XGBoost residual prediction (climate + epi features)
         ↓
 Final compensated forecast
 ```
@@ -83,138 +86,268 @@ final_prediction = sarima_prediction + predicted_residual
 Notes:
 
 - Use this figure to explain the novelty and core forecasting logic.
-- Do not include climate variables in SARIMA stage unless documentation changes.
+- Do not include climate variables in SARIMA stage.
+- Caption: Figure 4.2: Two-stage residual compensation workflow for Module 1.
 
 ---
 
-## Figure 5.1: High-Level Architecture of the Proposed Framework
+## Figure 4.3: Module 2 Outbreak Risk Classification Workflow
 
-Chapter: Chapter 5 - Analysis and Design
-Status: Planned
+Chapter: Chapter 4 - Our Approach
+Status: Planned (caption/text ready)
 
 Purpose:
 
-Show the main architecture/components of the full framework.
+Show epidemic-threshold labelling → Random Forest baseline probability → isotonic calibration → alert flag and risk tier.
 
-Possible components:
+Caption: Figure 4.3: Two-stage Module 2 workflow for outbreak risk classification.
 
-- Data sources
-- Preprocessing layer
-- Feature engineering layer
-- Module 1 forecasting service/pipeline
-- Module 2 classification service/pipeline
-- Module 3 spatial hotspot pipeline
-- Output layer
+---
+
+## Figure 4.4: Module 3 Spatial Hotspot Workflow
+
+Chapter: Chapter 4 - Our Approach
+Status: Planned (caption/text ready)
+
+Purpose:
+
+Show KDE + Moran’s I baseline → spatial residual adjustment using environmental/demographic context → hotspot / risk surface.
+
+Caption: Figure 4.4: Two-stage Module 3 workflow for spatial hotspot detection.
+
+---
+
+## Figure 4.5: Integration of Module Outputs into the Early-Warning Dashboard
+
+Chapter: Chapter 4 - Our Approach
+Status: Planned (optional)
+
+Purpose:
+
+Show how Module 1/2/3 outputs feed a Streamlit decision-support dashboard (no scenario-simulation claim).
+
+Caption: Figure 4.5: Integration of forecasting, risk classification, and hotspot outputs into the early-warning dashboard.
+
+---
+
+## Table 4.1: Module-wise Meaning of Residual Compensation
+
+Chapter: Chapter 4 - Our Approach
+Status: Planned (draft text ready)
+
+Purpose: Contrast case residual correction, probability calibration, and spatial residual adjustment.
+
+---
+
+## Table 4.2: Inputs, Processes, and Outputs by Module
+
+Chapter: Chapter 4 - Our Approach
+Status: Planned (draft text ready)
+
+Purpose: Compact IPO summary for Modules 1–3.
+
+---
+
+## Figure 5.1: Top-Level Architecture of the Proposed Framework
+
+Chapter: Chapter 5 - Analysis and Design
+Status: Planned (caption/text ready in expanded Chapter 5 draft)
+
+Purpose:
+
+Show the main architecture layers with **shared vs module-specific** split (Decision 013):
+
+- Data acquisition
+- Shared preprocessing
+- Module-specific preprocessing / feature engineering
+- Three hybrid modelling modules
+- Evaluation design
+- Streamlit early-warning dashboard
+
+Caption: Figure 5.1: Top-level architecture of the proposed residual compensation framework.
 
 Notes:
 
-- This should be the main architecture diagram.
-- Must be cited in the body text.
+- Must show shared vs module-specific preprocessing, not one undifferentiated preprocessing block.
+- Modules are largely parallel peers; optional dashed M1→M2 for operational forward only.
 
 ---
 
-## Figure 5.2: Data Flow Diagram
+## Figure 5.2: Data Flow Through Shared and Module-Specific Layers
 
 Chapter: Chapter 5 - Analysis and Design
-Status: Planned
+Status: Planned (caption/text ready)
 
 Purpose:
 
-Show how raw data becomes model-ready features and outputs.
+Show raw epi/climate/spatial sources → shared tables → module-specific preprocessing → feature groups → module outputs.
 
-Possible flow:
+Caption: Figure 5.2: Data flow from raw sources through shared and module-specific layers.
+
+---
+
+## Table 5.1: Shared vs Module-Specific Preprocessing Decisions
+
+Chapter: Chapter 5 - Analysis and Design
+Status: Planned (draft text ready)
+
+Purpose: Contrast Decision 013 choices (e.g. week-53 merge Module 1 only; Module 2 keeps week 53).
+
+---
+
+## Figure 5.3: Module 1 High-Level Architecture
+
+Chapter: Chapter 5 - Analysis and Design
+Status: **Created (2026-07-30)** — editable draw.io + PNG ready for Word
+
+Purpose:
+
+Show Module 1 design flow in the same four-column layout as the interim figure (Inputs | Stage 1 | Stage 2 | Output), corrected to the current architecture.
+
+Caption:
 
 ```text
-Raw dengue data + weather data + spatial data
-        ↓
-Cleaning and alignment
-        ↓
-Feature engineering
-        ↓
-Module-specific modeling
-        ↓
-Predictions / risk scores / maps
-```
-
-Notes:
-
-- Should reflect actual file structure and pipeline stages if finalized.
-
----
-
-## Figure 5.3: Module Interaction Diagram
-
-Chapter: Chapter 5 - Analysis and Design
-Status: Planned
-
-Purpose:
-
-Show how Module 1, Module 2, and Module 3 interact or remain independent.
-
-Notes:
-
-- If modules are independent, clearly show independent outputs.
-- If Module 1 outputs feed Module 2 or Module 3, clearly show that dependency.
-- Must reflect latest architecture documentation.
-- For now, Module 1 and Module 2 can be shown as largely independent production pipelines sharing cleaned base tables; Module 1→Module 2 forecast feed is optional/evaluation-side, not a hard Stage 1 dependency.
-
----
-
-## Figure 5.4: Module 1 High-Level Architecture
-
-Chapter: Chapter 5 - Analysis and Design
-Status: Drafted
-
-Purpose:
-
-Show Module 1 design flow: shared tables → Module 1 preprocessing → SARIMA → residual → Stage 2 features → XGBoost → final forecast.
-
-Caption suggestion:
-
-```text
-Figure 5.4: High-level architecture of Module 1 — Hybrid Time-Series Case Forecasting
+Figure 5.3: High-level architecture of Module 1 — Hybrid Time-Series Case Forecasting (SARIMA baseline → residual extraction → XGBoost compensation → final case forecast)
 ```
 
 Source / file:
 
-- `research_context/report_drafts/diagrams/figure_5_4_module1_architecture.drawio`
-- Also page 1 of `figure_5_4_and_5_5_module1_module2.drawio`
+- **Primary (new 4-column layout):** `research_context/report_drafts/diagrams/figure_5_3_module1_architecture.drawio`
+- **PNG export:** `research_context/report_drafts/diagrams/figure_5_3_module1_architecture.png`
+- Legacy vertical flow: `figure_5_4_module1_architecture.drawio` (superseded layout; keep for reference)
+- Referenced from: `research_context/report_drafts/chapter5_5.4.1_module1.md`
+
+Corrections vs interim Figure (old):
+
+| Old interim figure | Current Figure 5.3 |
+|---|---|
+| RF / XGBoost residual learner | **XGBoost only** |
+| Meteorology Dept / NASA | **Open-Meteo climate API** |
+| MAPE, R² | **RMSE, MAE, sMAPE, MASE** |
+| No preprocessing shown | draw.io includes Module 1 preprocessing (week-53 merge; seasonal-naive; `is_imputed`) |
+| Climate path ambiguous | Explicit: cases → SARIMA; climate/engineered → XGBoost only |
 
 Notes:
 
 - Climate must enter only at Stage 2.
-- Include residual and final-prediction equations on the figure or immediately beside it.
-- Replaces interim report “Figure 3”.
-- Open in [diagrams.net](https://app.diagrams.net/) or the Draw.io VS Code/Cursor extension, then export PNG/SVG for Word.
+- Residual equations: `Actual − Ŷ_SARIMA` and `Ŷ_SARIMA + Δ̂`.
+- Dashed arrow: base prediction used as a Stage 2 feature.
+- Open draw.io in diagrams.net to tweak labels before final Word export if needed.
 
 ---
 
-## Figure 5.5: Module 2 High-Level Architecture
+## Figure 5.4: Module 2 High-Level Architecture
 
 Chapter: Chapter 5 - Analysis and Design
-Status: Drafted
+Status: **Created (2026-07-30)** — editable draw.io + PNG ready for Word
 
 Purpose:
 
-Show Module 2 design flow: shared tables → Module 2 preprocessing → epidemic-threshold labels → XGBoost probability → isotonic calibration → alert/risk tier.
+Show Module 2 design flow in the same four-column layout as Figure 5.3 (Inputs | Stage 1 | Stage 2 | Output), corrected to the current architecture.
 
-Caption suggestion:
+Caption:
 
 ```text
-Figure 5.5: High-level architecture of Module 2 — Hybrid Outbreak Risk Classification
+Figure 5.4: High-level architecture of Module 2 — Hybrid Outbreak Risk Classification (Random Forest baseline → isotonic probability compensation → alert / risk-tier outputs)
 ```
 
 Source / file:
 
-- `research_context/report_drafts/diagrams/figure_5_5_module2_architecture.drawio`
-- Also page 2 of `figure_5_4_and_5_5_module1_module2.drawio`
+- **Primary (new 4-column layout):** `research_context/report_drafts/diagrams/figure_5_4_module2_architecture.drawio`
+- **PNG export:** `research_context/report_drafts/diagrams/figure_5_4_module2_architecture.png`
+- Legacy vertical flow: `figure_5_5_module2_architecture.drawio` (superseded layout; keep for reference)
+- Referenced from: `research_context/report_drafts/chapter5_5.4.2_module2.md`
+
+Key design facts on the figure:
+
+- Stage 1 official model = **Random Forest** (Decision 025)
+- Stage 2 = **isotonic regression** (probability calibration, not case-residual ML)
+- Climate included in Stage 1
+- Week 53 kept unmerged
+- Evaluation: PR-AUC, ROC-AUC, Brier, BSS
 
 Notes:
 
-- Stage 2 is probability calibration, not climate residual regression.
-- Show labelling as an explicit box before Stage 1.
-- Replaces interim report “Figure 4”.
-- Open in diagrams.net, then export PNG/SVG for Word.
+- Show labelling as an explicit box before / with Stage 1.
+- Do not put numeric alert/tier thresholds on the figure (report those in Chapter 7).
+- Open draw.io in diagrams.net to tweak labels before final Word export if needed.
+
+---
+
+## Table 5.2: Module 1 vs Module 2 Design Contrast
+
+Chapter: Chapter 5 - Analysis and Design
+Status: Planned (draft text ready)
+
+---
+
+## Figure 5.5: Module 3 High-Level Architecture
+
+Chapter: Chapter 5 - Analysis and Design
+Status: **Created (2026-07-30)** — editable draw.io + PNG ready for Word
+
+Purpose:
+
+Show Module 3 design flow in the same four-column layout as Figures 5.3/5.4 (Inputs | Stage 1 | Stage 2 | Output).
+
+Caption:
+
+```text
+Figure 5.5: High-level architecture of Module 3 — Hybrid Spatial Hotspot Detection (KDE + Moran’s I baseline → Random Forest residual compensation → iterative risk update)
+```
+
+Source / file:
+
+- **Primary:** `research_context/report_drafts/diagrams/figure_5_5_module3_architecture.drawio`
+- **PNG export:** `research_context/report_drafts/diagrams/figure_5_5_module3_architecture.png`
+- Referenced from: `research_context/report_drafts/chapter5_5.4.3_module3.md`
+
+Key design facts on the figure:
+
+- Stage 1 = **KDE + Moran’s I** (district centroids; queen contiguity)
+- Stage 2 = **Random Forest** residual learner + iterative loop `Risk_t = Risk_(t-1) + α · Δ̂` with **α = 0.05**
+- IDW continuous surface = **visualization only**, not a modelling stage
+- Scope = GADM Level-1 (25 districts), not DS-division
+
+Notes:
+
+- Keep numeric Moran’s I / MAE / RMSE for Chapter 7.
+- Do not claim Stage 2 improves aggregate case-fit on the figure.
+
+---
+
+## Figure 5.6: Integration and Output Design (Early-Warning Dashboard)
+
+Chapter: Chapter 5 - Analysis and Design
+Status: **Created (2026-07-30)** — editable draw.io + PNG ready for Word
+
+Purpose:
+
+Show Module 1/2/3 outputs feeding Streamlit dashboard; research vs operational evidence tiers; dashboard views.
+
+Caption:
+
+```text
+Figure 5.6: Integration of module outputs into the early-warning dashboard (Streamlit decision-support views with research vs operational evidence tiers)
+```
+
+Source / file:
+
+- **Primary:** `research_context/report_drafts/diagrams/figure_5_6_integration_dashboard.drawio`
+- **PNG export:** `research_context/report_drafts/diagrams/figure_5_6_integration_dashboard.png`
+- Referenced from: `research_context/report_drafts/chapter5_5.5_integration.md`
+
+Key design facts on the figure:
+
+- Streamlit = read-only consumer (not a fourth modelling stage)
+- Magnitude / probability / geography kept distinct (no fused final score)
+- Research evidence vs operational prototype tiers
+- M1→M2 lag substitution: operational forward only
+- No scenario simulation / Command Centre stack
+
+Notes:
+
+- Align with Chapter 4.7 principles; Chapter 5 is the design-depth version.
 
 ---
 

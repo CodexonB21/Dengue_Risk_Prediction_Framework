@@ -221,29 +221,43 @@ Describe the proposed solution conceptually before going into detailed design an
 
 ## Adaptive Subtopics
 
-Possible sections include:
+Current accepted structure (2026-07-30):
 
 - 4.1 Introduction
 - 4.2 Overview of the Proposed Framework
-- 4.3 Module 1: Hybrid Time-Series Case Forecasting
-- 4.4 Module 2: Hybrid Outbreak Risk Classification
-- 4.5 Module 3: Hybrid Spatial Hotspot Detection
-- 4.6 Residual Compensation Strategy
-- 4.7 Integration Between Modules
-- 4.8 Inputs, Processes, and Outputs
+- 4.3 Residual Compensation Strategy
+- 4.4 Module 1: Hybrid Time-Series Case Forecasting
+  - 4.4.1 Purpose and scope
+  - 4.4.2 Stage 1 baseline (SARIMA)
+  - 4.4.3 Stage 2 residual compensation (XGBoost)
+  - 4.4.4 Expected outputs and users
+- 4.5 Module 2: Hybrid Outbreak Risk Classification
+  - 4.5.1 Purpose and label concept
+  - 4.5.2 Stage 1 baseline classifier
+  - 4.5.3 Stage 2 probability compensation
+  - 4.5.4 Expected outputs and users
+- 4.6 Module 3: Hybrid Spatial Hotspot Detection
+  - 4.6.1 Purpose and scope
+  - 4.6.2 Stage 1 spatial baseline (KDE and Moran’s I)
+  - 4.6.3 Stage 2 spatial residual adjustment
+  - 4.6.4 Expected outputs and users
+- 4.7 System Integration and Early Warning Dashboard
+- 4.8 Inputs, Processes, and Outputs Summary
 - 4.9 Summary
 
 ## Notes
 
 This chapter should explain what the project does, why the modules exist, and how the modules are connected, mostly in paragraph form.
 
-It should not go too deeply into code-level details.
+It should not go too deeply into code-level details, file paths, fold counts, or evaluation metric tables (those belong in Chapters 5–7).
 
-Each module subsection (4.3-4.5) should read as a short narrative, not a bulleted feature list. A single inputs/processes/outputs table (4.8) is acceptable as a summary, but it should be preceded and/or followed by prose explaining the table.
+Each module section should read as a narrative. A single inputs/processes/outputs table (4.8) is acceptable as a summary, but it should be preceded and/or followed by prose explaining the table.
+
+Compensation meanings differ by module: Module 1 = case residual correction; Module 2 = probability calibration; Module 3 = spatial residual adjustment.
 
 ## Target Length
 
-Chapter target: 2,000-3,000 words. Each module subsection (4.3-4.5): 400-800 words.
+Chapter target: 2,500–3,200 words. Module sections (4.4–4.6): 400–700 words each.
 
 ---
 
@@ -255,39 +269,40 @@ Present the system/research design, architecture, module interactions, data flow
 
 ## Adaptive Subtopics
 
-Possible sections include:
+Current accepted structure (2026-07-30):
 
 - 5.1 Introduction
-- 5.2 High-Level Architecture of the Proposed Framework
-- 5.3 Data Architecture
-- 5.4 Pipeline Architecture
-- 5.5 Module 1 Design: Forecasting Pipeline
-- 5.6 Module 2 Design: Classification Pipeline
-- 5.7 Module 3 Design: Spatial Hotspot Pipeline
-- 5.8 Integration Design
-- 5.9 Output Design
-- 5.10 Summary
+- 5.2 High-Level System Architecture
+- 5.3 Data Architecture and Pipeline Design
+- 5.4 High-Level Architecture of Individual Modules
+  - 5.4.1 Module 1: Hybrid Time-Series Case Forecasting
+  - 5.4.2 Module 2: Hybrid Outbreak Risk Classification
+  - 5.4.3 Module 3: Hybrid Spatial Hotspot Detection
+- 5.5 Integration and Output Design
+- 5.6 Summary
 
-## Required Figures
+## Required Figures / Tables
 
-Possible figures include:
-
-- Figure 5.X: High-level architecture of the proposed dengue risk prediction framework
-- Figure 5.X: Data flow of the proposed framework
-- Figure 5.X: Module interaction diagram
-- Figure 5.X: Residual compensation workflow
+- Figure 5.1: Top-level architecture (shared vs module-specific split)
+- Figure 5.2: Data flow through shared and module-specific layers
+- Figure 5.3: Module 1 architecture
+- Figure 5.4: Module 2 architecture
+- Figure 5.5: Module 3 architecture
+- Figure 5.6: Dashboard integration design
+- Table 5.1: Shared vs module-specific preprocessing decisions
+- Table 5.2: Module 1 vs Module 2 design contrast
 
 ## Notes
 
-At least one top-level architecture diagram should be included.
+Chapter 5 is structural design (components, stage boundaries, leakage guards, feature groups). It must not repeat Chapter 4’s conceptual what/why at length, and must not dump Chapter 6 feature dictionaries or Chapter 7 metric tables.
 
-Every diagram should be cited in the body text and followed by a paragraph interpreting it, not left to stand alone (see Figure and Table Style in `REPORT_STYLE_GUIDE.md`).
+Decision 013 is mandatory: shared preprocessing is module-agnostic only; SARIMA-specific transforms stay in Module 1.
 
-The architecture must match `CURRENT_ARCHITECTURE.md`.
+Architecture must match `CURRENT_ARCHITECTURE.md`. Module 2 Stage 2 = isotonic calibration.
 
 ## Target Length
 
-Chapter target: 2,500-3,500 words. Each module design subsection (5.5-5.7): 400-800 words.
+Chapter target: 2,800–3,500 words. Module design subsections (5.4.1–5.4.3): 400–700 words each.
 
 ---
 

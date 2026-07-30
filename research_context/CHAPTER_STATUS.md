@@ -54,13 +54,13 @@ Approximate target lengths per chapter (full targets and per-subsection guidance
 | Area | Status | Notes |
 |---|---|---|
 | Front Matter | Not Started | Title page, declaration, dedication, acknowledgement, abstract pending |
-| Chapter 1 | Not Started | Introduction and project motivation pending |
+| Chapter 1 | Drafting | 1.1, 1.3, 1.4, 1.5.2, 1.5 Summary drafts ready; Aim and remaining sections pending |
 | Chapter 2 | Not Started | Literature review and research gap pending |
-| Chapter 3 | Not Started | Technology/tools explanation pending |
-| Chapter 4 | Drafting | 4.2.1 / 4.2.2 draft ready (`report_drafts/chapter4_4.2.1_4.2.2.md`); M3 deferred |
-| Chapter 5 | Drafting | 5.3.1 / 5.3.2 draft ready (`report_drafts/chapter5_5.3.1_5.3.2.md`); M3 deferred |
-| Chapter 6 | Drafting | 6.2.1/6.2.2/6.3.1/6.3.2 draft ready (`report_drafts/chapter6_6.2_6.3_m1_m2.md`); M3 deferred |
-| Chapter 7 | Drafting | M1/M2 evaluation draft ready (`report_drafts/chapter7_m1_m2_evaluation.md`); M3 deferred |
+| Chapter 3 | Drafting | 3.2 + 3.3 Summary drafts ready (`report_drafts/chapter3_3.2_technology_adapted.md`, `chapter3_3.3_summary.md`) |
+| Chapter 4 | Drafting | Expanded Ch.4 structure accepted; full draft in `report_drafts/chapter4_our_approach.md`; Module 3 conceptual approach included |
+| Chapter 5 | Drafting | Expanded Ch.5 structure accepted; full draft in `report_drafts/chapter5_analysis_and_design.md`; Module 3 design included |
+| Chapter 6 | Drafting | 6.2.1/6.2.2/6.3.1/6.3.2 draft ready; Module 3 implementation now complete in code — Ch.6 M3 subsection still to draft |
+| Chapter 7 | Drafting | M1/M2 evaluation draft ready; Module 3 results available (`outputs/metrics/module3/`) — Ch.7 M3 subsection still to draft |
 | Chapter 8 | Not Started | Conclusion and future work pending |
 | Chapter 9 | Not Started | Challenges and limitations pending |
 | References | Not Started | Citation list pending |
@@ -99,18 +99,20 @@ Status: Not Started
 
 ## Current Status
 
-Status: Not Started
+Status: Drafting
 
 ## Possible Sections
 
-- 1.1 Introduction
+- 1.1 Introduction — **Draft ready** (~245 words)
 - 1.2 Background and Motivation
-- 1.3 Problem Statement / Problem in Brief
-- 1.4 Research Gap
+- 1.3 Problem Statement / Problem in Brief — **Draft ready** (~420 words)
+- 1.4 Proposed Solution — **Draft ready** (~560 words; interim numbering; `REPORT_STRUCTURE.md` lists this as 1.6)
 - 1.5 Aim and Objectives
-- 1.6 Proposed Solution
-- 1.7 Research Scope
-- 1.8 Summary
+  - 1.5.1 Aim — pending
+  - 1.5.2 Objectives — **Draft ready**
+- 1.5 Summary — **Draft ready** (~195 words; interim numbering; typically final Ch.1 subsection)
+- 1.6 Research Scope / Research Gap — confirm final order with supervisor
+- (Adaptive: Research Gap may be inserted as a separate subsection if required)
 
 ## Required Content
 
@@ -128,14 +130,35 @@ Status: Not Started
 
 ## Missing Items
 
-- [ ] Literature citations for dengue burden
+- [x] 1.1 Introduction draft aligned to current architecture (district-level; residual compensation; three modules)
+- [x] 1.3 Problem in Brief draft (reframed away from fine-scale; residual compensation + multidimensional risk)
+- [x] 1.4 Proposed Solution draft (SARIMA→XGBoost; RF→isotonic; KDE/Moran’s I spatial design)
+- [x] 1.5.2 Objectives draft (Module 2 calibration wording corrected)
+- [x] 1.5 Summary draft
+- [ ] 1.5.1 Aim draft
+- [ ] Literature citations for dengue burden (beyond Uduwanage et al. [1] / Uelmen Jr. et al. [4])
 - [ ] Finalized aim
-- [ ] Finalized objectives
+- [ ] Finalized objectives — draft ready; confirm with Aim and supervisor
 - [ ] Scope boundaries
+- [ ] Confirm Chapter 1 subsection order (Proposed Solution vs Research Gap numbering)
+- [ ] Paste Word update of sections 1.1 / 1.3 / 1.4 / 1.5.2 / 1.5 Summary
 
 ## Notes
 
-None yet.
+Draft locations:
+- `research_context/report_drafts/chapter1_1.1_introduction.md`
+- `research_context/report_drafts/chapter1_1.3_problem_in_brief.md`
+- `research_context/report_drafts/chapter1_1.4_proposed_solution.md`
+- `research_context/report_drafts/chapter1_1.5.2_objectives.md`
+- `research_context/report_drafts/chapter1_1.5_summary.md`
+
+Key corrections vs interim Chapter 1 text:
+- Dengue-focused; residual compensation framing; district-level (not fine-scale)
+- Softened Command Center / scenario-simulation claims → early-warning decision-support dashboard
+- Module 1 Stage 1 = SARIMA only (not SARIMAX); Stage 2 = XGBoost
+- Module 2 Stage 1 = Random Forest with climate included; Stage 2 = isotonic calibration
+- Module 3 = KDE + Moran’s I baseline + spatial residual adjustment (design-level in Ch.1)
+- Objectives / Summary: Module 2 no longer claims environmental-anomaly residual correction for all modules alike
 
 ---
 
@@ -190,44 +213,55 @@ This chapter must be strongly citation-supported.
 
 ## Current Status
 
-Status: Not Started
+Status: Drafting
 
 ## Possible Sections
 
-- 3.1 Introduction
-- 3.2 Programming Language
-- 3.3 Development Environment
-- 3.4 Data Processing Libraries
-- 3.5 Time-Series Forecasting Libraries
-- 3.6 Machine Learning Libraries
-- 3.7 Spatial Analysis and Mapping Tools
-- 3.8 Visualization Tools
-- 3.9 Version Control and Documentation Tools
-- 3.10 Summary
+- 3.1 Introduction — pending
+- 3.2 Technology Adapted — **Draft ready** (~920 words)
+  - 3.2.1 Programming Languages
+  - 3.2.2 Development Environments and Tools
+  - 3.2.3 Libraries and Frameworks
+  - 3.2.4 Version Control and Collaboration
+- 3.3 Summary — **Draft ready** (~160 words)
+- 3.3–3.10 alternative split in `REPORT_STRUCTURE.md` — optional later redistribution
 
 ## Required Content
 
 - Python usage
 - Jupyter Notebook / Cursor IDE usage
 - Pandas and NumPy for preprocessing
-- Statsmodels / pmdarima for SARIMA, if used
-- Scikit-learn / XGBoost / LightGBM for ML, if used
-- GeoPandas / Folium / GIS tools, if used
+- Statsmodels / pmdarima for SARIMA
+- Scikit-learn / XGBoost for ML and calibration
+- GeoPandas / Folium / libpysal / esda for spatial/dashboard mapping
+- Streamlit / Plotly dashboard stack
 - GitHub and documentation workflow
 
 ## Required Figures/Tables
 
-- Optional: Technology stack table
+- [x] Draft Table 3.1: technology summary
+- Optional: Technology stack diagram
 
 ## Missing Items
 
-- [ ] Confirm final library list
-- [ ] Confirm final tools used by all modules
-- [ ] Add citations if required
+- [x] Confirm final library list against `requirements.txt` / implementation
+- [x] 3.3 Summary draft
+- [ ] Confirm whether VS Code should be named alongside Cursor for any teammate workflow
+- [ ] Paste Word update of sections 3.2 / 3.3
+- [ ] Chapter 3 introduction
+- [ ] Add citations if department requires tool/library citations
 
 ## Notes
 
 Avoid generic tool descriptions. Every tool must be connected to project usage.
+
+Draft location: `research_context/report_drafts/chapter3_3.2_technology_adapted.md`
+
+Key corrections vs interim 3.2:
+- Removed Flask/Django, React, LightGBM, Colab-as-core, SARIMAX/STL-as-production
+- Dashboard = Streamlit (+ Plotly / Folium), not command-center web stack
+- imbalanced-learn = SMOTE audit only; production uses class weights
+- Official models stated accurately (SARIMA→XGBoost; RF→isotonic)
 
 ---
 
@@ -239,14 +273,15 @@ Status: Drafting
 
 ## Possible Sections
 
-- 4.1 Introduction
-- 4.2 Overview of the Proposed Framework / Proposed System
-  - 4.2.1 Module 1: Hybrid Time-Series Case Forecasting — **Draft ready**
-  - 4.2.2 Module 2: Hybrid Outbreak Risk Classification — **Draft ready**
-  - 4.2.3 Module 3: Hybrid Spatial Hotspot Detection — deferred
-- 4.3 System Integration and Early Warning Dashboard
-- 4.4 Summary
-- (Optional later renumbering to match `REPORT_STRUCTURE.md` if supervisor prefers)
+- 4.1 Introduction — **Draft ready** (`report_drafts/chapter4_4.1_introduction.md`)
+- 4.2 Overview of the Proposed Framework — in expanded draft
+- 4.3 Residual Compensation Strategy — in expanded draft
+- 4.4 Module 1 (4.4.1–4.4.4) — in expanded draft
+- 4.5 Module 2 (4.5.1–4.5.4) — in expanded draft
+- 4.6 Module 3 (4.6.1–4.6.4) — conceptual approach in expanded draft
+- 4.7 System Integration and Early Warning Dashboard — in expanded draft
+- 4.8 Inputs, Processes, and Outputs Summary — in expanded draft
+- 4.9 Summary — in expanded draft
 
 ## Required Content
 
@@ -258,32 +293,36 @@ Status: Drafting
 
 ## Required Figures/Tables
 
-- [ ] Figure: Overall proposed research framework
-- [x] Figure draft text ready: Module 1 residual compensation workflow
-- [x] Figure draft text ready: Module 2 labelling → probability → calibration → alert/tier
-- [ ] Optional Table: Inputs/processes/outputs by module
-- [ ] Optional Table: Module 1 vs Module 2 compensation interpretation
+- [x] Planned: Figure 4.1 overall framework
+- [x] Planned: Figure 4.2 Module 1 workflow
+- [x] Planned: Figure 4.3 Module 2 workflow
+- [x] Planned: Figure 4.4 Module 3 workflow
+- [x] Planned: Figure 4.5 dashboard integration (optional)
+- [x] Planned: Table 4.1 compensation meanings
+- [x] Planned: Table 4.2 IPO summary
 
 ## Missing Items
 
-- [x] Confirm Module 1/2 architecture for 4.2.1 / 4.2.2 (aligned to living docs, 2026-07-29)
-- [ ] Confirm module integration flow (4.3)
-- [ ] Confirm final input/output design for Module 3
-- [ ] Paste Word update of interim sections 4.2.1 / 4.2.2
+- [x] Expanded Chapter 4 structure accepted (2026-07-30)
+- [x] Full conceptual draft for sections 4.2–4.9
+- [ ] Draw/export Figures 4.1–4.5 for Word
+- [ ] Paste Word update of expanded Chapter 4
 
 ## Notes
 
 This chapter should not go too deeply into implementation code.
 
-Draft location: `research_context/report_drafts/chapter4_4.2.1_4.2.2.md`
+Primary draft location: `research_context/report_drafts/chapter4_our_approach.md`  
+Earlier M1/M2 stub: `research_context/report_drafts/chapter4_4.2.1_4.2.2.md` (superseded by expanded numbering)
 
-Key corrections vs interim draft in 4.2.1/4.2.2:
+Key corrections vs interim Chapter 4:
 - District-level (not fine-scale)
 - Module 1 Stage 1 = SARIMA only (not SARIMAX); climate in Stage 2
 - Module 1 Stage 2 = XGBoost residual regression
-- Module 2 Stage 1 = XGBoost with climate included
+- Module 2 Stage 1 = Random Forest with climate included
 - Module 2 Stage 2 = isotonic probability calibration (official)
 - Avoid SMOTE as production imbalance method
+- Dashboard = Streamlit decision-support (no scenario simulation / Command Centre stack)
 
 ---
 
@@ -295,45 +334,55 @@ Status: Drafting
 
 ## Possible Sections
 
-- 5.1 Introduction — interim text still generic; edit later
-- 5.2 High-Level / Overall Architecture — interim text needs Decision 013 shared vs module-specific update; edit later
-- 5.3 High-Level Architecture of Individual Modules
-  - 5.3.1 Module 1 — **Draft ready**
-  - 5.3.2 Module 2 — **Draft ready**
-  - 5.3.3 Module 3 — deferred
-- 5.4 Summary — edit later
+- 5.1 Introduction — in expanded draft
+- 5.2 High-Level System Architecture — in expanded draft
+- 5.3 Data Architecture and Pipeline Design — in expanded draft
+- 5.4 High-Level Architecture of Individual Modules
+  - 5.4.1 Module 1 — **standalone draft ready** (~580 words; + Figure 5.3)
+  - 5.4.2 Module 2 — **standalone draft ready** (~620 words; + Figure 5.4 + Table 5.2)
+  - 5.4.3 Module 3 — **standalone draft ready** (~610 words; + Figure 5.5)
+- 5.5 Integration and Output Design — **standalone draft ready** (~520 words; + Figure 5.6)
+- 5.6 Summary — **standalone draft ready** (~175 words)
 
 ## Required Content
 
 - Top-level architecture
 - Data flow
-- Pipeline design
+- Pipeline design (shared vs module-specific)
 - Module interactions
 - Design of each module
 - Output/report/map generation design
 
 ## Required Figures/Tables
 
-- [ ] Figure: High-level architecture
-- [ ] Figure: Data flow diagram
-- [ ] Figure: Module interaction diagram
-- [x] Draft text + flow ready: Module 1 architecture (Figure 5.4 planned)
-- [x] Draft text + flow ready: Module 2 architecture (Figure 5.5 planned)
-- [x] Draft table text: Module 1 vs Module 2 design contrast
-- [ ] Spatial hotspot pipeline figure — deferred
+- [x] Planned: Figure 5.1 top-level architecture
+- [x] Planned: Figure 5.2 data flow
+- [x] Planned: Figure 5.3 Module 1 — **draw.io + PNG created** (`figure_5_3_module1_architecture.*`)
+- [x] Planned: Figure 5.4 Module 2 — **draw.io + PNG created** (`figure_5_4_module2_architecture.*`)
+- [x] Planned: Figure 5.5 Module 3 — **draw.io + PNG created** (`figure_5_5_module3_architecture.*`)
+- [x] Planned: Figure 5.6 dashboard integration — **draw.io + PNG created** (`figure_5_6_integration_dashboard.*`)
+- [x] Planned: Table 5.1 shared vs module-specific
+- [x] Planned: Table 5.2 Module 1 vs Module 2 contrast — **in 5.4.2 draft**
 
 ## Missing Items
 
-- [x] Confirm Module 1/2 design for 5.3.1 / 5.3.2 (aligned to living docs, 2026-07-29)
-- [ ] Final redrawn architecture diagrams for Word
-- [ ] Confirm current file paths and pipeline stages in 5.2 later
-- [ ] Paste Word update of interim sections 5.3.1 / 5.3.2
+- [x] Expanded Chapter 5 structure accepted (2026-07-30)
+- [x] Full conceptual/design draft for sections 5.1–5.6
+- [x] Standalone paste-ready drafts for 5.4.1–5.6 + Figures 5.3–5.6
+- [ ] Export/redraw Figures 5.1–5.2 for Word (if not already exported)
+- [ ] Paste Word update of expanded Chapter 5
 
 ## Notes
 
-Architecture must match `CURRENT_ARCHITECTURE.md` and module contexts (Module 2 Stage 2 = isotonic calibration).
+Architecture must match `CURRENT_ARCHITECTURE.md` and module contexts (Module 2 Stage 2 = isotonic calibration; Module 3 complete with KDE + RF iterative loop).
 
-Draft location: `research_context/report_drafts/chapter5_5.3.1_5.3.2.md`
+Primary draft: `research_context/report_drafts/chapter5_analysis_and_design.md`  
+Standalone 5.4.1: `research_context/report_drafts/chapter5_5.4.1_module1.md`  
+Standalone 5.4.2: `research_context/report_drafts/chapter5_5.4.2_module2.md`  
+Standalone 5.4.3: `research_context/report_drafts/chapter5_5.4.3_module3.md`  
+Standalone 5.5: `research_context/report_drafts/chapter5_5.5_integration.md`  
+Standalone 5.6: `research_context/report_drafts/chapter5_5.6_summary.md`  
+Earlier M1/M2 stub: `research_context/report_drafts/chapter5_5.3.1_5.3.2.md` (superseded numbering 5.3.x → 5.4.x)
 
 ---
 
@@ -583,6 +632,19 @@ Status: Not Started
 # Change Log for Report Work
 
 Use this section to record major report-related changes.
+
+## 2026-07-30
+
+- Drafted corrected Chapter 1 section **1.1 Introduction** in `research_context/report_drafts/chapter1_1.1_introduction.md` (district-level; residual compensation; early-warning dashboard wording).
+- Drafted corrected Chapter 1 section **1.3 Problem in Brief** in `research_context/report_drafts/chapter1_1.3_problem_in_brief.md` (removed fine-scale contradiction; added residual-error and multidimensional risk framing).
+- Drafted corrected Chapter 1 section **1.4 Proposed Solution** in `research_context/report_drafts/chapter1_1.4_proposed_solution.md` (aligned Module 1/2 official models; Module 3 design-level; dashboard wording).
+- Drafted corrected Chapter 1 section **1.5.2 Objectives** in `research_context/report_drafts/chapter1_1.5.2_objectives.md` (Module 2 = probability calibration, not environmental residual ML).
+- Drafted corrected Chapter 1 **Summary** in `research_context/report_drafts/chapter1_1.5_summary.md` (district-level; module-specific compensation meanings; early-warning dashboard).
+- Drafted corrected Chapter 3 section **3.2 Technology Adapted** in `research_context/report_drafts/chapter3_3.2_technology_adapted.md` (aligned to `requirements.txt` / Streamlit stack; removed Flask/React/LightGBM/Colab-core claims).
+- Drafted corrected Chapter 3 section **3.3 Summary** in `research_context/report_drafts/chapter3_3.3_summary.md`.
+- Drafted corrected Chapter 4 section **4.1 Introduction** in `research_context/report_drafts/chapter4_4.1_introduction.md` (module-specific compensation meanings; decision-support wording).
+- Accepted expanded Chapter 4 structure (4.1–4.9); updated `REPORT_STRUCTURE.md` and `REPORT_DIAGRAM_PLAN.md`; full draft in `report_drafts/chapter4_our_approach.md`.
+- Accepted expanded Chapter 5 structure (5.1–5.6); full draft in `report_drafts/chapter5_analysis_and_design.md`; Module 1/2 figure captions renumbered to 5.3/5.4.
 
 ## 2026-07-29
 
