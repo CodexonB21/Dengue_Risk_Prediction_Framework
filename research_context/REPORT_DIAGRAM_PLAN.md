@@ -151,7 +151,7 @@ Purpose: Compact IPO summary for Modules 1–3.
 ## Figure 5.1: Top-Level Architecture of the Proposed Framework
 
 Chapter: Chapter 5 - Analysis and Design
-Status: Planned (caption/text ready in expanded Chapter 5 draft)
+Status: Created
 
 Purpose:
 
@@ -166,10 +166,18 @@ Show the main architecture layers with **shared vs module-specific** split (Deci
 
 Caption: Figure 5.1: Top-level architecture of the proposed residual compensation framework.
 
+Files:
+
+- PNG: `research_context/report_drafts/diagrams/figure_5_1_system_architecture.png`
+- Alias: `research_context/report_drafts/diagrams/figure_high_level_system_architecture.png`
+- Draw.io: `research_context/report_drafts/diagrams/figure_5_1_system_architecture.drawio`
+- Generator: `generate_figure_5_1_architecture.py`
+
 Notes:
 
 - Must show shared vs module-specific preprocessing, not one undifferentiated preprocessing block.
 - Modules are largely parallel peers; optional dashed M1→M2 for operational forward only.
+- Correct models: M1 SARIMA→XGBoost; M2 RF→isotonic; M3 KDE/Moran→RF α=0.05.
 
 ---
 
@@ -351,39 +359,101 @@ Notes:
 
 ---
 
-## Figure 6.1: Dataset Preparation Workflow
+## Figure 6.1: Shared vs Module-Specific Pipeline
 
 Chapter: Chapter 6 - Implementation
-Status: Planned
+Status: **Created (2026-07-30)** — draw.io + PNG ready
 
 Purpose:
 
-Show the steps from data collection to cleaned dataset.
+Show layered pipeline: raw sources → shared cleaning → module-specific forks → Stage 1/2 → outputs/dashboard.
 
-Possible steps:
+Caption:
 
 ```text
-Raw epidemiological data
-Raw weather data
-Raw spatial data
-        ↓
-Cleaning
-        ↓
-Temporal alignment
-        ↓
-District alignment
-        ↓
-Final model-ready datasets
+Figure 6.1: Shared preprocessing and module-specific pipeline architecture
+```
+
+Source / file:
+
+- `research_context/report_drafts/diagrams/figure_6_1_shared_pipeline.drawio` (+ `.png`)
+
+---
+
+## Figure 6.2: Module 1 Implementation Pipeline
+
+Chapter: Chapter 6 - Implementation
+Status: **Created (2026-07-30)** — PNG adapted from Figure 5.3 (`figure_6_2_module1_implementation.png`)
+
+Purpose:
+
+Show Module 1 implementation: preprocessing → SARIMA → residual → XGBoost → final forecast.
+
+Caption:
+
+```text
+Figure 6.2: Implementation pipeline of Module 1 — Hybrid Time-Series Case Forecasting
 ```
 
 ---
 
-## Figure 6.2: Feature Engineering Pipeline
+## Figure 6.3: Module 2 Implementation Pipeline
 
 Chapter: Chapter 6 - Implementation
-Status: Planned
+Status: **Created (2026-07-30)** — PNG adapted from Figure 5.4 (`figure_6_3_module2_implementation.png`)
 
 Purpose:
+
+Show Module 2 implementation: preprocessing → labels → Random Forest → isotonic → alert/risk tier.
+
+Caption:
+
+```text
+Figure 6.3: Implementation pipeline of Module 2 — Hybrid Outbreak Risk Classification
+```
+
+---
+
+## Figure 6.4: Module 3 Implementation Pipeline
+
+Chapter: Chapter 6 - Implementation
+Status: **Created (2026-07-30)** — PNG adapted from Figure 5.5 (`figure_6_4_module3_implementation.png`)
+
+Purpose:
+
+Show Module 3 implementation: master table → KDE + Moran’s I → RF residual + iterative loop → risk map / IDW viz.
+
+Caption:
+
+```text
+Figure 6.4: Implementation pipeline of Module 3 — Hybrid Spatial Hotspot Detection
+```
+
+---
+
+## Figure 6.5: Dashboard Output Integration
+
+Chapter: Chapter 6 - Implementation
+Status: **Created (2026-07-30)** — PNG adapted from Figure 5.6 (`figure_6_5_dashboard_outputs.png`)
+
+Purpose:
+
+Show versioned module artefacts feeding Streamlit research vs operational views.
+
+Caption:
+
+```text
+Figure 6.5: Implementation of module output integration in the early-warning dashboard
+```
+
+---
+
+## Figure 6.X (legacy): Feature Engineering Pipeline
+
+Chapter: Chapter 6 - Implementation
+Status: Superseded by module-specific Figures 6.2–6.4
+
+Purpose (historical):
 
 Show creation of:
 
@@ -400,66 +470,106 @@ Notes:
 
 ---
 
-## Figure 7.1: Actual vs Predicted Dengue Cases
+## Figure 7.1: Evaluation Protocol Schematic
 
 Chapter: Chapter 7 - Evaluation and Results
 Status: Planned
 
 Purpose:
 
-Show forecasting performance of Module 1.
+Show walk-forward folds + untouched holdout for Modules 1/2, research vs operational evidence tiers, and Module 3 spatial K-means CV as a distinct validation axis.
 
 Notes:
 
-- Use actual experiment output.
-- Do not fabricate values.
+- Do not invent metrics on the figure.
+- Emphasize that Module 3 does not use the temporal holdout protocol.
 
 ---
 
-## Figure 7.2: Forecasting Error / Residual Plot
+## Figure 7.2: Module 1 Actual vs Stage 1 vs Stage 1+2 Forecasts
 
 Chapter: Chapter 7 - Evaluation and Results
-Status: Planned
+Status: Created
 
 Purpose:
 
-Show residual behavior before and/or after compensation.
+Show forecasting performance of Module 1 for selected districts (Colombo / Gampaha) on the untouched holdout window.
+
+File:
+
+- `research_context/report_drafts/diagrams/figure_7_2_module1_holdout_forecasts.png`
+- Generator: `research_context/report_drafts/diagrams/generate_figure_7_2_7_3.py`
 
 Notes:
 
-- Useful for explaining whether residual compensation improved the baseline.
+- Source: `data/processed/module1/final_combined_predictions.csv` (holdout, non-imputed).
+- Do not use `future_forecast_*.png` (operational, no ground truth).
 
 ---
 
-## Figure 7.3: Outbreak Risk Classification Confusion Matrix
+## Figure 7.3: Module 1 Holdout MASE Comparison (Stage 1 vs Stage 1+2)
 
 Chapter: Chapter 7 - Evaluation and Results
-Status: Planned
+Status: Created
 
 Purpose:
 
-Show Module 2 classification performance.
+Compare district-level holdout MASE before and after residual compensation.
+
+File:
+
+- `research_context/report_drafts/diagrams/figure_7_3_module1_holdout_mase.png`
+- Generator: `research_context/report_drafts/diagrams/generate_figure_7_2_7_3.py`
 
 Notes:
 
-- Use actual final experiment result.
-- Include class labels clearly.
+- Source: `outputs/metrics/module1/combined_vs_baseline_metrics.csv` (`fold_id=holdout`).
+- Kilinochchi / Mannar shown as non-improved (red diamonds).
+- Median Stage 1 MASE ≈ 0.622; median Stage 1+2 MASE ≈ 0.374 (matches Table 7.1 narrative).
 
 ---
 
-## Figure 7.4: Spatial Hotspot Map
+## Figure 7.4: Module 2 Reliability / Calibration Diagram
 
 Chapter: Chapter 7 - Evaluation and Results
-Status: Planned
+Status: Created
 
 Purpose:
 
-Show Module 3 spatial hotspot output.
+Show Stage 1 raw vs isotonic Stage 2 calibration (reliability diagrams) on validation and holdout.
+
+File:
+
+- `research_context/report_drafts/diagrams/figure_7_4_module2_reliability.png`
+- Generator: `research_context/report_drafts/diagrams/generate_figure_7_4.py`
 
 Notes:
 
-- Ensure map is readable in grayscale if required by printing guidelines.
-- Include legend and district names if possible.
+- Source: `data/processed/module2/stage2_compensated_predictions.csv` (`architecture=isotonic`, selected).
+- Do **not** paste older `outputs/figures/module2/reliability_diagram_*.png` (labelled Platt; superseded architecture label).
+- Holdout panel is sparse (~40 positives); secondary check only.
+
+---
+
+## Figure 7.5: Module 3 Hybrid Risk / Hotspot Map
+
+Chapter: Chapter 7 - Evaluation and Results
+Status: Created
+
+Purpose:
+
+Show Module 3 converged Risk surface for the Stage 1 peak week (2017 Week 29) via IDW visualisation.
+
+File:
+
+- `research_context/report_drafts/diagrams/figure_7_5_module3_risk_surface.png`
+- Source artefact: `outputs/figures/module3/risk_surface_peak_week.png`
+
+Notes:
+
+- IDW is visualisation-only (k=4, power=4); not a modelling stage.
+- Do not present this map as evidence that Stage 2 improved aggregate case-fit (M3-005 null/negative).
+- Optional companion weeks: `risk_surface_2007_wk13.png`, `risk_surface_2021_wk01.png`.
 
 ---
 
@@ -536,42 +646,142 @@ Suggested columns:
 
 ---
 
-## Table 7.1: Forecasting Model Performance Comparison
+## Table 7.1: Module 1 Stage 1 vs Stage 1+2 Headline MASE
 
 Chapter: Chapter 7 - Evaluation and Results
 Status: Planned
 
 Purpose:
 
-Compare baseline and hybrid forecasting results.
+Compare SARIMA baseline vs residual-compensated forecasts (validation aggregate and holdout).
 
 Suggested columns:
 
-- Model
-- MAE
-- RMSE
-- MAPE/sMAPE
+- Scope
+- Median MASE improvement
+- Districts improved
 - Notes
+
+Source: Decision 017 / M1-003; `combined_vs_baseline_metrics.csv`
 
 ---
 
-## Table 7.2: Classification Model Performance
+## Table 7.2: Module 1 Production Stack Refinement (M1-006B)
 
 Chapter: Chapter 7 - Evaluation and Results
 Status: Planned
 
 Purpose:
 
-Summarize Module 2 classification results.
+Show holdout MASE/sMAPE before and after reporting-delay feature promotion.
+
+Suggested columns:
+
+- Metric (holdout)
+- Pre-promotion
+- Post-promotion (current)
+
+Source: Decision 030 / M1-006B
+
+---
+
+## Table 7.3: Module 2 Stage 1 Discrimination
+
+Chapter: Chapter 7 - Evaluation and Results
+Status: Planned
+
+Purpose:
+
+Compare Stage 1 classifiers under the current harmonic label (k=3.0).
 
 Suggested columns:
 
 - Model
-- Accuracy
-- Precision
+- Median validation PR-AUC
+- Holdout PR-AUC / ROC-AUC (for selected model)
+
+Source: Decision 025 / M2-005; official Stage 1 = Random Forest
+
+---
+
+## Table 7.4: Module 2 Stage 2 Calibration, Alerts, and Risk Tiers
+
+Chapter: Chapter 7 - Evaluation and Results
+Status: Planned
+
+Purpose:
+
+Summarise isotonic BSS selection, alert performance at τ=0.14, and observed outbreak rates by risk tier.
+
+Suggested columns / panels:
+
+- Stage 2 architecture vs median validation BSS
+- Alert rule vs recall / precision / F2
+- Risk tier vs observed outbreak rate (validation / holdout)
+
+Source: Decision 025 / M2-005; production confirmation
+
+---
+
+## Table 7.5: Module 3 Moran’s I Validation
+
+Chapter: Chapter 7 - Evaluation and Results
+Status: Planned
+
+Purpose:
+
+Report aggregated Global Moran’s I and selected weekly checks (including NE-monsoon non-significance).
+
+Suggested columns:
+
+- Check
+- Year / Week
+- Moran’s I
+- p_sim
+- Significant
+
+Source: `outputs/metrics/module3/morans_i_validation.csv`; M3-001
+
+---
+
+## Table 7.6: Module 3 Stage 1 vs Stage 2 Aggregate Fit
+
+Chapter: Chapter 7 - Evaluation and Results
+Status: Planned
+
+Purpose:
+
+Honest null/negative comparison of rescaled KDE baseline vs converged Risk surface against actual cases.
+
+Suggested columns:
+
+- Stage
+- Correlation
+- MAE
+- RMSE
+
+Source: `outputs/metrics/module3/stage1_vs_stage2_comparison.csv`; M3-005
+
+---
+
+## Table 7.7: Module 2 vs Module 1 Threshold Alert Comparison (M2-009)
+
+Chapter: Chapter 7 - Evaluation and Results
+Status: Drafted in prose
+
+Purpose:
+
+Show that Module 2 outbreak alerts are not redundant with thresholding Module 1 case forecasts.
+
+Suggested columns:
+
+- Rule
+- PR-AUC
 - Recall
-- F1-score
-- ROC-AUC
+- Precision
+- F2
+
+Source: M2-009 / `outputs/metrics/module2/m2_009_*.csv`
 
 ---
 

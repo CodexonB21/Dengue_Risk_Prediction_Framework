@@ -1,9 +1,6 @@
-# Chapter 7 Draft — Module 1 and Module 2 Evaluation
+# Chapter 7 Draft — Module 1 and Module 2 Evaluation (LEGACY / SUPERSEDED)
 
-**Source of truth:** `module_1_forecasting/EXPERIMENT_LOG.md`, `module_2_classification/EXPERIMENT_LOG.md`, module contexts, `RESEARCH_DECISIONS.md`  
-**Scope:** Evaluation strategy + Module 1/2 results only (Module 3 deferred)  
-**Status:** Draft for Word paste (replaces interim Chapter 7 “Discussion / Current Progress”)  
-**Last updated:** 2026-07-29
+> **Superseded 2026-07-30.** Use `research_context/report_drafts/chapter7_evaluation.md` for the accepted full 7.1–7.8 structure (includes Module 3; renumbers comparative/discussion/summary). This file is retained only for reference.
 
 **Evidence rule:** Only documented experiment metrics are used. Operational/live/forward dashboard outputs are **not** mixed into holdout skill claims.
 

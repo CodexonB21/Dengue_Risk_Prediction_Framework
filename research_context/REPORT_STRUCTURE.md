@@ -310,36 +310,55 @@ Chapter target: 2,800–3,500 words. Module design subsections (5.4.1–5.4.3): 
 
 ## Purpose
 
-Explain how the proposed design was implemented.
+Explain how the proposed design was implemented in datasets, pipelines, module stages, and dashboard outputs.
 
-## Adaptive Subtopics
-
-Possible sections include:
+## Accepted Structure (hybrid, 2026-07-30)
 
 - 6.1 Introduction
-- 6.2 Dataset Preparation
-- 6.3 Data Preprocessing
-- 6.4 Feature Engineering
-- 6.5 Implementation of Module 1: Forecasting
-- 6.6 Implementation of Module 2: Outbreak Risk Classification
-- 6.7 Implementation of Module 3: Spatial Hotspot Detection
-- 6.8 Model Training and Experiment Setup
-- 6.9 Output Generation and Visualization
-- 6.10 Summary
+- 6.2 Datasets Incorporated
+  - 6.2.1 Epidemiological dataset
+  - 6.2.2 Meteorological dataset (Open-Meteo)
+  - 6.2.3 Spatial / demographic datasets (Module 3)
+  - 6.2.4 Dataset summary table
+- 6.3 Shared Preprocessing and Pipeline Architecture
+- 6.4 Implementation of Module 1
+  - 6.4.1 Module-specific preprocessing
+  - 6.4.2 Stage 1 SARIMA
+  - 6.4.3 Stage 2 features + XGBoost residual compensation
+  - 6.4.4 Training, validation artefacts, outputs
+- 6.5 Implementation of Module 2
+  - 6.5.1 Module-specific preprocessing + labelling
+  - 6.5.2 Stage 1 Random Forest
+  - 6.5.3 Stage 2 isotonic calibration + alert/risk tiers
+  - 6.5.4 Training, validation artefacts, outputs
+- 6.6 Implementation of Module 3
+  - 6.6.1 Master table / spatial prep
+  - 6.6.2 Stage 1 KDE + Moran’s I
+  - 6.6.3 Stage 2 RF residual + iterative loop
+  - 6.6.4 Risk-surface rendering (IDW viz-only) + outputs
+- 6.7 Output Generation and Early-Warning Dashboard
+- 6.8 Summary
 
 ## Notes
 
-This chapter should be consistent with the design chapter, and written mostly in narrative form describing what was done and why, rather than as a bare sequence of bullet points.
+Must match Chapter 5 design and living module contexts. Climate source = Open-Meteo (not NASA POWER). Module 3 = district-level (GADM L1); no CHIRPS/WorldPop production raster stack. Module 2 Stage 2 = isotonic calibration.
 
-Short ordered lists are acceptable for describing a strict processing sequence (e.g., exact preprocessing steps), but each step should still be explained rather than left as a bare label.
+Short ordered lists are acceptable for true processing sequences only. Avoid raw code dumps in the main body.
 
-Avoid placing too many raw code screenshots in the main body.
+## Planned Figures/Tables
 
-Detailed code, extended screenshots, or additional outputs can be moved to appendices.
+- Table 6.1 Epidemiological columns
+- Table 6.2 Open-Meteo aggregation
+- Table 6.3 Dataset summary
+- Figure 6.1 Shared vs module-specific pipeline
+- Figure 6.2 Module 1 implementation
+- Figure 6.3 Module 2 implementation
+- Figure 6.4 Module 3 implementation
+- Figure 6.5 Dashboard outputs
 
 ## Target Length
 
-Chapter target: 2,500-3,500 words. Each module implementation subsection (6.5-6.7): 400-800 words.
+Chapter target: 3,000–4,000 words. Each module implementation block (6.4–6.6): 700–1,000 words total.
 
 ---
 
@@ -349,65 +368,96 @@ Chapter target: 2,500-3,500 words. Each module implementation subsection (6.5-6.
 
 Present the evaluation design, experimental results, model performance, comparisons, and interpretation.
 
-## Adaptive Subtopics
-
-Possible sections include:
+## Accepted Structure (full three-module, 2026-07-30)
 
 - 7.1 Introduction
 - 7.2 Evaluation Strategy
+  - 7.2.1 Common principles (walk-forward, holdout, leakage, evidence tiers)
+  - 7.2.2 Module 1 metrics and protocol
+  - 7.2.3 Module 2 metrics and protocol
+  - 7.2.4 Module 3 metrics and protocol
+  - 7.2.5 Scope boundaries (what is not claimed)
 - 7.3 Module 1: Forecasting Evaluation
+  - 7.3.1 Experimental setup
+  - 7.3.2 Stage 1 vs Stage 1+2 residual compensation
+  - 7.3.3 Statistical significance (Diebold–Mariano)
+  - 7.3.4 Production stack refinement (M1-006B)
+  - 7.3.5 Interpretation and limits
 - 7.4 Module 2: Outbreak Classification Evaluation
+  - 7.4.1 Experimental setup and outbreak labelling
+  - 7.4.2 Stage 1 discrimination (Random Forest / PR-AUC)
+  - 7.4.3 Stage 2 calibration compensation (isotonic / BSS)
+  - 7.4.4 Alert thresholds and risk tiers
+  - 7.4.5 Rejected ablations (brief, evidence-backed)
 - 7.5 Module 3: Spatial Hotspot Evaluation
-- 7.6 Comparative Analysis
+  - 7.5.1 Experimental setup (spatial CV; not temporal holdout)
+  - 7.5.2 Stage 1 KDE baseline and Moran’s I validation
+  - 7.5.3 Stage 2 RF residual adjustment and α-update convergence
+  - 7.5.4 Stage 1 vs Stage 2 aggregate fit (honest null/negative)
+  - 7.5.5 Interpretation and limits
+- 7.6 Cross-Module Comparative Analysis
 - 7.7 Discussion of Results
 - 7.8 Summary
 
-## Possible Metrics
+## Metrics (module-specific)
 
-For forecasting: MAE, RMSE, MAPE, sMAPE, residual error analysis.
-
-For classification: accuracy, precision, recall, F1-score, ROC-AUC, confusion matrix, calibration metrics, if used.
-
-For spatial hotspot detection: visual hotspot validation, spatial clustering quality, Moran's I, if used, LISA analysis, if used, comparison with observed dengue concentration patterns.
+- Module 1: MAE, RMSE, sMAPE, MASE (m=52), Diebold–Mariano, residual variance / Ljung–Box
+- Module 2: PR-AUC (primary Stage 1), ROC-AUC, Brier, BSS (primary Stage 2), alert recall/precision/F2, risk-tier rates
+- Module 3: Moran’s I (aggregated + selected weeks), spatial CV residual MAE/RMSE, Stage 1 vs Stage 2 corr/MAE/RMSE, feature importance
 
 ## Notes
 
-Do not invent result values. Use actual experiment logs.
+Do not invent result values. Use actual experiment logs / `outputs/metrics/`.
 
-Every metric or number reported must be followed by a paragraph interpreting what it means, not left as a bare figure or bullet (see Evaluation Chapter Style in `REPORT_STYLE_GUIDE.md`).
+Every metric or number reported must be followed by a paragraph interpreting what it means (see Evaluation Chapter Style in `REPORT_STYLE_GUIDE.md`).
 
-If final results are not yet available, use placeholders.
+Research vs operational evidence tiers must remain separated (Decisions 018, 027). Module 3 uses spatial CV, not the Module 1/2 temporal holdout. Module 3 Stage 2 must not be claimed to improve aggregate case-fit (M3-005).
+
+## Planned Figures/Tables
+
+- Figure 7.1 Evaluation protocol schematic
+- Figure 7.2 Module 1 actual vs Stage 1 vs Stage 1+2
+- Figure 7.3 Module 1 holdout MASE comparison
+- Figure 7.4 Module 2 reliability / calibration diagram
+- Figure 7.5 Module 3 hybrid risk / hotspot map
+- Table 7.1 Module 1 Stage 1 vs Stage 1+2 headline MASE
+- Table 7.2 Module 1 production stack (M1-006B)
+- Table 7.3 Module 2 Stage 1 discrimination
+- Table 7.4 Module 2 Stage 2 / alerts / risk tiers
+- Table 7.5 Module 3 Moran’s I
+- Table 7.6 Module 3 Stage 1 vs Stage 2 aggregate fit
+- Table 7.7 Module 2 vs Module 1 threshold alert comparison (M2-009)
 
 ## Target Length
 
-Chapter target: 2,500-3,500 words. Each module evaluation subsection (7.3-7.5): 400-800 words.
+Chapter target: 3,200–4,500 words. Each module evaluation block (7.3–7.5): 650–950 words.
 
 ---
 
-# Chapter 8 - Conclusion and Future Work
+# Chapter 8 - Conclusion and Further Work
 
 ## Purpose
 
 Summarize the completed research, explain the main contributions, and describe realistic future improvements.
 
-## Adaptive Subtopics
-
-Possible sections include:
+## Accepted Structure (2026-07-30)
 
 - 8.1 Conclusion
-- 8.2 Research Contributions
-- 8.3 Future Work
-- 8.4 Summary, if required
+- 8.2 Further Work
 
 ## Notes
+
+Contributions are synthesised inside 8.1 rather than as a separate numbered section, matching the team’s preferred two-part chapter layout.
 
 Avoid claiming full real-world deployment unless it was actually completed.
 
 Conclusion should be aligned with actual evaluation results, written in reflective prose rather than a bullet-point recap.
 
+Further work must be realistic and tied to known limitations (Module 3 null aggregate fit, reporting delay, finer spatial grain, operational validation).
+
 ## Target Length
 
-Chapter target: 1,000-1,500 words. Each subsection: 250-500 words.
+Chapter target: 1,000–1,500 words. 8.1: 550–850 words. 8.2: 400–600 words.
 
 ---
 
@@ -417,31 +467,25 @@ Chapter target: 1,000-1,500 words. Each subsection: 250-500 words.
 
 Discuss limitations and challenges honestly and academically.
 
-## Adaptive Subtopics
-
-Possible sections include:
+## Accepted Structure (2026-07-30)
 
 - 9.1 Introduction
-- 9.2 Data-Related Challenges
-- 9.3 Time-Series Modeling Limitations
-- 9.4 Classification Limitations
-- 9.5 Spatial Analysis Limitations
-- 9.6 Integration Challenges
-- 9.7 Generalization Limitations
-- 9.8 Ethical and Public Health Considerations
-- 9.9 Summary
-
-## Possible Issues to Discuss
-
-Limited data availability, missing values, inconsistent data formats, underreporting of dengue cases, weather data alignment issues, temporal leakage risk, spatial leakage risk, model generalization limits, district-level aggregation limitations, difficulty validating predicted hotspots, lack of real-time deployment.
+- 9.2 Data and Scope Limitations
+- 9.3 Module-Specific Modelling Limitations
+- 9.4 Evaluation, Integration, and Decision-Support Limitations
+- 9.5 Summary
 
 ## Notes
 
-Each limitation should be explained as connected reasoning (cause, effect, and possible mitigation), not a bare list of one-line issues. A short list may be used to name the categories of limitation, but each named item must then be discussed in a paragraph.
+Each limitation should be explained as connected reasoning (cause, effect, and possible mitigation), not a bare list of one-line issues.
+
+Do not duplicate Chapter 8’s future-work wishlist at length; Chapter 9 diagnoses constraints, while Chapter 8 proposes next steps.
+
+Soft decision-support wording: no clinical diagnosis, guaranteed outbreak prevention, or command-centre deployment claims.
 
 ## Target Length
 
-Chapter target: 1,200-2,000 words. Each subsection (9.2-9.8): 200-400 words.
+Chapter target: 1,200–2,000 words. Subsections 9.2–9.4: 300–450 words each.
 
 ---
 

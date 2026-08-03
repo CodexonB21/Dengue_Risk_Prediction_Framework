@@ -1,0 +1,106 @@
+<mxfile host="app.diagrams.net" agent="Codexon FYP" version="22.1.0" type="device">
+  <diagram id="figure-5-1-architecture" name="Figure 5.1 System Architecture">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Figure 5.1: Top-level architecture of the Residual Compensation Modeling Framework" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontStyle=1;fontSize=16;fontColor=#111827;" vertex="1" parent="1">
+          <mxGeometry x="180" y="20" width="1000" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="raw1" value="&lt;b&gt;MoH WER&lt;/b&gt;&lt;br&gt;weekly dengue cases&lt;br&gt;(25 districts)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="80" y="70" width="200" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="raw2" value="&lt;b&gt;Open-Meteo climate&lt;/b&gt;&lt;br&gt;rainfall · temperature&lt;br&gt;humidity (weekly)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="320" y="70" width="200" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="raw3" value="&lt;b&gt;Spatial / demographic&lt;/b&gt;&lt;br&gt;GADM L1 · census pop.&lt;br&gt;elevation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="560" y="70" width="200" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="shared" value="&lt;b&gt;Shared preprocessing (Decision 013)&lt;/b&gt;&lt;br&gt;Kalmunai→Ampara · epi-week calendar · weekly climate aggregation · population interpolate" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1E3A8A;strokeColor=#1E3A8A;fontColor=#FFFFFF;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="160" y="180" width="520" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m1h" value="&lt;b&gt;Module 1 — Case Forecasting&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#15803D;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="290" width="220" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="m1a" value="Prep: week-53 merge · case series" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#15803D;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="60" y="340" width="220" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m1b" value="Stage 1: SARIMA (cases only)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#15803D;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="60" y="395" width="220" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m1c" value="Stage 2: XGBoost residual" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#15803D;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="60" y="450" width="220" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m1d" value="Output: weekly case forecast" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#15803D;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="60" y="505" width="220" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m2h" value="&lt;b&gt;Module 2 — Outbreak Classification&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1D4ED8;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="320" y="290" width="220" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="m2a" value="Prep: week-53 keep · labels" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1D4ED8;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="320" y="340" width="220" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m2b" value="Stage 1: Random Forest" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1D4ED8;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="320" y="395" width="220" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m2c" value="Stage 2: Isotonic calibration" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1D4ED8;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="320" y="450" width="220" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m2d" value="Output: alert / risk tiers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1D4ED8;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="320" y="505" width="220" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m3h" value="&lt;b&gt;Module 3 — Spatial Hotspots&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#B45309;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="580" y="290" width="220" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="m3a" value="Prep: spatial master table" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="580" y="340" width="220" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m3b" value="Stage 1: KDE + Moran’s I" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="580" y="395" width="220" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m3c" value="Stage 2: RF residual (α=0.05)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="580" y="450" width="220" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m3d" value="Output: hotspot risk surface" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="580" y="505" width="220" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="eval" value="&lt;b&gt;Evaluation design&lt;/b&gt;&lt;br&gt;M1/M2: walk-forward + 2-year holdout · M3: spatial K-means CV · research ≠ operational evidence" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3F4F6;strokeColor=#4B5563;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="160" y="590" width="520" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="dash" value="&lt;b&gt;Streamlit early-warning dashboard (read-only)&lt;/b&gt;&lt;br&gt;case forecasts · calibrated risk/alerts · hotspot maps · research vs operational labels" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#047857;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="160" y="690" width="520" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#0284C7;strokeWidth=2;" edge="1" parent="1" source="raw1" target="shared"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#0284C7;strokeWidth=2;" edge="1" parent="1" source="raw2" target="shared"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#0284C7;strokeWidth=2;" edge="1" parent="1" source="raw3" target="shared"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#15803D;strokeWidth=2;" edge="1" parent="1" source="shared" target="m1h"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#1D4ED8;strokeWidth=2;" edge="1" parent="1" source="shared" target="m2h"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#B45309;strokeWidth=2;" edge="1" parent="1" source="shared" target="m3h"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#15803D;" edge="1" parent="1" source="m1h" target="m1a"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#15803D;" edge="1" parent="1" source="m1a" target="m1b"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#15803D;" edge="1" parent="1" source="m1b" target="m1c"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e10" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#15803D;" edge="1" parent="1" source="m1c" target="m1d"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e11" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#1D4ED8;" edge="1" parent="1" source="m2h" target="m2a"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e12" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#1D4ED8;" edge="1" parent="1" source="m2a" target="m2b"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e13" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#1D4ED8;" edge="1" parent="1" source="m2b" target="m2c"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e14" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#1D4ED8;" edge="1" parent="1" source="m2c" target="m2d"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e15" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#B45309;" edge="1" parent="1" source="m3h" target="m3a"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e16" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#B45309;" edge="1" parent="1" source="m3a" target="m3b"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e17" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#B45309;" edge="1" parent="1" source="m3b" target="m3c"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e18" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#B45309;" edge="1" parent="1" source="m3c" target="m3d"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e19" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#4B5563;strokeWidth=2;" edge="1" parent="1" source="m1d" target="eval"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e20" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#4B5563;strokeWidth=2;" edge="1" parent="1" source="m2d" target="eval"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e21" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#4B5563;strokeWidth=2;" edge="1" parent="1" source="m3d" target="eval"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e22" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#047857;strokeWidth=2;" edge="1" parent="1" source="eval" target="dash"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e23" value="operational forward only" style="edgeStyle=orthogonalEdgeStyle;dashed=1;endArrow=block;endFill=1;strokeColor=#9CA3AF;fontSize=10;fontColor=#6B7280;" edge="1" parent="1" source="m1d" target="m2d"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

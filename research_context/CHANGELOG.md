@@ -6,6 +6,260 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-07-31 - Presentation outlines: presentation-safe revision (all modules)
+
+### Module
+Presentation / Modules 1–3
+
+### Change
+Revised `PRESENTATION_MODULE{1,2,3}_SLIDES.md` to exclude negative results and questionable material from slide content. Each file now has a presentation-safe policy, trimmed slide decks (6–7 slides), and an *Excluded from slides (report/viva only)* reference table. Report chapters retain full honest evaluation.
+
+### Reason
+User requested presentation decks that do not surface failures, null results, or caveats that weaken the viva narrative.
+
+### Impact
+Slides lead with strengths (MASE gains, calibration BSS, Moran’s I, risk map); limitations stay in report/viva prep only.
+
+### Status
+Accepted.
+
+---
+
+## 2026-07-31 - Presentation outline: Module 3 slides
+
+### Module
+Presentation / Module 3
+
+### Change
+Added slide-ready Module 3 pack outline: `research_context/PRESENTATION_MODULE3_SLIDES.md` (8 core slides + optional related-works and extra risk surfaces). Maps to Figs 6.4/7.5, Tables 7.5–7.6, plus `feature_importance.png` and `convergence_plot.png`. Emphasises Moran’s I nuance and M3-005 null aggregate-fit honesty.
+
+### Reason
+Complete the three-module FYP presentation outlines.
+
+### Impact
+All module slide packs now available under `research_context/PRESENTATION_MODULE{1,2,3}_SLIDES.md`.
+
+### Status
+Accepted.
+
+---
+
+## 2026-07-31 - Presentation outline: Module 2 slides
+
+### Module
+Presentation / Module 2
+
+### Change
+Added slide-ready Module 2 pack outline: `research_context/PRESENTATION_MODULE2_SLIDES.md` (8 core slides + optional related-works and live-scoring). Uses Decision 025 production numbers (Random Forest → isotonic; τ = 0.14 / high = 0.35). Maps to Figs 6.3/7.4 and Tables 7.3/7.4/7.7.
+
+### Reason
+Continue FYP presentation module packs after Module 1 outline.
+
+### Impact
+Module 2 presentation content and asset checklist ready for PowerPoint/Google Slides; guards against superseded XGBoost / τ = 0.17 claims.
+
+### Status
+Accepted.
+
+---
+
+## 2026-07-31 - Presentation outline: Module 1 slides
+
+### Module
+Presentation / Module 1
+
+### Change
+Added slide-ready Module 1 pack outline: `research_context/PRESENTATION_MODULE1_SLIDES.md` (8 core slides + optional related-works and operational-check). Maps content to existing Figs 6.2, 7.2, 7.3 and Tables 7.1–7.2; flags missing feature-importance chart.
+
+### Reason
+Team is building FYP presentation module packs using the sample deck structure as a guide.
+
+### Impact
+Module 1 presentation content and asset checklist are ready to convert into PowerPoint/Google Slides.
+
+### Status
+Accepted.
+
+---
+
+## 2026-07-30 - Report figure: Figure 5.1 high-level system architecture
+
+### Module
+Report writing (Chapter 5 / system overview)
+
+### Change
+Created whole-system architecture diagram:
+- `figure_5_1_system_architecture.png` (+ alias `figure_high_level_system_architecture.png`)
+- `figure_5_1_system_architecture.drawio`
+- Generator: `generate_figure_5_1_architecture.py`
+Shows data acquisition → Decision 013 shared preprocessing → three parallel residual-compensation modules → evaluation → Streamlit dashboard.
+
+### Reason
+Figure 5.1 was planned but missing; needed for Chapter 5 and viva/system overview.
+
+### Impact
+High-level architecture figure ready for Word paste.
+
+### Status
+Accepted.
+
+---
+
+## 2026-07-30 - Report draft: Appendix A Individual Contributions
+
+### Module
+Report writing (Appendix A)
+
+### Change
+Rewrote Appendix A from interim progress narratives to completed-project contributions. Module leads retained (Bandara M1, Nethma M2, Karunarathna M3). Shared workloads split: WER scrape (Bandara), Open-Meteo climate (Nethma), spatial/demographic layers (Karunarathna), plus shared Decision 013 cleaning, dashboard views, and report sections. File: `research_context/report_drafts/appendix_a_individual_contributions.md`.
+
+### Reason
+Interim appendix wording was outdated (“upcoming phases”, SARIMAX/NASA-era claims) and did not reflect equal shared preprocessing ownership.
+
+### Impact
+Appendix A paste-ready for Word; team should confirm name/coordinator details.
+
+### Status
+Accepted for drafting.
+
+---
+
+## 2026-07-30 - Report structure + draft: Chapters 8 and 9
+
+### Module
+Report writing (Chapters 8–9)
+
+### Change
+Accepted Chapter 8 structure (**8.1 Conclusion**, **8.2 Further Work**) and Chapter 9 structure (**9.1–9.5**). Drafted paste-ready `chapter8_conclusion_further_work.md` (~1,180 words) and `chapter9_challenges_limitations.md` (~1,530 words). Updated `REPORT_STRUCTURE.md` and `CHAPTER_STATUS.md`.
+
+### Reason
+Evaluation chapter complete; closing chapters needed before Word freeze.
+
+### Impact
+Chapters 8–9 ready for paste; References / Appendices still pending.
+
+### Status
+Accepted; drafts complete.
+
+---
+
+## 2026-07-30 - Report draft: Chapter 7.6–7.8 (comparative, discussion, summary)
+
+### Module
+Report writing (Chapter 7)
+
+### Change
+Polished paste-ready **7.6 Cross-Module Comparative Analysis** (incl. Table 7.7 / M2-009), **7.7 Discussion**, and **7.8 Summary**. Chapter 7 topic-by-topic set (7.1–7.8) complete (~4,475 words). Updated `REPORT_DIAGRAM_PLAN.md` with Table 7.7.
+
+### Reason
+Final topics in the Chapter 7 drafting sequence after Modules 1–3 evaluation sections.
+
+### Impact
+Full Chapter 7 ready for Word paste; remaining visual gap is Figure 7.1 protocol schematic.
+
+### Status
+Accepted for drafting (Word paste pending).
+
+---
+
+## 2026-07-30 - Report figures: Chapter 7 Figure 7.5 (Module 3 risk surface)
+
+### Module
+Report writing (Chapter 7)
+
+### Change
+Copied peak-week IDW risk surface to `figure_7_5_module3_risk_surface.png` (from `outputs/figures/module3/risk_surface_peak_week.png`, 2017 Week 29). Polished section 7.5 with Tables 7.5–7.6 and honest M3-005 null aggregate-fit wording.
+
+### Reason
+Section 7.5 needed the canonical Module 3 visualisation figure for Word paste.
+
+### Impact
+Section 7.5 paste-ready; Figures 7.2–7.5 now created (Figure 7.1 protocol schematic still pending).
+
+### Status
+Accepted.
+
+---
+
+## 2026-07-30 - Report figures: Chapter 7 Figure 7.4 (Module 2 isotonic reliability)
+
+### Module
+Report writing (Chapter 7)
+
+### Change
+Generated `figure_7_4_module2_reliability.png` from `stage2_compensated_predictions.csv` (selected isotonic architecture). Polished section 7.4 with Tables 7.3–7.4. Explicitly rejected older Platt-labelled reliability PNGs under `outputs/figures/module2/`.
+
+### Reason
+Figure 7.4 must match Decision 025 / production Stage 2 = isotonic, not superseded Platt diagrams.
+
+### Impact
+Section 7.4 paste-ready with correct calibration figure.
+
+### Status
+Accepted.
+
+---
+
+## 2026-07-30 - Report figures: Chapter 7 Figures 7.2 and 7.3 (Module 1)
+
+### Module
+Report writing (Chapter 7)
+
+### Change
+Generated paste-ready PNGs:
+- `figure_7_2_module1_holdout_forecasts.png` from `final_combined_predictions.csv` (Colombo/Gampaha holdout)
+- `figure_7_3_module1_holdout_mase.png` from `combined_vs_baseline_metrics.csv` (holdout MASE Stage 1 vs Stage 1+2)
+Script: `research_context/report_drafts/diagrams/generate_figure_7_2_7_3.py`. Updated `REPORT_DIAGRAM_PLAN.md` and Chapter 7 drafts.
+
+### Reason
+Section 7.3 needed evidence figures matching Table 7.1; existing `future_forecast_*.png` files are operational and unsuitable.
+
+### Impact
+Figures 7.2–7.3 ready for Word paste; medians match documented 0.622 → 0.374 holdout MASE; Kilinochchi/Mannar exceptions marked.
+
+### Status
+Accepted.
+
+---
+
+## 2026-07-30 - Report structure: Accepted Chapter 7 Evaluation (full 7.1–7.8)
+
+### Module
+Report writing (Chapter 7)
+
+### Change
+Accepted full three-module Chapter 7 structure (7.1 Introduction → 7.2 Strategy → 7.3 Module 1 → 7.4 Module 2 → 7.5 Module 3 → 7.6 Comparative → 7.7 Discussion → 7.8 Summary). Updated `REPORT_STRUCTURE.md`, `CHAPTER_STATUS.md`, and `REPORT_DIAGRAM_PLAN.md` (Figures 7.1–7.5; Tables 7.1–7.6). Full paste-ready draft written to `research_context/report_drafts/chapter7_evaluation.md`, superseding the M1/M2-only numbering in `chapter7_m1_m2_evaluation.md`.
+
+### Reason
+Module 3 results are available; Chapter 6 implementation is complete; Evaluation needed a locked outline matching Modules 1–3 with honest M3 null aggregate-fit reporting.
+
+### Impact
+Chapter 7 ready for topic paste / Word assembly; figure PNGs still to be exported from `outputs/`.
+
+### Status
+Accepted; draft complete (figures pending).
+
+---
+
+## 2026-07-30 - Report draft: Full Chapter 6 Implementation (hybrid 6.1–6.8)
+
+### Module
+Report writing (Chapter 6)
+
+### Change
+Accepted hybrid Chapter 6 structure and wrote full paste-ready draft in `research_context/report_drafts/chapter6_implementation.md` (~4,840 words): corrected datasets (Open-Meteo; GADM L1; census/elevation; no NASA POWER/CHIRPS production stack), Decision 013 shared pipeline, Module 1 SARIMA→XGBoost, Module 2 RF→isotonic, Module 3 KDE/Moran→RF iterative α=0.05 (IDW viz-only), Streamlit research/operational dashboard. Updated `REPORT_STRUCTURE.md`, `CHAPTER_STATUS.md`, `REPORT_DIAGRAM_PLAN.md`. Created Figures 6.1–6.5 under `report_drafts/diagrams/`.
+
+### Reason
+Interim Chapter 6 was obsolete; Module 3 is now complete and Chapter 5 design is finalized — Implementation needed a full corrected rewrite.
+
+### Impact
+Chapter 6 ready for Word paste; evaluation numbers remain in Chapter 7.
+
+### Status
+Accepted for drafting (Word paste pending).
+
+---
+
 ## 2026-07-30 - Report draft: Chapter 5.6 Summary (Chapter 5 topic drafts complete)
 
 ### Module
