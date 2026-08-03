@@ -1,17 +1,27 @@
 """Stage 1 vs Stage 2 evaluation: fit comparison, convergence plot, feature
 importance chart, and a consolidated Results-chapter summary table.
 
-IMPORTANT - Stage 1 vs Stage 2 comparison result (verified, not assumed):
+IMPORTANT - Stage 1 vs Stage 2 comparison result, UPDATED 2026-08-05
+(EXPERIMENT_LOG.md M3-008; supersedes the original 2026-07-29 finding
+below, kept for historical context):
 `compare_stage1_vs_stage2()` compares Risk_0 (Stage 1 alone - the
 mass-conserving rescaled KDE_baseline, NOT the raw Stage 1 output; see
 `MODULE_CONTEXT.md`'s "KDE_baseline: Two Valid Uses") against the final
-Risk after the iterative loop (Stage 2). Checked directly before writing
-this module: Stage 2 is marginally WORSE on every standard metric (corr
--0.0037, MAE +1.74%, RMSE +0.87%), not better. This is reported as a
-plain, honest null/negative result, not dressed up - see EXPERIMENT_LOG.md
-M3-005 for the full reasoning (alpha=0.05 was chosen for strict
-convergence, not accuracy, so the correction is too small to move
-aggregate fit metrics either way).
+Risk after Stage 2 (now a single-pass correction using own-district
+residual lag features, M3-008 - see `compensation_model.py`'s
+STAGE2_FEATURE_COLUMNS). Stage 2 now IMPROVES substantially on every
+metric: corr 0.824 -> 0.955, MAE 20.54 -> 9.96 (~51% reduction), RMSE
+48.20 -> 25.06 - verified directly (`stage2_experiments.py`'s ablation)
+before promoting, not assumed.
+
+Original 2026-07-29 finding (M3-005, now superseded): with the ORIGINAL
+16-feature set and alpha=0.05, Stage 2 was marginally WORSE on every
+metric (corr -0.0037, MAE +1.74%, RMSE +0.87%) - alpha=0.05 had been
+chosen for strict convergence, not accuracy, so that correction was too
+small to move aggregate fit metrics either way. M3-006's exploratory
+alpha sweep then confirmed no alpha in {1.0, 0.3, 0.15, 0.05} beat Stage 1
+alone WITH THE ORIGINAL FEATURES - the missing ingredient was not alpha
+tuning, it was the own-district residual lag features added in M3-008.
 """
 
 from __future__ import annotations
@@ -45,7 +55,7 @@ from src.config import (  # noqa: E402
     MODULE3_RESULTS_SUMMARY_PATH,
     MODULE3_STAGE_COMPARISON_PATH,
 )
-from src.module3_spatial.compensation_model import FEATURE_COLUMNS, load_training_table, rescale_kde_baseline
+from src.module3_spatial.compensation_model import STAGE2_FEATURE_COLUMNS, prepare_training_table
 
 logger = logging.getLogger(__name__)
 
@@ -79,8 +89,7 @@ def _style_axes(ax) -> None:
 # ---------------------------------------------------------------------------
 
 def compare_stage1_vs_stage2() -> pd.DataFrame:
-    df = load_training_table()
-    df = rescale_kde_baseline(df)
+    df = prepare_training_table()
     hybrid = pd.read_csv(MODULE3_HYBRID_RISK_MAP_PATH)[["District", "Year", "Week", "Risk"]]
     merged = df.merge(hybrid, on=["District", "Year", "Week"], how="inner")
 
@@ -148,12 +157,11 @@ def negative_risk_note(hybrid_df: pd.DataFrame) -> str:
 # ---------------------------------------------------------------------------
 
 def plot_population_density_pdp(path: Path) -> pd.DataFrame:
-    df = load_training_table()
-    df = rescale_kde_baseline(df)
+    df = prepare_training_table()
     model = joblib.load(MODULE3_RF_FINAL_MODEL_PATH)
 
     pdp = partial_dependence(
-        model, df[FEATURE_COLUMNS], features=["population_density"], kind="average", grid_resolution=50,
+        model, df[STAGE2_FEATURE_COLUMNS], features=["population_density"], kind="average", grid_resolution=50,
     )
     grid = pdp["grid_values"][0]
     avg_effect = pdp["average"][0]
@@ -266,8 +274,10 @@ def build_summary_text(
     lines.append("")
     lines.append("-- Stage 1 alone vs Stage 2 final: fit to actual case counts --")
     lines.append(
-        "(Stage 2's correction does NOT improve aggregate fit - a plain, "
-        "verified null/negative result; see EXPERIMENT_LOG.md M3-005.)"
+        "(Stage 2's correction (own-district residual lag features, M3-008) "
+        "substantially IMPROVES aggregate fit - ~51% MAE reduction over "
+        "Stage 1 alone; see EXPERIMENT_LOG.md M3-008. Superseded the "
+        "original 16-feature/alpha=0.05 null result, M3-005.)"
     )
     lines.append(comparison_df.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
     lines.append(negative_risk_note(hybrid_df))

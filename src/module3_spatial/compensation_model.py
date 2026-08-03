@@ -76,6 +76,30 @@ FEATURE_COLUMNS = [
     "elevation_m", "Estimated_Population", "population_density",
     "mahalanobis_anomaly_score",
 ]
+# NOTE: FEATURE_COLUMNS is kept exactly as originally specified (16 columns)
+# so that outdated/frozen exploratory scripts that import it directly
+# (`alpha_sweep.py`, M3-006; `stage2_experiments.py`, the ablation this
+# promotion came from) remain byte-for-byte reproducible if ever rerun -
+# their reported numbers are tied to this exact 16-column set. The
+# OFFICIAL Stage 2 model (this file's own `run_compensation_model()`,
+# `iterative_loop.py`, `evaluate.py`, `forecast_future.py`) uses
+# STAGE2_FEATURE_COLUMNS below instead.
+
+# Own-district lags of residual_rescaled (1-4 weeks) - promoted from the
+# stage2_experiments.py ablation (2026-08-05, EXPERIMENT_LOG.md M3-008):
+# this single addition drops out-of-fold residual MAE from ~34.7 to ~10.1
+# and lets alpha=1.0 (no shrinkage) become the best-performing choice - a
+# ~51% MAE improvement over Stage 1 alone. Every other feature in
+# FEATURE_COLUMNS is either static per-district or current-week climate;
+# nothing previously gave the RF any memory of a district's own recent
+# burden trend, despite dengue outbreaks having real week-to-week
+# persistence (verified: corr(residual_rescaled, its own lag_1) = 0.84,
+# and this is NOT a computational artifact - kde_baseline_rescaled[t] only
+# ever uses week t's own case counts, never t-1's, so any lag-1
+# correlation reflects genuine epidemic persistence, not shared lineage).
+RESIDUAL_LAG_WEEKS = [1, 2, 3, 4]
+RESIDUAL_LAG_COLUMNS = [f"residual_rescaled_lag_{lag}" for lag in RESIDUAL_LAG_WEEKS]
+STAGE2_FEATURE_COLUMNS = FEATURE_COLUMNS + RESIDUAL_LAG_COLUMNS
 
 N_SPATIAL_FOLDS = 5
 SPATIAL_CV_SEED = 42
@@ -145,6 +169,59 @@ def rescale_kde_baseline(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Step 2b: own-district residual lag features (promoted 2026-08-05,
+# EXPERIMENT_LOG.md M3-008 - see STAGE2_FEATURE_COLUMNS above)
+# ---------------------------------------------------------------------------
+
+def add_residual_lag_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Adds RESIDUAL_LAG_COLUMNS via `.shift()` on each district's own
+    time-ordered rows (same pattern `feature_engineering.py::
+    compute_lag_features` already uses for climate) - requires
+    `residual_rescaled` to already exist (call AFTER `rescale_kde_baseline`).
+    """
+    df = df.sort_values(["District", "Week_Start_Date"]).reset_index(drop=True)
+    grouped = df.groupby("District")
+    for lag, col in zip(RESIDUAL_LAG_WEEKS, RESIDUAL_LAG_COLUMNS):
+        df[col] = grouped["residual_rescaled"].shift(lag)
+    return df
+
+
+def drop_residual_lag_nan(df: pd.DataFrame) -> pd.DataFrame:
+    """Drops the (same-sized, per-district-start) NaN rows
+    `add_residual_lag_features` introduces - a SEPARATE 100-row drop from
+    `load_training_table`'s own climate lag_4 drop (both remove each
+    district's first 4 remaining rows, but at different pipeline stages),
+    leaving 25,123 -> 25,023 rows. Validates STAGE2_FEATURE_COLUMNS (not
+    just FEATURE_COLUMNS) is NaN-free afterward.
+    """
+    before = len(df)
+    df = df.dropna(subset=RESIDUAL_LAG_COLUMNS).reset_index(drop=True)
+    dropped = before - len(df)
+
+    remaining_nan = df[STAGE2_FEATURE_COLUMNS].isna().sum()
+    remaining_nan = remaining_nan[remaining_nan > 0]
+    if not remaining_nan.empty:
+        raise ValueError(f"Unexpected NaN remains in STAGE2_FEATURE_COLUMNS after the residual-lag drop:\n{remaining_nan}")
+
+    logger.info("Dropped %d additional rows lacking residual_lag_4 history (%d remain).", dropped, len(df))
+    return df
+
+
+def prepare_training_table(path: Path = MODULE3_STAGE2_FEATURE_TABLE_PATH) -> pd.DataFrame:
+    """Canonical Stage 2 training table (load -> rescale -> add residual
+    lags -> drop remaining NaN) - the single entry point every OFFICIAL
+    Stage 2 consumer (this file, `iterative_loop.py`, `evaluate.py`,
+    `forecast_future.py`) should use, so the M3-008 promotion is applied
+    consistently rather than duplicated ad hoc in each file.
+    """
+    df = load_training_table(path)
+    df = rescale_kde_baseline(df)
+    df = add_residual_lag_features(df)
+    df = drop_residual_lag_nan(df)
+    return df
+
+
+# ---------------------------------------------------------------------------
 # Step 3: spatial K-means CV (5 folds, whole districts, never split weeks)
 # ---------------------------------------------------------------------------
 
@@ -166,7 +243,9 @@ def build_spatial_folds() -> pd.DataFrame:
 # Step 4: train/evaluate per spatial fold
 # ---------------------------------------------------------------------------
 
-def run_spatial_cv(df: pd.DataFrame, folds_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[int, RandomForestRegressor]]:
+def run_spatial_cv(
+    df: pd.DataFrame, folds_df: pd.DataFrame, feature_cols: list[str] = FEATURE_COLUMNS,
+) -> tuple[pd.DataFrame, dict[int, RandomForestRegressor]]:
     df = df.merge(folds_df, on="District", how="left")
     if df["spatial_fold"].isna().any():
         raise ValueError("Some districts have no spatial_fold assignment after merge.")
@@ -178,8 +257,8 @@ def run_spatial_cv(df: pd.DataFrame, folds_df: pd.DataFrame) -> tuple[pd.DataFra
         test_mask = df["spatial_fold"] == fold_id
         train_mask = ~test_mask
 
-        X_train, y_train = df.loc[train_mask, FEATURE_COLUMNS], df.loc[train_mask, TARGET_COL]
-        X_test, y_test = df.loc[test_mask, FEATURE_COLUMNS], df.loc[test_mask, TARGET_COL]
+        X_train, y_train = df.loc[train_mask, feature_cols], df.loc[train_mask, TARGET_COL]
+        X_test, y_test = df.loc[test_mask, feature_cols], df.loc[test_mask, TARGET_COL]
 
         model = RandomForestRegressor(**RF_PARAMS)
         model.fit(X_train, y_train)
@@ -217,8 +296,7 @@ def run_compensation_model() -> pd.DataFrame:
     MODULE3_RF_FOLDS_DIR.mkdir(parents=True, exist_ok=True)
     MODULE3_METRICS_DIR.mkdir(parents=True, exist_ok=True)
 
-    df = load_training_table()
-    df = rescale_kde_baseline(df)
+    df = prepare_training_table()
 
     folds_df = build_spatial_folds()
     folds_df.to_csv(MODULE3_SPATIAL_CV_FOLDS_PATH, index=False)
@@ -228,7 +306,7 @@ def run_compensation_model() -> pd.DataFrame:
         folds_df.groupby("spatial_fold")["District"].apply(list).to_string(),
     )
 
-    fold_metrics, fold_models = run_spatial_cv(df, folds_df)
+    fold_metrics, fold_models = run_spatial_cv(df, folds_df, feature_cols=STAGE2_FEATURE_COLUMNS)
     for fold_id, model in fold_models.items():
         joblib.dump(model, MODULE3_RF_FOLDS_DIR / f"fold_{fold_id}.joblib")
 
@@ -259,11 +337,11 @@ def run_compensation_model() -> pd.DataFrame:
 
     logger.info("Training final production model on all %d districts...", 25)
     final_model = RandomForestRegressor(**RF_PARAMS)
-    final_model.fit(df[FEATURE_COLUMNS], df[TARGET_COL])
+    final_model.fit(df[STAGE2_FEATURE_COLUMNS], df[TARGET_COL])
     joblib.dump(final_model, MODULE3_RF_FINAL_MODEL_PATH)
 
     importance_df = (
-        pd.DataFrame({"feature": FEATURE_COLUMNS, "importance": final_model.feature_importances_})
+        pd.DataFrame({"feature": STAGE2_FEATURE_COLUMNS, "importance": final_model.feature_importances_})
         .sort_values("importance", ascending=False)
         .reset_index(drop=True)
     )

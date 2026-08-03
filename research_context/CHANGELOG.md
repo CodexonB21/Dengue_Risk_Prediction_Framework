@@ -6,6 +6,67 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-08-05 - Module 3 Stage 2 Promoted to Own-District Residual Lag Features
+
+### Module
+Module 3
+
+### Change
+Added own-district residual lag features (`residual_rescaled_lag_1/2/3/4`) to Stage 2's
+Random Forest, tested first via a standalone ablation (`src/module3_spatial/
+stage2_experiments.py`) before promoting. This single change drops out-of-fold residual
+MAE from ~34.7 to ~10.1 and lets `alpha=1.0` (no shrinkage) become the best-performing
+choice - a ~51% MAE reduction over Stage 1 alone (corr 0.8241 -> 0.9554, MAE 20.54 ->
+9.96, RMSE 48.20 -> 25.06), reversing M3-005's null/negative result. Two winsorizing/
+leave-one-out-CV variants were tested in the same ablation and changed almost nothing on
+their own - the entire improvement is the residual lag features.
+
+Promoting `alpha=1.0` into the existing multi-iteration loop unchanged was checked, not
+assumed to work: it does not converge (the fixed lag features and the loop's evolving
+target become inconsistent past iteration 1), so `iterative_loop.py`'s `MAX_ITERATIONS`
+was capped at 1 by design, after independently verifying iteration 1 alone exactly
+reproduces the ablation's validated result. `Risk`/`Risk_forecast` are now clipped at 0
+in both `iterative_loop.py` and `forecast_future.py` (case counts cannot be negative;
+alpha=1.0 widened the negative-Risk tail from a minor -2.32 overshoot to a genuine
+-112.87 one; clipping is a verified strict improvement, not a trade-off).
+
+### Reason
+User requested Module 3 improvement theories be implemented and tested. Root cause: none
+of the original 16 features gave the RF any information about a district's own recent
+case trajectory - every feature was either static per-district or current-week climate,
+despite dengue outbreaks having real week-to-week persistence.
+
+### Impact
+- `src/module3_spatial/compensation_model.py`: added `STAGE2_FEATURE_COLUMNS`
+  (=`FEATURE_COLUMNS` + 4 residual lags), `add_residual_lag_features`,
+  `drop_residual_lag_nan`, `prepare_training_table`. `FEATURE_COLUMNS` itself is left
+  UNCHANGED (16 columns) so `alpha_sweep.py` (M3-006) and `stage2_experiments.py` (this
+  ablation) stay byte-for-byte reproducible if ever rerun.
+- `src/module3_spatial/iterative_loop.py`: `SHRINKAGE_ALPHA` 0.05 -> 1.0,
+  `MAX_ITERATIONS` 4 -> 1 (deliberate design cap, not a safety limit that happens to
+  bind), 0-clipping added, `out_of_fold_predict` parametrized with a `feature_cols`
+  default preserving `alpha_sweep.py`'s old behavior.
+- `src/module3_spatial/evaluate.py`, `src/module3_spatial/forecast_future.py`: updated
+  to the new feature set/alpha; `forecast_future.py` computes the forecast week's
+  residual lags from real historical case counts, never a forecast value.
+- Regenerated: all committed Stage 2 training/evaluation artifacts and the forward
+  hotspot forecast (re-verified after promotion: zero NaN, zero negative Risk, sensible
+  district ranking).
+- Verified NOT a leakage artifact before trusting the result:
+  `kde_baseline_rescaled[t]` only ever uses week *t*'s own case counts, never *t-1*'s.
+- Reframes Stage 2's conceptual scope from "environmental/demographic residual
+  correction" to one dominated by short-term epidemic persistence - a deliberate,
+  disclosed reframing, not silent scope creep.
+- `module_3_spatial/MODULE_CONTEXT.md` (Stage 2 spec updated; new "Stage 2 Promotion"
+  section), `research_context/RESEARCH_DECISIONS.md` (Decision 032),
+  `module_3_spatial/EXPERIMENT_LOG.md` (M3-008), `research_context/
+  QUESTIONS_FOR_DEFENSE.md` (Stage 2 null-result answer revised).
+
+### Status
+Accepted
+
+---
+
 ## 2026-08-04 - Module 3 Forward Operational Hotspot Forecast + Critique Remediation
 
 ### Module

@@ -1,7 +1,7 @@
 fold,n_districts,districts,n_train_rows,n_test_rows,mae,rmse,mae_std,rmse_std
-0,6,"Colombo, Gampaha, Kandy, Kegalle, Kurunegala, Puttalam",19169,6054,63.258414739739095,99.01549898604604,,
-1,5,"Jaffna, Kilinochchi, Mannar, Mullaitivu, Vavuniya",20180,5043,14.366727547797177,37.843407852435455,,
-2,5,"Ampara, Badulla, Hambantota, Monaragala, Nuwara Eliya",20178,5045,21.30652914496741,38.107196068021366,,
-3,4,"Galle, Kalutara, Matara, Ratnapura",21187,4036,55.72342214236789,74.54891110845756,,
-4,5,"Anuradhapura, Batticaloa, Matale, Polonnaruwa, Trincomalee",20178,5045,16.13057871781835,29.652117614915834,,
-mean_std,,,,,34.15713445853798,55.833426325975246,23.418711818532397,29.741728680101374
+0,6,"Colombo, Gampaha, Kandy, Kegalle, Kurunegala, Puttalam",19093,6030,17.438412856253382,37.47711063116216,,
+1,5,"Jaffna, Kilinochchi, Mannar, Mullaitivu, Vavuniya",20100,5023,4.700428755737764,15.21238856667507,,
+2,5,"Ampara, Badulla, Hambantota, Monaragala, Nuwara Eliya",20098,5025,9.560504853479399,22.904282782046675,,
+3,4,"Galle, Kalutara, Matara, Ratnapura",21103,4020,12.049657457355902,24.731954994366802,,
+4,5,"Anuradhapura, Batticaloa, Matale, Polonnaruwa, Trincomalee",20098,5025,5.594832109940202,15.008976121347976,,
+mean_std,,,,,9.86876720655333,23.066942619119736,5.17515909848749,9.179821757659573

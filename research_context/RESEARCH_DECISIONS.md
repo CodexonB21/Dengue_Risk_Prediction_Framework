@@ -1238,3 +1238,74 @@ recursive case forecast is the only available source, mirroring the precedent De
 `module_3_spatial/MODULE_CONTEXT.md`, `module_3_spatial/EXPERIMENT_LOG.md` (M3-007),
 `research_context/CURRENT_ARCHITECTURE.md`, `research_context/CHANGELOG.md`,
 `research_context/QUESTIONS_FOR_DEFENSE.md`.
+
+---
+
+## Decision 032: Module 3 Stage 2 Promoted to Own-District Residual Lag Features (alpha=1.0, MAX_ITERATIONS=1)
+
+**Module:** Module 3
+**Status:** Accepted (implemented 2026-08-05)
+**Date:** 2026-08-05
+
+### Decision
+Promote `src/module3_spatial/stage2_experiments.py`'s ablation finding to the official
+Stage 2 pipeline:
+1. Add own-district residual lag features (`residual_rescaled_lag_1/2/3/4`) to
+   `compensation_model.py`'s feature set (`STAGE2_FEATURE_COLUMNS` - the original
+   `FEATURE_COLUMNS` constant is kept unchanged for the frozen exploratory scripts'
+   reproducibility; see Reason).
+2. Change `iterative_loop.py`'s `SHRINKAGE_ALPHA` from 0.05 to 1.0 (no shrinkage).
+3. Cap `iterative_loop.py`'s `MAX_ITERATIONS` at 1, by design - not a safety limit that
+   happens to bind, but a deliberate stop, since the residual lag features are fixed
+   relative to `Risk_0` and retraining on an evolving target past iteration 1 is
+   theoretically incoherent (verified empirically: iterations 2-4 oscillate and degrade
+   an already-excellent iteration-1 result - see Reason).
+4. Clip `Risk`/`Risk_forecast` at 0 in both `iterative_loop.py` and `forecast_future.py`
+   (case counts cannot be negative) - supersedes the earlier "not clipped" decision
+   (implicit in M3-004), made when the largest overshoot was a minor -2.32; alpha=1.0
+   widens this to a genuine -112.87 tail.
+5. `forecast_future.py` computes the forecast week's residual lags from REAL historical
+   `Number_of_Cases` + Stage 1's committed `KDE_baseline`, never from a forecast value.
+
+### Reason
+User requested improvements to Module 3's prediction accuracy. Investigation (see
+`EXPERIMENT_LOG.md` M3-008) found the original 16 features gave the RF zero information
+about a district's own recent case trajectory - every feature was either static
+per-district or current-week climate, despite dengue outbreaks having real week-to-week
+persistence. A standalone ablation confirmed this is not a leakage artifact
+(`kde_baseline_rescaled[t]` never uses week *t-1*'s data) and is the entire source of
+the improvement - winsorizing the target and leave-one-out CV, tested in the same
+ablation, changed almost nothing on their own.
+
+Promoting alpha=1.0 into the EXISTING multi-iteration loop unchanged was checked, not
+assumed to work: it does not converge (`max_delta` oscillates 578→240→167→190, all far
+above epsilon) because the fixed lag features and the loop's evolving target become
+progressively inconsistent past iteration 1. Iteration 1 alone was independently
+verified to exactly reproduce the ablation's validated result, which is why
+`MAX_ITERATIONS=1` was chosen as a deliberate cap rather than treating the 4-iteration
+non-convergent output as final.
+
+### Implication
+- Supersedes Decision 031's operational forecast pipeline only in the sense that it now
+  uses the promoted model - Decision 031's own reasoning (case-count proxy from Module 1,
+  real observed climate for the forecast week) is unchanged.
+- Supersedes M3-005's null/negative result and M3-006's "no alpha improves on Stage 1"
+  finding for the ORIGINAL feature set - both remain correct AS STATED (verified at the
+  time, with the 16-feature set); M3-008 is what changed, not an error in either.
+- `stage2_experiments.py` (the ablation) and `alpha_sweep.py` (M3-006) are kept as
+  standalone scripts, NOT modified, so they remain byte-for-byte reproducible historical
+  records - `compensation_model.py`'s `FEATURE_COLUMNS` constant is deliberately left
+  unchanged (16 columns) for exactly this reason; only the NEW `STAGE2_FEATURE_COLUMNS`
+  constant is used by the official pipeline going forward.
+- Official result: corr 0.8241 → 0.9554, MAE 20.54 → 9.96 (~51% reduction), RMSE 48.20 →
+  25.06 (`outputs/metrics/module3/results_summary.txt`).
+- Reframes Stage 2's conceptual scope from "environmental/demographic residual
+  correction" to one dominated by short-term epidemic persistence, with
+  climate/demographics now secondary - a deliberate, disclosed reframing (see
+  `MODULE_CONTEXT.md`'s Purpose section and Stage 2 Promotion note).
+
+### Documentation Updated
+`module_3_spatial/MODULE_CONTEXT.md` (Stage 2 spec updated; new "Stage 2 Promotion"
+section), `module_3_spatial/EXPERIMENT_LOG.md` (M3-008), `research_context/
+QUESTIONS_FOR_DEFENSE.md` (Stage 2 null-result answer revised), `research_context/
+CHANGELOG.md`.

@@ -123,7 +123,7 @@ form as `Risk_0`, per this note.
 
 ---
 
-## Stage 2 — Residual Compensation (decided)
+## Stage 2 — Residual Compensation (decided; UPDATED 2026-08-05, M3-008)
 
 **Residual target:**
 ```
@@ -131,38 +131,47 @@ Residual = Actual_case_intensity − Current_Risk
 ```
 (`Current_Risk` = `KDE_baseline` at iteration 0, then updated each loop pass)
 
-**Features:**
+**Features (STAGE2_FEATURE_COLUMNS, `compensation_model.py`):**
+- **Own-district residual lags (1-4 weeks) — added 2026-08-05, M3-008, now the dominant features (90% combined importance).** The RF's only source of dynamic, per-district memory; everything else below is either static per-district or current-week climate.
 - Rainfall / temperature lags (2–4 weeks)
 - Climate anomaly (actual vs. historical weekly average)
 - Monsoon season dummy
 - Elevation, population density (static covariates)
 - Mahalanobis anomaly score across rainfall, temperature, elevation, population (captures multivariate anomalies while accounting for correlation between variables — added as an extra RF feature)
 
+Note: `FEATURE_COLUMNS` (the original 16, without residual lags) is kept unchanged in `compensation_model.py` so the frozen exploratory scripts that reproduced the pre-M3-008 findings (`alpha_sweep.py`/M3-006, `stage2_experiments.py`) stay byte-for-byte reproducible if rerun. The official model uses `STAGE2_FEATURE_COLUMNS = FEATURE_COLUMNS + residual lags`.
+
 **Model:** Random Forest Regression, `Residual` as target.
 
-**Iterative loop (the module's core mechanism, general but not exercised
-multi-step on this dataset):**
+**Iterative loop — UPDATED 2026-08-05 (M3-008): capped at `MAX_ITERATIONS=1` by design, not 4.**
 ```
 Risk_t = Risk_(t-1) + alpha * predicted_residual_t
 ```
-`alpha = 0.05` (shrinkage/learning-rate term, NOT in the original spec -
-discovered necessary during implementation; see "Stage 2 Implementation
-Status" below for why the un-shrunk `alpha=1.0` formula diverges). On
-THIS dataset the loop converges at iteration 1 (Stage 1's KDE baseline
-already removes the residual's spatial autocorrelation - see the
-"Why the loop converges in 1 iteration" note below) - the mechanism itself
-is real and general (a noisier dataset or a coarser spatial baseline would
-engage further iterations), but reporting should say plainly that a
-multi-step refinement narrative is not what this particular dataset
-demonstrates, not oversell it as one.
+`alpha = 1.0` (no shrinkage — UPDATED 2026-08-05, was 0.05; see "Stage 2
+Implementation Status" for the full M3-008 reasoning). The own-district
+residual lag features give the RF a genuine dynamic anchor even for a
+held-out district under spatial CV, which resolves the extrapolation
+instability that originally forced alpha down to 0.05 (M3-004) — alpha=1.0
+is now the best-performing choice, a ~51% MAE reduction over Stage 1 alone.
 
-Repeat until BOTH:
-1. `max(|Risk_t − Risk_(t-1)|) < ε` (≈1% of initial risk range), AND
-2. Moran's I of the new residual is not statistically significant
+Critically, **the loop is capped at 1 iteration, not run to convergence**:
+the residual lag features are computed ONCE, fixed relative to `Risk_0`
+(a historical fact, not a moving target), so retraining on iteration t's
+evolving residual while those features still describe "relative to
+Risk_0" is theoretically incoherent past iteration 1 — verified empirically
+before capping (not assumed): running iterations 2-4 anyway produced an
+OSCILLATING, non-converging `max_delta` (578→240→167→190) that
+progressively degraded an already-excellent iteration-1 result. The strict
+numeric convergence check (`max(|Risk_t − Risk_(t-1)|) < ε`) and the
+Moran's I check are still computed and logged every run (diagnostic value
+— Moran's I stays non-significant, confirming Stage 1 alone still captures
+the spatial autocorrelation, per the original "Why the loop converges in 1
+iteration" finding below), they just no longer gate a second iteration.
 
-Cap at 4 iterations as a practical safeguard. Log risk values and Moran's I per iteration for the convergence plot.
-
-**Final output:** converged `Risk_t` = Hybrid Risk Map, exported as GeoJSON (merged with GADM shapefile) for the dashboard.
+**Final output:** `Risk_t` (iteration 1) = Hybrid Risk Map, **clipped at 0**
+(case counts cannot be negative — UPDATED 2026-08-05, was not clipped;
+see "Stage 2 Implementation Status" for why the decision changed),
+exported as CSV for the dashboard.
 
 ### Stage 2 Implementation Status
 
@@ -349,6 +358,75 @@ the loop converged at iteration 1) and `feature_importance.png` (all 16
 features, sorted), plus a consolidated
 `outputs/metrics/module3/results_summary.txt` for the report's Results
 chapter.
+
+---
+
+## Stage 2 Promotion: Own-District Residual Lags (2026-08-05, M3-008)
+
+**Supersedes the null/negative result above.** The above section (M3-005,
+2026-07-29) is kept as historical record, not deleted - it was a correct,
+honestly-verified finding at the time, using the original 16-feature set.
+This section documents what changed and why.
+
+**Finding**: none of the original 16 features gave the RF any information
+about a district's own recent case trajectory - every feature was either
+static per-district (population/elevation) or current-week climate. Added
+`residual_rescaled_lag_1/2/3/4` (own-district lags of the rescaled
+residual, same `.shift()` pattern already used for climate lags) and
+tested via a standalone ablation (`src/module3_spatial/
+stage2_experiments.py`) before promoting - checked, not assumed, per this
+module's own established discipline:
+
+| Config | Out-of-fold residual MAE | Best final MAE (Stage 1 alone: 20.54) | Best alpha |
+|---|---|---|---|
+| Original 16 features | 34.71 | 20.91 | 0.05 |
+| + winsorized target only | 32.87 | 20.89 | 0.05 |
+| + leave-one-district-out CV only | 34.86 | 20.83 | 0.05 |
+| **+ residual lags** | **10.08** | **10.08** | **1.0** |
+| + residual lags + winsorized + LOO | 9.96 | 9.96 | 1.0 |
+
+Winsorizing and leave-one-out CV alone changed almost nothing - the entire
+improvement is the residual lag features. Verified not a leakage artifact:
+`kde_baseline_rescaled[t]` only ever uses week *t*'s own case counts, never
+*t-1*'s, so the lag-1 correlation (raw `corr(residual_rescaled,
+residual_rescaled_lag_1) = 0.84`) reflects genuine week-to-week epidemic
+persistence, not shared computational lineage.
+
+**Promoted to the official pipeline**: `compensation_model.py` (feature
+set, `STAGE2_FEATURE_COLUMNS`), `iterative_loop.py` (`SHRINKAGE_ALPHA=1.0`,
+`MAX_ITERATIONS=1` - see the updated Stage 2 spec above for why the loop no
+longer runs to convergence), `evaluate.py`, `forecast_future.py` (needs the
+forecast week's own real historical residual lags too - computed from
+`baseline_risk.csv` + real reported `Number_of_Cases`, not a forecast
+value, since even the forecast week's lag_1..4 always look strictly
+backward into already-reported weeks).
+
+**Official result after promotion**: corr 0.8241 → 0.9554, MAE 20.54 →
+9.96 (~51% reduction), RMSE 48.20 → 25.06. Feature importance now
+dominated by `residual_rescaled_lag_1` (63.9%) + `lag_2` (25.9%) = 89.8%
+combined; `population_density`/`Estimated_Population` (previously 58.5%
+combined) drop out of the top 10 entirely.
+
+**Clipping decision changed**: alpha=1.0's unshrunk correction widens the
+negative-Risk tail from the old "minor overshoot" (216 rows, max magnitude
+2.32, not clipped) to 1,211 rows (4.82%, median still small at -0.94, but
+a genuine tail down to -112.87) - large enough to be a physically
+nonsensical "negative case count," not a rounding-scale artifact. Verified
+before clipping (not assumed): clipping at 0 is a strict improvement on
+every metric (not a trade-off), so `iterative_loop.py` and
+`forecast_future.py` now both clip `Risk`/`Risk_forecast` at 0.
+
+**What this changes about Stage 2's framing**: the module's Stage 2 was
+originally scoped as an "environmental/demographic residual correction"
+(see this file's Purpose section). This result means Stage 2's real power
+is short-term epidemic persistence, with climate/demographics now playing
+a secondary role - a genuine, deliberate reframing, not a silent scope
+creep. Report language should reflect this rather than keep describing
+Stage 2 as primarily an environmental correction step.
+
+### Documentation Updated
+`RESEARCH_DECISIONS.md` (Decision 032), `EXPERIMENT_LOG.md` (M3-008),
+`QUESTIONS_FOR_DEFENSE.md`, `CHANGELOG.md`.
 
 ---
 
@@ -624,15 +702,24 @@ anything:
    the forecast week's total forecasted cases (the forecast-week analogue
    of `compensation_model.py::rescale_kde_baseline`).
 4. **Stage 2**: the already-trained frozen final RF model
-   (`rf_final_model.joblib`) scores the forecast row(s); the Mahalanobis
-   anomaly score reuses the PERSISTED training-time mean/covariance
+   (`rf_final_model.joblib`, now trained on `STAGE2_FEATURE_COLUMNS` -
+   M3-008) scores the forecast row(s); the Mahalanobis anomaly score
+   reuses the PERSISTED training-time mean/covariance
    (`MODULE3_MAHALANOBIS_STATS_PATH`, written by
    `feature_engineering.py`) rather than refitting on a
-   historical-plus-one-new-row sample.
-5. **Combine once**: `Risk_forecast = Risk_0_forecast + 0.05 *
-   predicted_residual` - a single application of the already-decided
-   formula, not a new multi-iteration convergence claim (M3-004 already
-   established this dataset converges at iteration 1).
+   historical-plus-one-new-row sample. **Own-district residual lags
+   (UPDATED 2026-08-05, M3-008)**: computed from REAL historical
+   `Number_of_Cases` and Stage 1's already-committed `KDE_baseline`
+   (`baseline_risk.csv`), never from a forecast value - lag_1..4 always
+   look strictly backward into already-reported weeks, even at
+   `horizon_step=1`.
+5. **Combine once**: `Risk_forecast = Risk_0_forecast + 1.0 *
+   predicted_residual` (UPDATED 2026-08-05, was 0.05 - see the Stage 2
+   Promotion section above), then **clipped at 0** (case counts cannot be
+   negative) - a single application of the already-decided formula, not a
+   multi-iteration convergence claim (the official pipeline itself now
+   caps at `MAX_ITERATIONS=1` by design, not just "happens to converge
+   there" - see the updated Stage 2 spec above).
 
 Any remaining NaN in a required feature raises an explicit error rather
 than guessing - unlike Module 1's XGBoost, Module 3's Stage 2 model is a

@@ -19,6 +19,16 @@ model, since it would contradict the loop's own stopping rule. This script
 exists only to answer, honestly and separately, whether accuracy and
 convergence-speed point the same direction or trade off against each other
 - logged as its own metrics file, never merged into `results_summary.txt`.
+
+**OUTCOME NOTE (2026-08-05, EXPERIMENT_LOG.md M3-008 - added after the fact,
+does not change this script's code/behavior)**: this sweep's answer, with
+the ORIGINAL 16-feature set, was "no - none of the 4 alphas beat Stage 1
+alone." The real fix turned out to be a missing feature (own-district
+residual lag features), not an alpha retune - see M3-008, which promoted
+`alpha=1.0` (with the new features) to the official pipeline. This script
+is deliberately left UNCHANGED (still imports the original `FEATURE_COLUMNS`
+with no residual lags) so its numbers stay byte-for-byte reproducible as a
+historical record of the pre-M3-008 finding.
 """
 
 from __future__ import annotations
@@ -36,7 +46,13 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.config import MODULE3_ALPHA_SWEEP_METRICS_PATH, MODULE3_METRICS_DIR  # noqa: E402
 from src.module3_spatial.compensation_model import build_spatial_folds, load_training_table, rescale_kde_baseline  # noqa: E402
-from src.module3_spatial.iterative_loop import MAX_ITERATIONS, MORAN_RANDOM_SEED, out_of_fold_predict  # noqa: E402
+from src.module3_spatial.iterative_loop import MORAN_RANDOM_SEED, out_of_fold_predict  # noqa: E402
+
+# Frozen at 4 (NOT imported from iterative_loop.py's own MAX_ITERATIONS,
+# which M3-008 changed to 1 for the official pipeline) - this ablation's
+# reported numbers swept the full 4-iteration budget per alpha and must
+# stay reproducible regardless of later changes to the official pipeline.
+MAX_ITERATIONS = 4
 
 logger = logging.getLogger(__name__)
 

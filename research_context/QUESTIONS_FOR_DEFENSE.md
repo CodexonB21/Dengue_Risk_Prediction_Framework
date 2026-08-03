@@ -202,15 +202,17 @@ A temporal holdout is not currently implemented for Module 3 and would test a di
 
 ---
 
-## Why does Module 3's Stage 2 show a null/negative aggregate-fit result?
+## Did Module 3's Stage 2 ever show a null result, and what changed?
 
-**Short answer:** `alpha=0.05` was chosen to satisfy the iterative loop's STRICT convergence criterion within budget, not to maximize fit accuracy — a small, genuinely out-of-fold correction has no guaranteed sign, and here it landed marginally negative.
+**Short answer:** Yes, initially (M3-005, 2026-07-29) — with the original 16 features, `alpha=0.05` (chosen for strict loop convergence, not accuracy) produced a marginally WORSE fit than Stage 1 alone on every metric. This was later resolved (M3-008, 2026-08-05) by adding own-district residual lag features — Stage 2 now IMPROVES substantially (MAE 20.54 → 9.96, ~51% reduction), not marginally worsens.
 
-Verified directly (`evaluate.py`, M3-005): Stage 2 final (`Risk`) is marginally WORSE than Stage 1 alone (`Risk_0`) on every metric against actual case counts — corr −0.0037, MAE +1.74%, RMSE +0.87%. This is reported honestly rather than reframed around a friendlier metric.
+**Original finding (M3-005), correct at the time:** Stage 2 final (`Risk`) was marginally worse than Stage 1 alone (`Risk_0`) on every metric against actual case counts — corr −0.0037, MAE +1.74%, RMSE +0.87%. Reported honestly rather than reframed around a friendlier metric. A follow-up exploratory sweep (M3-006) then confirmed no alpha in {1.0, 0.3, 0.15, 0.05} improved on Stage 1 alone with that feature set — the problem was not alpha tuning.
 
-This does not mean Stage 2 has no value. Three points: (1) feature importance is a genuinely Stage-2-only capability — Stage 1's KDE baseline has zero covariates, so ranking `population_density`/`Estimated_Population`/climate timing as burden drivers is diagnostic value Stage 1 could never provide; (2) an exploratory alpha sweep for FIT QUALITY (not convergence speed), `alpha_sweep.py`, M3-006, checked whether any of the same 4 alpha values tested for convergence also happens to improve fit — see that entry for the result; (3) the null result was itself caught and verified directly (an index-alignment bug was found and fixed before trusting the comparison), which is evidence of process rigor, not a weakness to hide.
+**What actually fixed it (M3-008):** every one of the original 16 features was either static per-district (population/elevation) or current-week climate — none gave the RF any memory of a district's own recent case trajectory, despite dengue outbreaks having real week-to-week persistence. Adding `residual_rescaled_lag_1/2/3/4` (own-district lags of the rescaled residual) dropped out-of-fold residual MAE from ~34.7 to ~10.1 and let `alpha=1.0` (full correction, no shrinkage) become optimal — verified NOT a leakage artifact, since `kde_baseline_rescaled[t]` only ever uses week *t*'s own case counts, never *t-1*'s (raw `corr(residual_rescaled, its own lag-1) = 0.84` reflects genuine epidemic persistence). Promoting this into the existing multi-iteration loop unchanged was checked, not assumed to work: the loop no longer converges past iteration 1 with the new features (a real, verified instability — fixed by capping `MAX_ITERATIONS=1` by design, since iteration 1 alone already reproduces the validated result).
 
-**Evidence:** `outputs/metrics/module3/results_summary.txt`, `EXPERIMENT_LOG.md` M3-004/M3-005/M3-006.
+This progression is itself worth stating plainly in a defense: the null result was real and honestly reported, the fix was a genuine feature-engineering gap (not a mistuned hyperparameter), and every step — the original null finding, the alpha sweep, the leakage check, the loop-instability discovery, the clipping decision — was verified directly before being written into the permanent record, not assumed.
+
+**Evidence:** `outputs/metrics/module3/results_summary.txt`, `outputs/metrics/module3/stage2_experiments.csv`, `EXPERIMENT_LOG.md` M3-004/M3-005/M3-006/M3-008.
 
 ---
 
@@ -220,6 +222,6 @@ This does not mean Stage 2 has no value. Three points: (1) feature importance is
 
 Module 3's Stage 1 KDE weighting and Stage 2 residual target both require a known `Number_of_Cases`, which does not exist for a week that has not been reported yet. `src/module3_spatial/forecast_future.py` resolves this the same way Decision 027 already resolved it for Module 2: it reads Module 1's `future_forecast.csv` for the forecast week's per-district case-count proxy. A non-obvious, verified finding: because Module 3's case-count reporting lags real calendar time by several weeks, the forecast week's actual calendar DATES have typically already passed by the time this script runs — so its weather is real `observed` data, not a meteorological forecast (checked directly against the raw Open-Meteo `climate_data_source` column). Only the case count is genuinely uncertain.
 
-No model is retrained; the already-trained frozen final Stage 2 RF model and the already-decided `alpha=0.05` formula are applied once. Every output row is tagged `evidence_tier=operational` and must never be cited alongside Stage 1's Moran's I=0.70 or Stage 2's spatial-CV MAE/RMSE as if it were additional validation evidence.
+No model is retrained; the already-trained frozen final Stage 2 RF model and the already-decided `alpha=1.0` formula (M3-008; was 0.05 before the residual-lag promotion) are applied once, then clipped at 0 (case counts cannot be negative). Every output row is tagged `evidence_tier=operational` and must never be cited alongside Stage 1's Moran's I=0.70 or Stage 2's spatial-CV MAE/RMSE as if it were additional validation evidence.
 
 **Evidence:** `RESEARCH_DECISIONS.md` Decision 031, `module_3_spatial/MODULE_CONTEXT.md`'s "Forward Operational Hotspot Forecast" section, `EXPERIMENT_LOG.md` M3-007.

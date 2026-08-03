@@ -6,30 +6,30 @@ MODULE 3 - STAGE 1 & STAGE 2 RESULTS SUMMARY
 Global Moran's I (queen contiguity, aggregated across all weeks): I = 0.7024, p_sim = 0.0010, significant = True
 
 -- Stage 1 alone vs Stage 2 final: fit to actual case counts --
-(Stage 2's correction does NOT improve aggregate fit - a plain, verified null/negative result; see EXPERIMENT_LOG.md M3-005.)
-                                        stage    corr     mae    rmse
-Stage 1 alone (Risk_0, rescaled KDE_baseline)  0.8242 20.4667 48.1052
-    Stage 2 final (Risk, post iterative loop)  0.8205 20.8340 48.5253
-                   Change (Stage 2 - Stage 1) -0.0037  0.3673  0.4201
-Note: 218 rows (0.86%) have a small negative final Risk (min -2.13) - a minor overshoot on near-zero-case district-weeks, NOT clipped (see MODULE_CONTEXT.md's Stage 2 Implementation Status).
+(Stage 2's correction (own-district residual lag features, M3-008) substantially IMPROVES aggregate fit - ~51% MAE reduction over Stage 1 alone; see EXPERIMENT_LOG.md M3-008. Superseded the original 16-feature/alpha=0.05 null result, M3-005.)
+                                        stage   corr      mae     rmse
+Stage 1 alone (Risk_0, rescaled KDE_baseline) 0.8241  20.5363  48.1989
+    Stage 2 final (Risk, post iterative loop) 0.9554   9.9621  25.0601
+                   Change (Stage 2 - Stage 1) 0.1313 -10.5741 -23.1388
+No rows have a negative final Risk value.
 
 -- Stage 2 RF: out-of-fold residual prediction accuracy (spatial CV) --
-MAE = 34.16 +/- 23.42, RMSE = 55.83 +/- 29.74 (mean +/- std across 5 spatial folds)
+MAE = 9.87 +/- 5.18, RMSE = 23.07 +/- 9.18 (mean +/- std across 5 spatial folds)
 
 -- Iterative Loop Convergence --
  iteration  risk_min  risk_max  max_delta  epsilon  morans_I  morans_p_sim  morans_significant  stopped
-         1   -2.1303 1295.6704     9.0033  12.9846   -0.1567        0.1470               False     True
+         1 -112.8677 1764.0474   578.1044  12.9846   -0.0640        0.3710               False    False
 
 -- Top 10 Feature Importance (final RF model) --
                   feature  importance
-       population_density      0.4075
-     Estimated_Population      0.1807
- temperature_2m_mean (°C)      0.0536
-      temperature_anomaly      0.0457
-           rainfall_lag_4      0.0427
-     monsoon_indicator_SW      0.0387
-        temperature_lag_4      0.0364
-        temperature_lag_2      0.0311
-        temperature_lag_3      0.0277
-mahalanobis_anomaly_score      0.0263
+  residual_rescaled_lag_1      0.6394
+  residual_rescaled_lag_2      0.2591
+  residual_rescaled_lag_3      0.0178
+  residual_rescaled_lag_4      0.0105
+           rainfall_lag_4      0.0093
+           rainfall_lag_3      0.0074
+      temperature_anomaly      0.0066
+         rainfall_anomaly      0.0060
+mahalanobis_anomaly_score      0.0054
+ temperature_2m_mean (°C)      0.0053
 ==============================================================================

@@ -112,6 +112,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.config import (  # noqa: E402
     DISTRICTS,
     MODULE1_FUTURE_FORECAST_PATH,
+    MODULE3_BASELINE_RISK_PATH,
     MODULE3_FIGURES_DIR,
     MODULE3_FUTURE_HOTSPOT_FORECAST_PATH,
     MODULE3_MAHALANOBIS_STATS_PATH,
@@ -121,7 +122,12 @@ from src.config import (  # noqa: E402
     RAW_WEATHER_DIR,
     SHARED_EPI_WEEK_CALENDAR_PATH,
 )
-from src.module3_spatial.compensation_model import FEATURE_COLUMNS
+from src.module3_spatial.compensation_model import (
+    RESIDUAL_LAG_COLUMNS,
+    STAGE2_FEATURE_COLUMNS,
+    add_residual_lag_features,
+    rescale_kde_baseline,
+)
 from src.module3_spatial.feature_engineering import (
     LAG_SOURCE_COLUMNS,
     LAG_WEEKS,
@@ -236,8 +242,9 @@ def aggregate_forecast_week_climate(week_start: pd.Timestamp, week_end: pd.Times
 # ---------------------------------------------------------------------------
 
 def build_forecast_feature_table(calendar_row: pd.Series) -> pd.DataFrame:
-    """One row per district for a single forecast week, with all 16
-    `FEATURE_COLUMNS` populated.
+    """One row per district for a single forecast week, with every
+    `STAGE2_FEATURE_COLUMNS` column populated (the original 16 plus the
+    M3-008 residual lags).
 
     NOTE: each call reads `historical` fresh from `master_table.csv` and
     does not chain in any OTHER forecast week's own output as pseudo-history
@@ -292,6 +299,28 @@ def build_forecast_feature_table(calendar_row: pd.Series) -> pd.DataFrame:
 
     result = forecast_row.merge(forecast_lags, on="District", how="left")
 
+    # --- Residual lags (STAGE2_FEATURE_COLUMNS, M3-008): real historical
+    # residual_rescaled, computed from real reported Number_of_Cases and
+    # Stage 1's already-committed KDE_baseline (baseline_risk.csv) - NOT
+    # recomputed relative to any forecast value. Lag_1..4 always look
+    # strictly backward into already-reported weeks, even at horizon_step=1.
+    baseline_hist = pd.read_csv(MODULE3_BASELINE_RISK_PATH)[["District", "Year", "Week", "KDE_baseline"]]
+    residual_hist = historical[["District", "Year", "Week", "Week_Start_Date", "Number_of_Cases"]].merge(
+        baseline_hist, on=["District", "Year", "Week"], how="inner"
+    )
+    residual_hist = rescale_kde_baseline(residual_hist)[
+        ["District", "Year", "Week", "Week_Start_Date", "residual_rescaled"]
+    ]
+
+    forecast_resid_row = forecast_row[["District", "Year", "Week", "Week_Start_Date"]].copy()
+    forecast_resid_row["residual_rescaled"] = np.nan
+    combined_resid = pd.concat([residual_hist, forecast_resid_row], ignore_index=True)
+    combined_resid = add_residual_lag_features(combined_resid)
+    forecast_resid_lags = combined_resid.loc[
+        combined_resid["Week_Start_Date"] == week_start, ["District"] + RESIDUAL_LAG_COLUMNS
+    ]
+    result = result.merge(forecast_resid_lags, on="District", how="left")
+
     # --- Climate anomaly: historical-only per-(District, Week) mean, NOT
     # recomputed with the forecast row included (see module docstring) ---
     historical_norms = historical.groupby(["District", "Week"])[[RAIN_COL, TEMP_COL]].mean()
@@ -307,7 +336,7 @@ def build_forecast_feature_table(calendar_row: pd.Series) -> pd.DataFrame:
     mahalanobis_stats = joblib.load(MODULE3_MAHALANOBIS_STATS_PATH)
     result = apply_mahalanobis_scores(result, mahalanobis_stats["mean"], mahalanobis_stats["cov"])
 
-    nan_features = result[FEATURE_COLUMNS].isna().any(axis=0)
+    nan_features = result[STAGE2_FEATURE_COLUMNS].isna().any(axis=0)
     if nan_features.any():
         bad_cols = nan_features[nan_features].index.tolist()
         raise ValueError(
@@ -407,13 +436,17 @@ def run_forecast_future(horizon: int = DEFAULT_HORIZON_WEEKS) -> pd.DataFrame:
         features = build_forecast_feature_table(calendar_row)
         features = features.set_index("District").reindex(DISTRICTS).reset_index()
 
-        X = features[FEATURE_COLUMNS]
+        X = features[STAGE2_FEATURE_COLUMNS]
         predicted_residual = rf_model.predict(X)
 
         kde_vector = forecast_week_kde(case_count_weights)
         risk_0 = rescale_forecast_kde(kde_vector, case_count_weights.sum())
 
-        risk_forecast = risk_0.to_numpy() + SHRINKAGE_ALPHA * predicted_residual
+        # Clipped at 0 (case counts cannot be negative) - matches
+        # iterative_loop.py's M3-008 clipping decision; alpha=1.0's
+        # unshrunk correction can otherwise overshoot below 0 for
+        # near-zero-risk districts.
+        risk_forecast = np.clip(risk_0.to_numpy() + SHRINKAGE_ALPHA * predicted_residual, 0.0, None)
 
         out = pd.DataFrame(
             {

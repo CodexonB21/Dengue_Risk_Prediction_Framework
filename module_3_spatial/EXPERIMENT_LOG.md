@@ -1016,3 +1016,179 @@ bugs as part of this work (out of scope) - flagged to the team instead.
 - Added `data/processed/module3/future_hotspot_forecast.csv`,
   `models/module3/mahalanobis_stats.joblib`,
   `outputs/figures/module3/risk_surface_forecast_2026_wk26.png`.
+
+---
+
+## Experiment ID: M3-008
+
+### Date
+2026-08-05
+
+### Research Question
+M3-005/M3-006 established that Stage 2 shows a null/negative aggregate-fit
+result with the original 16 features, and that no alpha in
+{1.0, 0.3, 0.15, 0.05} improves on Stage 1 alone. User asked directly for
+improvement theories to be implemented and tested, wanting "a good
+prediction rate on testing data." Three theories were proposed and tested:
+(1) own-district residual lag features (Stage 2 has zero temporal memory -
+every feature is either static per-district or current-week climate),
+(2) winsorizing the outlier-dominated training target, (3) leave-one-
+district-out CV instead of 5-fold spatial K-means.
+
+### Spatial Unit
+District-week, same grain as M3-001 through M3-007. Same 5 spatial
+K-means CV folds as M3-003 for most configs; a 25-fold leave-one-
+district-out variant tested separately.
+
+### Baseline Spatial Method
+Builds on M3-003's rescaled `KDE_baseline` (`Risk_0`) - unchanged.
+
+### Stage 2 Model
+`RandomForestRegressor`, same `RF_PARAMS` as M3-003 (not retuned). Tested
+via a standalone ablation, `src/module3_spatial/stage2_experiments.py`,
+BEFORE promoting anything - explicitly does not modify the official
+pipeline until the finding is verified.
+
+### Spatial Features Used
+Original 16 (`FEATURE_COLUMNS`) plus, in some configs,
+`residual_rescaled_lag_1/2/3/4` (own-district lags of the rescaled
+residual - same `.shift()` pattern already used for climate lags).
+
+### Validation Method
+Out-of-fold residual-prediction MAE/RMSE (metric a: how good is the RF at
+predicting the residual itself) and final-fit MAE/RMSE/corr against actual
+`Number_of_Cases` at a post-hoc alpha grid {1.0, 0.5, 0.3, 0.15, 0.05}
+(metric b - alpha is a pure scalar on one fixed out-of-fold prediction for
+a single-pass model, so the whole grid costs nothing extra per config).
+
+### Results
+- **Full ablation** (`outputs/metrics/module3/stage2_experiments.csv`):
+
+  | Config | Residual MAE | Best final MAE (Stage 1 alone: 20.54) | Best alpha |
+  |---|---|---|---|
+  | baseline (original 16 features) | 34.71 | 20.91 | 0.05 |
+  | + winsorized target only | 32.87 | 20.89 | 0.05 |
+  | + leave-one-district-out CV only | 34.86 | 20.83 | 0.05 |
+  | **+ residual lags** | **10.08** | **10.08** | **1.0** |
+  | + residual lags + winsorized + LOO | 9.96 | 9.96 | 1.0 |
+
+  Winsorizing and LOO CV alone changed almost nothing (both land back at
+  ~20.8-20.9, matching the already-known result) - **the entire
+  improvement is the residual lag features**, a ~51% MAE reduction over
+  Stage 1 alone, achieved at alpha=1.0 (full-strength correction, no
+  shrinkage needed at all).
+- **Verified not a leakage artifact before trusting this** (the same
+  discipline every prior Module 3 finding has required): checked the
+  computation chain - `kde_baseline_rescaled[t]` only ever uses week *t*'s
+  own case counts, never *t-1*'s, so there is no shared computational
+  lineage that could fake a lag-1 correlation. Raw
+  `corr(residual_rescaled, residual_rescaled_lag_1) = 0.84` reflects
+  genuine epidemic persistence (outbreaks ramp up/decay smoothly
+  week-to-week), not an artifact.
+- **Feature importance flips accordingly**: fitting the winning feature
+  set in-sample confirmed `residual_rescaled_lag_1` (63.9%) +
+  `residual_rescaled_lag_2` (25.9%) = 89.8% combined importance;
+  `population_density`/`Estimated_Population` (previously 58.5% combined)
+  drop out of the top 10 entirely.
+- **Row-count bookkeeping double-checked before proceeding** (a logging
+  message initially looked contradictory - re-verified directly rather
+  than assumed to be a bug): `stage2_feature_table.csv` (25,323 rows,
+  reflecting this session's earlier climate refresh) → 25,223 after
+  `load_training_table()`'s existing climate-lag_4 drop → 25,123 after an
+  ADDITIONAL, separate drop for rows lacking `residual_lag_4` history (a
+  different 100 rows than the climate drop, at a later pipeline stage).
+  No bug - confirmed by tracing row counts through each step individually.
+
+### Promotion to official pipeline (same session, after user confirmed)
+Promoted with two important corrections found DURING promotion, not
+assumed to be needed beforehand:
+
+1. **The multi-iteration loop does not converge with alpha=1.0 + the new
+   features** - running the OLD `MAX_ITERATIONS=4` unchanged produced an
+   oscillating, non-converging `max_delta` (578.10 → 240.05 → 166.66 →
+   189.57, all far above epsilon=12.98), because the residual lag features
+   are fixed relative to `Risk_0` while the loop's target evolves each
+   iteration - a real inconsistency, not a bug in the retraining logic
+   itself. Independently reconstructed iteration 1 alone (bypassing the
+   loop) and confirmed it EXACTLY reproduces the ablation's validated
+   result (MAE=10.08, corr=0.955) - this is what justified capping
+   `MAX_ITERATIONS=1` by design rather than treating the 4-iteration
+   degraded output as final.
+2. **Negative Risk grew from a minor overshoot to a genuine problem**:
+   216 rows / max magnitude 2.32 (M3-004, not clipped) became 1,211 rows
+   (4.82%) / max magnitude 112.87 with alpha=1.0 - a physically
+   nonsensical "negative case count," not a rounding-scale artifact.
+   Checked before clipping (not assumed): clipping at 0 is a strict
+   improvement on every metric (MAE 10.08→9.96, corr 0.9551→0.9554, RMSE
+   25.12→25.06), not a trade-off. Applied in both `iterative_loop.py`
+   (historical `hybrid_risk_map.csv`) and `forecast_future.py` (forward
+   `future_hotspot_forecast.csv`) for consistency.
+- **Official result after promotion**: corr 0.8241 → 0.9554, MAE 20.54 →
+  9.96 (~51% reduction), RMSE 48.20 → 25.06
+  (`outputs/metrics/module3/results_summary.txt`).
+- Forward forecast (`future_hotspot_forecast.csv`, 2026 Wk26) re-verified
+  after promotion: still zero NaN, zero negative Risk, sensible ranking
+  (Colombo 659.8, Gampaha 665.3 highest, matching the documented outbreak).
+
+### Interpretation
+The original 16-feature Stage 2 model's null result (M3-005) was not a
+sign that residual compensation is fundamentally unhelpful for this
+problem - it was a sign that the feature set was missing the single most
+informative thing available: the district's own recent trend. This is a
+genuine reframing of what Stage 2 contributes (short-term epidemic
+persistence, not primarily environmental/demographic correction), not a
+retuning of the same model - worth stating plainly in the report rather
+than quietly folded into the original framing.
+
+The multi-iteration loop's incompatibility with fixed lag features is a
+second, independent lesson worth keeping visible: a feature engineering
+improvement that is excellent in a single pass is not automatically safe
+to drop into an existing iterative architecture unchanged - the two
+components' assumptions (features are either static-per-district or
+recomputed per iteration) were never reconciled for this new feature type,
+and verifying iteration-by-iteration behavior (not just the final output)
+is what caught it before it became the committed result.
+
+### Decision
+**Keep** `STAGE2_FEATURE_COLUMNS` (16 original + 4 residual lags) as the
+official Stage 2 feature set. **Keep** `alpha=1.0`, `MAX_ITERATIONS=1`,
+and 0-clipping as the official configuration. **Keep** `FEATURE_COLUMNS`
+(16, unchanged) and the frozen `alpha_sweep.py`/`stage2_experiments.py`
+scripts exactly as they were run, for reproducibility of the M3-006/M3-008
+ablation numbers. **Supersede** M3-005's null-result framing and
+`QUESTIONS_FOR_DEFENSE.md`'s corresponding answer - both were correct as
+originally stated, for the feature set tested at the time.
+
+### Documentation Updated
+- `module_3_spatial/MODULE_CONTEXT.md` (Stage 2 spec updated; new "Stage 2
+  Promotion" section).
+- `module_3_spatial/EXPERIMENT_LOG.md` (this entry).
+- `research_context/RESEARCH_DECISIONS.md` (Decision 032).
+- `research_context/QUESTIONS_FOR_DEFENSE.md` (Stage 2 null-result answer
+  revised).
+- `research_context/CHANGELOG.md`.
+- `src/config.py` (added `MODULE3_STAGE2_EXPERIMENTS_PATH`).
+- Added `src/module3_spatial/stage2_experiments.py` (frozen ablation
+  record, not modified after promotion).
+- Added `outputs/metrics/module3/stage2_experiments.csv`.
+- Modified `src/module3_spatial/compensation_model.py` (added
+  `RESIDUAL_LAG_COLUMNS`, `STAGE2_FEATURE_COLUMNS`,
+  `add_residual_lag_features`, `drop_residual_lag_nan`,
+  `prepare_training_table`; `run_spatial_cv`/`run_compensation_model` use
+  the new feature set), `src/module3_spatial/iterative_loop.py`
+  (`SHRINKAGE_ALPHA=1.0`, `MAX_ITERATIONS=1`, 0-clipping,
+  `out_of_fold_predict` parametrized with a `feature_cols` default that
+  preserves `alpha_sweep.py`'s old behavior), `src/module3_spatial/
+  evaluate.py` (updated comparison framing, uses the new feature set),
+  `src/module3_spatial/forecast_future.py` (real historical residual lags
+  for the forecast row, 0-clipping).
+- Regenerated (not newly added): `data/features/module3/
+  stage2_feature_table.csv`-derived training artifacts,
+  `models/module3/rf_final_model.joblib` + fold models,
+  `outputs/metrics/module3/{rf_stage2_metrics,rf_feature_importance,
+  spatial_cv_folds,iterative_convergence_log,stage1_vs_stage2_comparison,
+  results_summary.txt}`, `data/features/module3/hybrid_risk_map.csv`,
+  `outputs/figures/module3/{convergence_plot,feature_importance,
+  population_density_pdp}.png`, `data/processed/module3/
+  future_hotspot_forecast.csv`, `outputs/figures/module3/
+  risk_surface_forecast_2026_wk26.png`.
