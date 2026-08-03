@@ -140,13 +140,21 @@ Residual = Actual_case_intensity − Current_Risk
 
 **Model:** Random Forest Regression, `Residual` as target.
 
-**Iterative loop (novel contribution):**
+**Iterative loop (the module's core mechanism, general but not exercised
+multi-step on this dataset):**
 ```
 Risk_t = Risk_(t-1) + alpha * predicted_residual_t
 ```
 `alpha = 0.05` (shrinkage/learning-rate term, NOT in the original spec -
 discovered necessary during implementation; see "Stage 2 Implementation
-Status" below for why the un-shrunk `alpha=1.0` formula diverges).
+Status" below for why the un-shrunk `alpha=1.0` formula diverges). On
+THIS dataset the loop converges at iteration 1 (Stage 1's KDE baseline
+already removes the residual's spatial autocorrelation - see the
+"Why the loop converges in 1 iteration" note below) - the mechanism itself
+is real and general (a noisier dataset or a coarser spatial baseline would
+engage further iterations), but reporting should say plainly that a
+multi-step refinement narrative is not what this particular dataset
+demonstrates, not oversell it as one.
 
 Repeat until BOTH:
 1. `max(|Risk_t − Risk_(t-1)|) < ε` (≈1% of initial risk range), AND
@@ -448,13 +456,15 @@ Two consumers:
   western-cluster story every time; and the latest real week (2026 Wk21),
   correctly rescaled to its much lower case counts, with Kalutara edging
   out Gampaha - exactly what that week's real numbers say, not a bug.
-  **Deliberately out of scope**: a genuine FUTURE-week map (beyond 2026
-  Wk21). Module 3 has no forecasting capability of its own - both Stage
-  1's KDE weighting and Stage 2's residual target require a known
-  `Number_of_Cases`, and `hybrid_risk_map.csv` stops at the latest week
-  with real reported data. A future map would require feeding Module 1/2's
-  forecasts in as a hypothetical input - real new cross-module work, not a
-  visualization change - decided not to pursue this (2026-07-30).
+  **Superseded (2026-08-04, Decision 031)**: a genuine FUTURE-week map was
+  previously deliberately out of scope, since Module 3 had no forecasting
+  capability of its own - both Stage 1's KDE weighting and Stage 2's
+  residual target require a known `Number_of_Cases`, and `hybrid_risk_map.csv`
+  stops at the latest week with real reported data. This has now been
+  built (`src/module3_spatial/forecast_future.py`) by feeding Module 1's
+  forecasted case counts in as the required cross-module input - see the
+  new "Forward Operational Hotspot Forecast" section below and
+  `RESEARCH_DECISIONS.md` Decision 031 for the full reasoning.
 - **Dashboard — four switchable views** (`render_operational_page()`,
   `pages.py`), all real data (`hybrid_risk_map.csv` + the same GADM
   centroids), no synthetic values in any of the four:
@@ -582,6 +592,74 @@ happened to be tuned for.
 
 ---
 
+## Forward Operational Hotspot Forecast (implemented 2026-08-04, Decision 031)
+
+**Cross-module, operational tier - see `RESEARCH_DECISIONS.md` Decision
+031.** Supersedes this file's earlier (2026-07-30) "deliberately out of
+scope" note for a future-week map - that note correctly identified the
+exact dependency this now resolves: a future-week map needs Module 1's
+forecasted case counts fed in as a hypothetical input, since Stage 1's KDE
+weighting and Stage 2's residual target both require a known
+`Number_of_Cases`.
+
+`src/module3_spatial/forecast_future.py` produces a next-week hotspot
+forecast (default horizon: 1 week beyond the last reported case week -
+currently 2026 Wk25 → forecasts Wk26) without retraining or reconverging
+anything:
+
+1. **Case-count proxy**: reads `data/processed/module1/future_forecast.csv`
+   (`horizon_step=1`'s `final_prediction` per district) - only READS this
+   file, never edits anything under `module_1_forecasting/`/
+   `src/module1_forecasting/`, per this module's own scope rule.
+2. **Climate is real observed data, not a forecast**: verified directly -
+   because Module 3's case-count reporting lags real calendar time by
+   several weeks, the forecast week's actual calendar dates have typically
+   already passed by the time this script runs, so every raw daily
+   Open-Meteo row for that date range is tagged `climate_data_source=
+   "observed"`. Only the case count is a genuine forecast; every output
+   row records both `cases_source` and `climate_source` so this is never
+   conflated.
+3. **Stage 1**: the SAME fixed 25x25 Silverman kernel (not refit) applied
+   to Module 1's forecasted case counts as weights, then mass-conserved to
+   the forecast week's total forecasted cases (the forecast-week analogue
+   of `compensation_model.py::rescale_kde_baseline`).
+4. **Stage 2**: the already-trained frozen final RF model
+   (`rf_final_model.joblib`) scores the forecast row(s); the Mahalanobis
+   anomaly score reuses the PERSISTED training-time mean/covariance
+   (`MODULE3_MAHALANOBIS_STATS_PATH`, written by
+   `feature_engineering.py`) rather than refitting on a
+   historical-plus-one-new-row sample.
+5. **Combine once**: `Risk_forecast = Risk_0_forecast + 0.05 *
+   predicted_residual` - a single application of the already-decided
+   formula, not a new multi-iteration convergence claim (M3-004 already
+   established this dataset converges at iteration 1).
+
+Any remaining NaN in a required feature raises an explicit error rather
+than guessing - unlike Module 1's XGBoost, Module 3's Stage 2 model is a
+bare `sklearn.RandomForestRegressor` with no native NaN tolerance.
+
+Output: `data/processed/module3/future_hotspot_forecast.csv`, every row
+tagged `evidence_tier="operational"` - never to be cited alongside Stage
+1's Moran's I / Stage 2's spatial-CV figures in `results_summary.txt`.
+Also produces a static figure
+(`outputs/figures/module3/risk_surface_forecast_{year}_wk{week}.png`,
+reusing `risk_surface.py`'s grid/IDW functions unchanged) and a dashboard
+panel (`pages.py`, "Module 3 — next-week hotspot forecast").
+
+Wired into `scripts/refresh_dashboard_data.py` (module3_preprocessing +
+module3_forecast_future, ordered right after module1_forecast_future -
+its only dependency - and before the Module 2 steps, since two pre-existing,
+unrelated bugs in Module 2's own forward-scoring scripts currently abort
+that orchestrator before reaching later steps).
+
+**Note on `DEFAULT_HORIZON_WEEKS`**: only horizon=1 has been exercised and
+verified. Raising it would need each later forecast week to chain in
+earlier forecast weeks as pseudo-history for its own lag features (as
+Module 1's `forecast_future.py` does recursively) - not yet implemented,
+flagged directly in the code rather than silently assumed to work.
+
+---
+
 ## Open Questions — now answered
 
 1. **Are district centroids sufficient, or are finer spatial units needed?** → District centroids (25 units) are sufficient for this scope; sub-district disaggregation is noted as a limitation/future work, not implemented.
@@ -589,7 +667,7 @@ happened to be tuned for.
 3. **What is the spatial residual target?** → `Actual case intensity − Current_Risk` (see Stage 2 above), recalculated each loop iteration.
 4. **How should spatial leakage be prevented?** → Spatial K-means CV (5 folds, districts clustered by location), not random k-fold.
 5. **Which spatial validation method is most suitable?** → Spatial K-means CV, per point 4.
-6. **How should Module 3 outputs combine with Module 1 and Module 2?** → TBD at integration stage; Module 3 exports district-week Hybrid Risk as GeoJSON/CSV keyed by (District, Epi_Week) for the shared dashboard to consume — final join logic to be confirmed with the team.
+6. **How should Module 3 outputs combine with Module 1 and Module 2?** → Historical: Module 3 exports district-week Hybrid Risk as CSV keyed by (District, Epi_Week) for the shared dashboard to consume. Forward/operational: resolved by Decision 031 - Module 3's forecast_future.py reads Module 1's `future_forecast.csv` for the forecast week's case-count proxy (read-only, one direction); Module 2's own forward risk score is independent and does not feed into or consume Module 3's output.
 
 **Rejected approach:** Geographically Weighted Regression (GWR) — considered, not used. With only 25 spatial units, local weighting is statistically unreliable; Random Forest was chosen instead for robustness with limited-N tabular data.
 

@@ -187,3 +187,39 @@ Colombo at 200 cases may be normal; a low-incidence district at 30 may be an out
 **Defense one-liner:** “Module 1 quantifies expected cases; Module 2 detects relative epidemic exceedance. Thresholding M1 forecasts on holdout achieved 0.063 PR-AUC and 22.5% recall versus Module 2's 0.412 and 60% — Module 2 is not redundant.”
 
 **Evidence:** `scripts/m2_009_m1_alert_baseline.py`, `outputs/metrics/module2/m2_009_{m1_alert_baseline,summary,discordant_counts}.csv`, `module_2_classification/EXPERIMENT_LOG.md` M2-009.
+
+---
+
+## Why doesn't Module 3 use a temporal holdout like Module 1/2?
+
+**Short answer:** Module 3's residual target and validation question are spatial, not sequential — a temporal split would not test the thing Module 3 actually claims.
+
+Module 1/2 forecast or classify a specific FUTURE week from past weeks — a temporal holdout (weeks the model never saw during training) is the correct test of that claim. Module 3's claim is different: does a spatial baseline (KDE) capture genuine geographic clustering, and does a residual model correct district-level burden using spatially-held-out districts? Its only validation axis is 5-fold spatial K-means CV (whole districts held out, never split — `compensation_model.py::build_spatial_folds`) — every row of `hybrid_risk_map.csv`, for every (Year, Week), already comes from a model that never saw that district during training, which is Module 3's own form of held-out evaluation, applied uniformly to every week rather than one held-out block.
+
+A temporal holdout is not currently implemented for Module 3 and would test a different question (does the model generalize to unseen TIME, not unseen SPACE) — a legitimate future extension, not a gap being hidden.
+
+**Evidence:** `module_3_spatial/MODULE_CONTEXT.md`'s "Is the map test-set-safe" note, `EXPERIMENT_LOG.md` M3-003/M3-004.
+
+---
+
+## Why does Module 3's Stage 2 show a null/negative aggregate-fit result?
+
+**Short answer:** `alpha=0.05` was chosen to satisfy the iterative loop's STRICT convergence criterion within budget, not to maximize fit accuracy — a small, genuinely out-of-fold correction has no guaranteed sign, and here it landed marginally negative.
+
+Verified directly (`evaluate.py`, M3-005): Stage 2 final (`Risk`) is marginally WORSE than Stage 1 alone (`Risk_0`) on every metric against actual case counts — corr −0.0037, MAE +1.74%, RMSE +0.87%. This is reported honestly rather than reframed around a friendlier metric.
+
+This does not mean Stage 2 has no value. Three points: (1) feature importance is a genuinely Stage-2-only capability — Stage 1's KDE baseline has zero covariates, so ranking `population_density`/`Estimated_Population`/climate timing as burden drivers is diagnostic value Stage 1 could never provide; (2) an exploratory alpha sweep for FIT QUALITY (not convergence speed), `alpha_sweep.py`, M3-006, checked whether any of the same 4 alpha values tested for convergence also happens to improve fit — see that entry for the result; (3) the null result was itself caught and verified directly (an index-alignment bug was found and fixed before trusting the comparison), which is evidence of process rigor, not a weakness to hide.
+
+**Evidence:** `outputs/metrics/module3/results_summary.txt`, `EXPERIMENT_LOG.md` M3-004/M3-005/M3-006.
+
+---
+
+## Does Module 3 predict a genuine future hotspot map?
+
+**Short answer:** Yes, as of Decision 031 (2026-08-04) — but only the CASE COUNT is a forecast; the CLIMATE is real observed data, and the output is explicitly `evidence_tier=operational`, not a holdout-validated result.
+
+Module 3's Stage 1 KDE weighting and Stage 2 residual target both require a known `Number_of_Cases`, which does not exist for a week that has not been reported yet. `src/module3_spatial/forecast_future.py` resolves this the same way Decision 027 already resolved it for Module 2: it reads Module 1's `future_forecast.csv` for the forecast week's per-district case-count proxy. A non-obvious, verified finding: because Module 3's case-count reporting lags real calendar time by several weeks, the forecast week's actual calendar DATES have typically already passed by the time this script runs — so its weather is real `observed` data, not a meteorological forecast (checked directly against the raw Open-Meteo `climate_data_source` column). Only the case count is genuinely uncertain.
+
+No model is retrained; the already-trained frozen final Stage 2 RF model and the already-decided `alpha=0.05` formula are applied once. Every output row is tagged `evidence_tier=operational` and must never be cited alongside Stage 1's Moran's I=0.70 or Stage 2's spatial-CV MAE/RMSE as if it were additional validation evidence.
+
+**Evidence:** `RESEARCH_DECISIONS.md` Decision 031, `module_3_spatial/MODULE_CONTEXT.md`'s "Forward Operational Hotspot Forecast" section, `EXPERIMENT_LOG.md` M3-007.

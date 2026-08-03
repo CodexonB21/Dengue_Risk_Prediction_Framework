@@ -22,6 +22,8 @@ from src.config import (  # noqa: E402
     MODULE2_FUTURE_RISK_PREDICTIONS_PATH,
     MODULE2_LIVE_RISK_PREDICTIONS_PATH,
     MODULE2_WEEKLY_MODELING_TABLE_PATH,
+    MODULE3_FUTURE_HOTSPOT_FORECAST_PATH,
+    MODULE3_MASTER_TABLE_PATH,
     SHARED_CLIMATE_WEEKLY_PATH,
 )
 
@@ -60,6 +62,8 @@ def _summarize_outputs() -> pd.DataFrame:
     _max_epi(MODULE1_FUTURE_FORECAST_PATH, "future_forecast")
     _max_epi(MODULE2_LIVE_RISK_PREDICTIONS_PATH, "live_risk")
     _max_epi(MODULE2_FUTURE_RISK_PREDICTIONS_PATH, "future_risk")
+    _max_epi(MODULE3_MASTER_TABLE_PATH, "module3_master_table")
+    _max_epi(MODULE3_FUTURE_HOTSPOT_FORECAST_PATH, "module3_future_hotspot_forecast")
     summary = pd.DataFrame(rows)
     summary["refreshed_at_utc"] = datetime.now(timezone.utc).isoformat()
     DASHBOARD_REFRESH_MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -80,7 +84,21 @@ def run_refresh(skip_weather: bool = False) -> pd.DataFrame:
     _run_step("shared_preprocessing", [PYTHON, "-m", "src.preprocessing.shared"])
     _run_step("module1_preprocessing", [PYTHON, "-m", "src.preprocessing.module1_preprocessing"])
     _run_step("module2_preprocessing", [PYTHON, "-m", "src.preprocessing.module2_preprocessing"])
+    _run_step("module3_preprocessing", [PYTHON, "-m", "src.preprocessing.module3_preprocessing"])
     _run_step("module1_forecast_future", [PYTHON, "-m", "src.module1_forecasting.forecast_future"])
+    # Runs right after module1_forecast_future (its own only dependency) and
+    # BEFORE the module2 steps below on purpose: module2_live_scoring and
+    # module2_forecast_future_risk currently have pre-existing, unrelated
+    # bugs (a sklearn calibration reshape error and a reporting-anomaly mask
+    # error - flagged separately, not fixed here per Module 3's scope rule)
+    # that abort this script. Ordering module3_forecast_future first means
+    # Module 3's own output still refreshes successfully even while those
+    # M2 bugs are unresolved, rather than never being reached at all. Uses
+    # Module 3's already-trained frozen final RF model; does not retrain/
+    # reconverge anything (kde_baseline.py, compensation_model.py,
+    # iterative_loop.py are NOT part of this dashboard-data refresh, same
+    # convention as M1/M2's own trained models).
+    _run_step("module3_forecast_future", [PYTHON, "-m", "src.module3_spatial.forecast_future"])
     _run_step("module2_live_scoring", [PYTHON, "-m", "src.module2_classification.live_scoring"])
     _run_step(
         "module2_forecast_future_risk",

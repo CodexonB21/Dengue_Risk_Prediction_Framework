@@ -764,3 +764,255 @@ honest baseline record.
 - Added `src/module3_spatial/evaluate.py`.
 - Added `outputs/figures/module3/convergence_plot.png`,
   `feature_importance.png`, `outputs/metrics/module3/results_summary.txt`.
+
+---
+
+## Experiment ID: M3-006
+
+### Date
+2026-08-04
+
+### Research Question
+M3-005 found Stage 2 (alpha=0.05, chosen for strict convergence) shows a
+null/negative aggregate-fit result. Does ANY of the same 4 alpha values
+M3-004 already tested for convergence speed - if run for the full
+4-iteration budget regardless of whether the strict convergence criterion
+is ever satisfied - produce a genuine improvement in fit to actual case
+counts? This is explicitly exploratory (a critique-remediation check, not
+a re-tuning of the official model) - see the Decision below for why it
+does not replace alpha=0.05 as Module 3's reported result.
+
+### Spatial Unit
+District-week, same grain and same 5 spatial K-means CV folds as
+M3-003/M3-004 (reused unchanged, not rebuilt).
+
+### Baseline Spatial Method
+Same Risk_0 (rescaled KDE_baseline) as M3-004/M3-005 - unchanged.
+
+### Stage 2 Model
+Same out-of-fold RF retraining machinery as `iterative_loop.py`
+(`out_of_fold_predict`, reused directly, not reimplemented) - the ONLY
+difference from `iterative_loop.py`'s own run is that this script tracks
+fit-to-actual-cases metrics at every iteration for every alpha, and never
+applies the convergence stopping rule (runs all 4 iterations regardless).
+
+### Spatial Features Used
+Same 16 features as M3-003 - unchanged.
+
+### Validation Method
+corr/MAE/RMSE of `Risk_t` against `Number_of_Cases`, computed at every
+iteration for `alpha in {1.0, 0.3, 0.15, 0.05}` (the same 4 values M3-004
+tested, reused rather than re-chosen so the two experiments are directly
+comparable) - `src/module3_spatial/alpha_sweep.py`.
+
+### Results
+- **Stage 1 alone (Risk_0)**: corr=0.8242, MAE=20.4667, RMSE=48.1052 (the
+  reference line every alpha/iteration combination below is compared
+  against).
+- **Full sweep** (`outputs/metrics/module3/alpha_sweep_accuracy.csv`):
+
+  | Alpha | Iter 1 MAE | Iter 2 MAE | Iter 3 MAE | Iter 4 MAE |
+  |---|---|---|---|---|
+  | 1.0 | 34.46 | 64.74 | 133.995 | 267.88 |
+  | 0.3 | 23.62 | 29.05 | 36.57 | 46.91 |
+  | 0.15 | 21.82 | 23.97 | 26.65 | 29.90 |
+  | 0.05 | 20.83 | 21.32 | 21.90 | 22.58 |
+
+- **No alpha/iteration combination in the entire sweep beats Stage 1
+  alone's MAE (20.4667)** - the closest is alpha=0.05, iteration 1 (MAE
+  20.834, +1.8%), which is exactly the already-reported M3-005 result
+  (alpha=0.05's iteration-1 output IS the official Stage 2 final `Risk`).
+  Every other alpha/iteration cell is worse, and larger alphas get
+  dramatically worse with each additional iteration (alpha=1.0 reaches
+  MAE=267.88 and corr=-0.14 by iteration 4 - consistent with M3-004's
+  finding that alpha=1.0 diverges numerically; here it's shown to also
+  diverge in plain fit-accuracy terms, not just the `max_delta` metric
+  M3-004 tracked).
+- corr shows the same pattern: alpha=0.05 stays closest to Stage 1's 0.8242
+  (0.8205 at iteration 1, still declining slightly through 0.8046 at
+  iteration 4), while alpha=1.0's corr collapses to -0.14 by iteration 4.
+
+### Interpretation
+This is a stronger, more direct answer to the critique than M3-005 alone
+provided: it is not merely that alpha=0.05 (chosen for convergence)
+happens to be slightly suboptimal for accuracy - NONE of the 4 tested
+alpha values, at ANY iteration depth, improve on Stage 1 alone. The
+out-of-fold RF correction's error does not have a consistent sign or
+magnitude that would let a larger, unshrunk correction help; it only gets
+less wrong (still not right) as alpha shrinks toward the value already
+chosen for convergence. This directly answers "would a different alpha
+have shown a real improvement" - checked, not assumed: no.
+
+### Decision
+**Keep** alpha=0.05, iteration 1 as Module 3's sole official Stage 2
+result (already the case per M3-004/M3-005) - this sweep is additional,
+exploratory evidence supporting that decision, not a replacement for it.
+**Do not** report any other alpha/iteration cell from this sweep as an
+alternative "final" model - all of them are worse, and none satisfy the
+loop's own convergence criterion within budget except alpha=0.05. **Keep**
+this sweep's CSV as a permanent, citable artifact for the "did you try
+other alphas" defense question (`QUESTIONS_FOR_DEFENSE.md`).
+
+### Documentation Updated
+- `module_3_spatial/EXPERIMENT_LOG.md` (this entry).
+- `research_context/QUESTIONS_FOR_DEFENSE.md` (referenced from the
+  Stage 2 null-result entry).
+- `src/config.py` (added `MODULE3_ALPHA_SWEEP_METRICS_PATH`).
+- Added `src/module3_spatial/alpha_sweep.py`.
+- Added `outputs/metrics/module3/alpha_sweep_accuracy.csv`.
+
+---
+
+## Experiment ID: M3-007
+
+### Date
+2026-08-04
+
+### Research Question
+Can Module 3 produce a genuine next-week hotspot forecast (using data up
+to the current week), reversing MODULE_CONTEXT.md's 2026-07-30
+"deliberately out of scope" call - and what does closing the required
+cross-module dependency (Module 1's case forecast) actually take?
+
+### Spatial Unit
+District-week, same grain as M3-001 through M3-005. One forecast week
+beyond the last reported case week (2026 Wk25 -> forecasts Wk26).
+
+### Baseline Spatial Method
+Reuses Stage 1's fixed 25x25 Silverman kernel (`kde_baseline.py`, NOT
+refit) applied to Module 1's forecasted per-district case counts as
+weights, then mass-conserved to the forecast week's total forecasted
+cases (same rescale formula as `compensation_model.py::
+rescale_kde_baseline`, using a forecasted total instead of a real one).
+
+### Stage 2 Model
+The already-trained frozen final RF model (`rf_final_model.joblib`) -
+NOT retrained. Applied once: `Risk_forecast = Risk_0_forecast + 0.05 *
+predicted_residual` (the already-decided `SHRINKAGE_ALPHA`, per M3-004).
+
+### Spatial Features Used
+Same 16 features as M3-002/M3-003, computed for the forecast week - see
+Results for how the Mahalanobis anomaly score's fitted stats were kept
+consistent with training.
+
+### Validation Method
+N/A - this is a forward operational forecast, not a validated result.
+Every output row tagged `evidence_tier="operational"`. Sanity-checked:
+Risk ranking plausibility (Colombo/Gampaha/Kalutara highest, matching the
+documented 2026 outbreak), no unexpected NaN, forecast total case count
+(5,714.9) checked against the last few real weekly totals (Wk25: 5,828 -
+a plausible near-flat/slight-decline continuation, not a discontinuous
+jump).
+
+### Results
+- **Blocking discovery before this could even start**: refreshing the
+  shared climate pipeline (a prerequisite - `master_table.csv` had NaN
+  climate for 2026 Wk22-25 for every district) surfaced a genuine,
+  pre-existing bug in `src/module1_forecasting/forecast_future.py`:
+  Decision 030 added 3 reporting-delay feature columns
+  (`weeks_since_reporting_anomaly`, `reporting_rebound_ratio_lag1`,
+  `suspected_backfill_week`) to Module 1's `FEATURE_COLUMNS`, but that
+  script's hardcoded recursive `feature_row` dict was never updated to
+  populate them - `KeyError` on any rerun since Decision 030 landed. Fixed
+  (one line, mirroring the existing pattern) with explicit user
+  permission, since `src/module1_forecasting/` is outside Module 3's
+  scope rule.
+- **Second, in-scope bug found**: `module3_preprocessing.py::
+  extract_elevation` globbed `weather_dir.glob("*.csv")`, which also
+  matched `climate_fetch_manifest.csv` (written by
+  `scripts/fetch_open_meteo_weather.py` into the same directory),
+  producing "Expected 25 weather files, found 26". Fixed by restricting
+  the glob to `open-meteo-*.csv` (Module 3's own file - in scope).
+- **Two further pre-existing bugs found, NOT fixed (Module 2's owned
+  files, out of scope)**: `live_scoring.py` (sklearn calibration reshape
+  error) and `forecast_future_risk.py` (reporting-anomaly boolean-mask
+  error) both abort `scripts/refresh_dashboard_data.py`. Worked around by
+  ordering `module3_forecast_future` right after `module1_forecast_future`
+  (its only dependency) and before the Module 2 steps, so Module 3's own
+  refresh still succeeds.
+- **Non-obvious finding, verified not assumed**: the forecast week's
+  climate is real OBSERVED data, not a meteorological forecast. Module
+  3's case-count reporting lags real calendar time by several weeks - the
+  forecast week's actual calendar dates (2026-06-22 to 2026-06-28) had
+  already passed by the time this ran (real date 2026-08-04). Checked
+  directly against the raw Open-Meteo `climate_data_source` column for
+  that date range: 100% `"observed"`. This is why the shared weekly
+  climate table (`climate_weekly.csv`) still had no row for Wk26 even
+  after the refresh - it is bucketed by the epi-week CALENDAR
+  (`epi_week_calendar.csv`), itself built only from weeks with a real
+  case row, not by raw date availability. Rather than editing `shared.py`
+  (a shared file, out of scope without confirmation) to extend the
+  calendar, `forecast_future.py` computes the forecast week's raw
+  current-value climate directly from `data/raw/weather/` using the same
+  sum/mean statistic `aggregate_climate_weekly` already uses - only the
+  CURRENT week needed this; lag_2/3/4 already existed in the refreshed
+  `climate_weekly.csv`.
+- **Mahalanobis consistency fix**: `feature_engineering.py` now persists
+  the mean/covariance it fits at training time
+  (`models/module3/mahalanobis_stats.joblib`), reused unchanged by the
+  forecast script - avoids the forecast row shifting the fitted
+  distribution by including itself in a refit.
+- **Output** (`data/processed/module3/future_hotspot_forecast.csv`, 25
+  rows, Year=2026 Week=26): `Risk_forecast` range [13.64, 586.08].
+  Colombo (586.08), Gampaha (578.87), Kalutara (565.33) highest -
+  Kalutara's Risk exceeds its OWN forecasted case count (341.5),
+  correctly pulled up by KDE spatial blending from its high-forecast
+  neighbours, the same behaviour Stage 1's Moran's I=0.70 validated.
+  Zero NaN, zero negative Risk, `feature_completeness_pct=100.0` for
+  every row (unlike Module 1/2's forward scores, which degrade with
+  horizon - Module 3's forecast climate is real, not recursively
+  degrading).
+- Static figure `outputs/figures/module3/risk_surface_forecast_2026_wk26.png`
+  (reuses `risk_surface.py`'s grid/IDW functions unchanged) visually
+  confirms the western Colombo/Gampaha/Kalutara cluster as the hotspot.
+- Dashboard: new "Module 3 — next-week hotspot forecast" panel added to
+  `pages.py`/`app.py`, reusing `_hybrid_risk_folium_heatmap` unchanged via
+  a column-renamed adapter dataframe. Verified: all modified files
+  compile and import cleanly, and the Streamlit server starts and serves
+  HTTP 200. NOT independently verified by rendering in an actual browser
+  session (no browser/screenshot tool available this session) - flagged
+  explicitly rather than assumed to work from the server-start check
+  alone.
+
+### Interpretation
+The forecast itself was mechanically straightforward once the two
+prerequisite bugs were fixed - the harder, genuinely non-obvious part was
+discovering that "next week" for Module 3 means a week whose real weather
+already happened, unlike Module 1/2's forward horizons which reach into
+genuinely future calendar dates. This is a materially different, and
+arguably stronger, evidence position than Module 1/2's own operational
+tier (only the case count is uncertain, not the climate) - worth stating
+explicitly in the report rather than lumping all three modules'
+"operational" outputs together as equally uncertain.
+
+### Decision
+**Keep** this as Module 3's forward operational forecast, formalized as
+Decision 031 (supersedes the 2026-07-30 "deliberately out of scope"
+note). **Keep** `DEFAULT_HORIZON_WEEKS=1` as the only exercised/verified
+horizon - raising it needs recursive pseudo-history chaining, not yet
+implemented (flagged in code). **Do not** fix Module 2's two unrelated
+bugs as part of this work (out of scope) - flagged to the team instead.
+
+### Documentation Updated
+- `module_3_spatial/MODULE_CONTEXT.md` (new "Forward Operational Hotspot
+  Forecast" section; superseded the 2026-07-30 out-of-scope note; Open
+  Question #6 updated).
+- `module_3_spatial/EXPERIMENT_LOG.md` (this entry).
+- `research_context/RESEARCH_DECISIONS.md` (Decision 031).
+- `research_context/CURRENT_ARCHITECTURE.md` (integration layer updated;
+  Module 2's two known bugs flagged).
+- `research_context/QUESTIONS_FOR_DEFENSE.md` (new entry on the forward
+  forecast's evidence tier).
+- `research_context/CHANGELOG.md`.
+- `src/config.py` (added `MODULE3_MAHALANOBIS_STATS_PATH`,
+  `MODULE3_FUTURE_HOTSPOT_FORECAST_PATH`).
+- Added `src/module3_spatial/forecast_future.py`.
+- Modified `src/module3_spatial/feature_engineering.py` (Mahalanobis
+  stats persistence), `src/preprocessing/module3_preprocessing.py`
+  (weather-glob fix), `src/module1_forecasting/forecast_future.py`
+  (reporting-delay columns fix, cross-boundary, user-approved),
+  `scripts/refresh_dashboard_data.py` (new module3 steps),
+  `src/dashboard/app.py`/`pages.py` (new forecast panel).
+- Added `data/processed/module3/future_hotspot_forecast.csv`,
+  `models/module3/mahalanobis_stats.joblib`,
+  `outputs/figures/module3/risk_surface_forecast_2026_wk26.png`.

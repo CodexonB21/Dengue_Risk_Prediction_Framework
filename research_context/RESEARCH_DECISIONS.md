@@ -1180,3 +1180,61 @@ Default-path refit confirmed holdout median MASE **0.374** vs pre-promotion **0.
 ### Documentation Updated
 `FEATURE_ENGINEERING_SPEC.md`, `module_1_forecasting/EXPERIMENT_LOG.md` (M1-006B),
 `research_context/CHANGELOG.md`.
+
+---
+
+## Decision 031: Module 3 Forward Operational Hotspot Uses Module 1 Case Forecasts (Operational Tier)
+
+**Module:** Module 3 (cross-module with Module 1, Integration layer)
+**Status:** Accepted (implemented 2026-08-04)
+**Date:** 2026-08-04
+
+### Decision
+For **operational** next-week hotspot forecasting (dashboard consumption), Module 3's
+new forward scoring script (`src/module3_spatial/forecast_future.py`) may use:
+1. **Module 1 `final_prediction`** from `future_forecast.csv` (`horizon_step=1`) as the
+   forecast week's per-district case-count weight for Stage 1's KDE reweighting -
+   Module 3's KDE baseline and residual target both require a known case count, which
+   does not exist yet for a week that hasn't been reported.
+2. The forecast week's raw daily weather aggregated directly from `data/raw/weather/`
+   (see the script's module docstring for why this is real OBSERVED data, not a
+   meteorological forecast - Module 3's case-reporting lag means the forecast week's
+   calendar dates have typically already passed by the time this runs).
+3. Module 3's already-trained frozen final Stage 2 RF model
+   (`rf_final_model.joblib`) and the already-decided `SHRINKAGE_ALPHA=0.05` formula,
+   applied ONCE (not a new multi-iteration convergence claim).
+
+This **explicitly supersedes** `module_3_spatial/MODULE_CONTEXT.md`'s 2026-07-30 note
+that a future-week map was "deliberately out of scope" - that note correctly identified
+the exact cross-module dependency this decision now resolves. No Module 1 or Module 3
+models are retrained by this script. All forward outputs carry `evidence_tier=operational`
+and must never be cited alongside Stage 1's Moran's I / Stage 2's spatial-CV holdout
+figures in `results_summary.txt`.
+
+### Reason
+The user requested a genuine next-week hotspot prediction. Module 3's Stage 1/Stage 2
+both require `Number_of_Cases`, which does not exist for an unreported week - Module 1's
+recursive case forecast is the only available source, mirroring the precedent Decision
+027 already set for Module 2's own forward operational risk score.
+
+### Implication
+- Does not change Stage 1's committed Moran's I=0.70 result or Stage 2's committed
+  spatial-CV/evaluation figures (M3-001 through M3-005) - those remain the honest,
+  holdout-validated evidence tier.
+- `scripts/refresh_dashboard_data.py` now runs `module3_preprocessing` and
+  `module3_forecast_future` (ordered right after `module1_forecast_future`, its only
+  dependency, and before the Module 2 steps - see that script's inline comment for why).
+- Two pre-existing, unrelated bugs were found and fixed/flagged while wiring this up:
+  (1) `src/module1_forecasting/forecast_future.py` was missing Decision 030's 3
+  reporting-delay columns in its recursive feature row (fixed, with explicit user
+  permission, since it is outside Module 3's owned files); (2) Module 3's own
+  `module3_preprocessing.py::extract_elevation` globbed `*.csv` instead of
+  `open-meteo-*.csv`, incorrectly counting `climate_fetch_manifest.csv` as a 26th
+  district file (fixed - within Module 3's own scope). Two further pre-existing bugs
+  in `module2_classification/live_scoring.py` and `forecast_future_risk.py` were found
+  but NOT fixed (Module 2's owned files, out of scope) - flagged separately.
+
+### Documentation Updated
+`module_3_spatial/MODULE_CONTEXT.md`, `module_3_spatial/EXPERIMENT_LOG.md` (M3-007),
+`research_context/CURRENT_ARCHITECTURE.md`, `research_context/CHANGELOG.md`,
+`research_context/QUESTIONS_FOR_DEFENSE.md`.

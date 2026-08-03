@@ -33,6 +33,7 @@ from src.config import (  # noqa: E402
     MODULE1_WEEKLY_MODELING_TABLE_PATH,
     MODULE2_FUTURE_RISK_PREDICTIONS_PATH,
     MODULE2_LIVE_RISK_PREDICTIONS_PATH,
+    MODULE3_FUTURE_HOTSPOT_FORECAST_PATH,
     MODULE3_HYBRID_RISK_MAP_PATH,
     SHARED_CLIMATE_WEEKLY_PATH,
 )
@@ -155,6 +156,7 @@ def main() -> None:
     climate = _load(SHARED_CLIMATE_WEEKLY_PATH)
     manifest = _load(DASHBOARD_REFRESH_MANIFEST_PATH)
     hybrid_risk = _load(MODULE3_HYBRID_RISK_MAP_PATH)
+    hotspot_forecast = _load(MODULE3_FUTURE_HOTSPOT_FORECAST_PATH)
     district_geometry = load_district_geometry()
 
     case_y, case_w = _latest_case_week(m1_weekly)
@@ -175,6 +177,7 @@ def main() -> None:
         climate=climate,
         manifest=manifest,
         hybrid_risk=hybrid_risk,
+        hotspot_forecast=hotspot_forecast,
         district_geometry=district_geometry,
         case_y=case_y,
         case_w=case_w,

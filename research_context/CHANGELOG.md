@@ -6,6 +6,76 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-08-04 - Module 3 Forward Operational Hotspot Forecast + Critique Remediation
+
+### Module
+Module 3 (cross-module with Module 1, Integration layer)
+
+### Change
+Added `src/module3_spatial/forecast_future.py`: a genuine next-week hotspot forecast,
+reversing the 2026-07-30 "deliberately out of scope" note in `MODULE_CONTEXT.md` (see
+`RESEARCH_DECISIONS.md` Decision 031 for the full reasoning). Uses Module 1's
+`future_forecast.csv` as the forecast week's case-count proxy for Stage 1's KDE
+reweighting, and the already-trained frozen Stage 2 RF model for scoring - no
+retraining/reconvergence. A verified, non-obvious finding: the forecast week's climate
+is real OBSERVED data, not a meteorological forecast, since Module 3's case-reporting
+lag means the forecast week's calendar dates have typically already passed by the time
+this runs. Outputs `data/processed/module3/future_hotspot_forecast.csv`, a static figure
+(`risk_surface_forecast_{year}_wk{week}.png`, reusing `risk_surface.py` unchanged), and a
+new dashboard panel. Wired into `scripts/refresh_dashboard_data.py`.
+
+Also addressed 3 outstanding critique points from the last Module 3 review: (1) added
+`src/module3_spatial/alpha_sweep.py`, an exploratory alpha sweep for FIT QUALITY (not
+convergence) - logged as `EXPERIMENT_LOG.md` M3-006, does not replace `alpha=0.05` as
+the official reported result; (2) added a partial-dependence plot
+(`population_density_pdp.png`) checking whether the RF's dominant feature is a genuine
+nuanced relationship or a naive population-size scaling; (3) added a negative-Risk
+footnote to `results_summary.txt` (previously only in `MODULE_CONTEXT.md`, not the
+report-facing summary file). `QUESTIONS_FOR_DEFENSE.md` gained 4 new entries (temporal
+holdout, Stage 2 null result, the new forward forecast).
+
+### Reason
+User requested a next-week hotspot prediction and remediation of prior critique points.
+The forward forecast required a documented decision reversal (Module 3's own
+`MODULE_CONTEXT.md` had explicitly rejected this as cross-module work) - handled as a
+new numbered decision (031), not a silent contradiction.
+
+### Impact
+- Two pre-existing, unrelated bugs found and fixed while refreshing the shared climate
+  pipeline (a prerequisite for the forecast's climate-lag features):
+  (1) `src/module1_forecasting/forecast_future.py` was missing Decision 030's 3
+  reporting-delay feature columns in its recursive feature row - fixed with explicit
+  user permission, since this file is outside Module 3's scope
+  (`module_1_forecasting`/`src/module1_forecasting` belong to a different team member);
+  (2) Module 3's own `module3_preprocessing.py::extract_elevation` globbed `*.csv`
+  instead of `open-meteo-*.csv`, incorrectly counting `climate_fetch_manifest.csv` as a
+  26th district weather file - fixed (within Module 3's own scope).
+- Two further pre-existing, unrelated bugs were found in
+  `module2_classification/live_scoring.py` (sklearn calibration reshape error) and
+  `forecast_future_risk.py` (reporting-anomaly boolean-mask error) - NOT fixed
+  (Module 2's owned files, out of scope) - flagged in `CURRENT_ARCHITECTURE.md` and to
+  the user for the Module 2 owner's attention.
+- `src/module3_spatial/feature_engineering.py` now persists the Mahalanobis
+  mean/covariance fitted at training time (`models/module3/mahalanobis_stats.joblib`),
+  reused by the forecast script instead of refitting on a historical-plus-one-new-row
+  sample.
+- Stage 1/Stage 2 committed artifacts (`baseline_risk.csv`, `stage2_feature_table.csv`,
+  `rf_final_model.joblib`, `hybrid_risk_map.csv`, `results_summary.txt`, all
+  `outputs/metrics/module3/*.csv`) regenerated on the refreshed data (Moran's I=0.7024,
+  Stage 2 null result, and all other M3-001-M3-005 findings reproduce essentially
+  unchanged - confirms nothing was previously miscalibrated by the climate gap).
+- `module_3_spatial/MODULE_CONTEXT.md` (new "Forward Operational Hotspot Forecast"
+  section, softened "novel contribution" framing on the iterative loop, Open Question
+  #6 updated), `research_context/CURRENT_ARCHITECTURE.md`, `research_context/
+  RESEARCH_DECISIONS.md` (Decision 031), `research_context/QUESTIONS_FOR_DEFENSE.md`,
+  `module_3_spatial/EXPERIMENT_LOG.md` (M3-006, M3-007), `research_context/
+  CHAPTER_STATUS.md`.
+
+### Status
+Accepted
+
+---
+
 ## 2026-07-29 - Dashboard split: research evidence vs operational prototype
 
 ### Module

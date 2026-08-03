@@ -622,6 +622,7 @@ def render_operational_page(
     climate: pd.DataFrame,
     manifest: pd.DataFrame,
     hybrid_risk: pd.DataFrame,
+    hotspot_forecast: pd.DataFrame,
     district_geometry: "gpd.GeoDataFrame",
     case_y: int | None,
     case_w: int | None,
@@ -855,3 +856,34 @@ def render_operational_page(
             m1, m2 = st.columns(2)
             m1.metric(f"{district}: Hybrid Risk", f"{row['Risk']:.1f}")
             m2.metric(f"{district}: Actual cases (same week)", int(row["Number_of_Cases"]))
+
+    st.divider()
+    st.subheader("Module 3 — next-week hotspot forecast")
+    st.warning(
+        "**Evidence tier: operational** — the forecast week's CASE COUNT is Module 1's "
+        "forward forecast (`cases_source=module1_forecast`), not yet reported. Its CLIMATE "
+        "is real observed weather, not a meteorological forecast — Module 3's case-count "
+        "reporting lags real calendar time by several weeks, so the forecast week's dates "
+        "have already passed by the time this runs. See Decision 031 "
+        "(`research_context/RESEARCH_DECISIONS.md`) for the full reasoning."
+    )
+    if hotspot_forecast.empty or district_geometry.empty:
+        st.info(
+            "Forecast not found — run `python -m src.module3_spatial.forecast_future`."
+        )
+    else:
+        fc_latest = hotspot_forecast.sort_values(["Year", "Week"]).groupby(["Year", "Week"]).tail(len(DISTRICTS))
+        fc_year = int(fc_latest["Year"].iloc[0])
+        fc_week = int(fc_latest["Week"].iloc[0])
+        st.caption(f"Forecast district-week: **{fc_year} Wk{fc_week}** (selected district **{district}** outlined in black).")
+
+        fc_adapter = fc_latest.rename(columns={"Risk_forecast": "Risk", "cases_forecast": "Number_of_Cases"})
+        fc_heatmap = _hybrid_risk_folium_heatmap(district_geometry, fc_adapter, district)
+        st_folium(fc_heatmap, use_container_width=True, height=600, returned_objects=[], key="module3_forecast_heatmap")
+
+        fc_row = fc_adapter.loc[fc_adapter["District"] == district]
+        if not fc_row.empty:
+            row = fc_row.iloc[0]
+            m1, m2 = st.columns(2)
+            m1.metric(f"{district}: Forecast Hybrid Risk", f"{row['Risk']:.1f}")
+            m2.metric(f"{district}: Forecast cases (Module 1)", f"{row['Number_of_Cases']:.1f}")

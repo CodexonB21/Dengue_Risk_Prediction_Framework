@@ -78,6 +78,7 @@ from src.module1_forecasting.residual_transform import combine_stage2_forecast, 
 from src.module1_forecasting.feature_engineering import (  # noqa: E402
     HUMIDITY_COLUMN,
     RAINFALL_COLUMN,
+    REPORTING_DELAY_FEATURE_COLUMNS,
     TEMPERATURE_COLUMN,
     WEEKS_PER_YEAR,
     build_fold_agnostic_features,
@@ -206,6 +207,7 @@ def forecast_district(
             "temperature_lag_1", "temperature_lag_2", "temperature_lag_3", "temperature_lag_4",
             "humidity_lag_1", "humidity_lag_2", "humidity_lag_3", "humidity_lag_4",
             "sin_week", "cos_week", "monsoon_indicator_SW", "monsoon_indicator_NE",
+            *REPORTING_DELAY_FEATURE_COLUMNS,
         ]}
         feature_row["rainfall_anomaly"] = rainfall_anomaly
         feature_row["temperature_anomaly"] = temperature_anomaly

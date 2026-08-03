@@ -20,9 +20,11 @@ import logging
 import sys
 from pathlib import Path
 
+import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from sklearn.inspection import partial_dependence
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -36,12 +38,14 @@ from src.config import (  # noqa: E402
     MODULE3_HYBRID_RISK_MAP_PATH,
     MODULE3_METRICS_DIR,
     MODULE3_MORANS_I_METRICS_PATH,
+    MODULE3_POPULATION_DENSITY_PDP_PLOT_PATH,
     MODULE3_RF_FEATURE_IMPORTANCE_PATH,
+    MODULE3_RF_FINAL_MODEL_PATH,
     MODULE3_RF_METRICS_PATH,
     MODULE3_RESULTS_SUMMARY_PATH,
     MODULE3_STAGE_COMPARISON_PATH,
 )
-from src.module3_spatial.compensation_model import load_training_table, rescale_kde_baseline
+from src.module3_spatial.compensation_model import FEATURE_COLUMNS, load_training_table, rescale_kde_baseline
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +112,64 @@ def compare_stage1_vs_stage2() -> pd.DataFrame:
             {"stage": "Change (Stage 2 - Stage 1)", **change},
         ]
     )
+
+
+# ---------------------------------------------------------------------------
+# Step 1b: negative-Risk footnote (Critique Point 6 - already documented in
+# MODULE_CONTEXT.md, but was missing from the report-facing summary file)
+# ---------------------------------------------------------------------------
+
+def negative_risk_note(hybrid_df: pd.DataFrame) -> str:
+    negative = hybrid_df.loc[hybrid_df["Risk"] < 0, "Risk"]
+    if negative.empty:
+        return "No rows have a negative final Risk value."
+    pct = 100 * len(negative) / len(hybrid_df)
+    return (
+        f"Note: {len(negative)} rows ({pct:.2f}%) have a small negative final Risk "
+        f"(min {negative.min():.2f}) - a minor overshoot on near-zero-case "
+        f"district-weeks, NOT clipped (see MODULE_CONTEXT.md's Stage 2 "
+        f"Implementation Status)."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Step 1c: population_density partial dependence (Critique Point 4) -
+# checks whether the RF's dominant feature (population_density, 40.7%
+# importance) is genuinely learning a nuanced relationship, or effectively
+# just a population-size scaling that would make Estimated_Population's own
+# 17.8% importance partly redundant with it. Partial dependence (not a raw
+# residual-vs-feature scatter) holds every OTHER feature at its observed
+# distribution and isolates population_density's own marginal effect on the
+# predicted residual - the correct tool for this question, since
+# population_density and Estimated_Population are themselves correlated
+# (population_density is literally derived from Estimated_Population - see
+# feature_engineering.py::compute_population_density) and a raw scatter
+# would conflate the two.
+# ---------------------------------------------------------------------------
+
+def plot_population_density_pdp(path: Path) -> pd.DataFrame:
+    df = load_training_table()
+    df = rescale_kde_baseline(df)
+    model = joblib.load(MODULE3_RF_FINAL_MODEL_PATH)
+
+    pdp = partial_dependence(
+        model, df[FEATURE_COLUMNS], features=["population_density"], kind="average", grid_resolution=50,
+    )
+    grid = pdp["grid_values"][0]
+    avg_effect = pdp["average"][0]
+
+    fig, ax = plt.subplots(figsize=(8, 5), facecolor=SURFACE)
+    ax.plot(grid, avg_effect, color=SERIES_BLUE, linewidth=2)
+    ax.set_xlabel("population_density (people / km^2)")
+    ax.set_ylabel("Partial dependence: predicted residual_rescaled")
+    ax.set_title("Stage 2 RF - Partial Dependence on population_density")
+    _style_axes(ax)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150, facecolor=SURFACE)
+    plt.close(fig)
+    logger.info("population_density partial-dependence plot saved to %s.", path)
+
+    return pd.DataFrame({"population_density": grid, "partial_dependence": avg_effect})
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +247,7 @@ def build_summary_text(
     rf_metrics_df: pd.DataFrame,
     convergence_df: pd.DataFrame,
     importance_df: pd.DataFrame,
+    hybrid_df: pd.DataFrame,
 ) -> str:
     lines: list[str] = []
     lines.append("=" * 78)
@@ -207,6 +270,7 @@ def build_summary_text(
         "verified null/negative result; see EXPERIMENT_LOG.md M3-005.)"
     )
     lines.append(comparison_df.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+    lines.append(negative_risk_note(hybrid_df))
 
     rf_agg = rf_metrics_df[rf_metrics_df["fold"] == "mean_std"].iloc[0]
     lines.append("")
@@ -251,10 +315,13 @@ def run_evaluation() -> str:
     convergence_df = pd.read_csv(MODULE3_CONVERGENCE_LOG_PATH)
     importance_df = pd.read_csv(MODULE3_RF_FEATURE_IMPORTANCE_PATH)
 
+    hybrid_df = pd.read_csv(MODULE3_HYBRID_RISK_MAP_PATH)
+
     plot_convergence(convergence_df, MODULE3_CONVERGENCE_PLOT_PATH)
     plot_feature_importance(importance_df, MODULE3_FEATURE_IMPORTANCE_PLOT_PATH)
+    plot_population_density_pdp(MODULE3_POPULATION_DENSITY_PDP_PLOT_PATH)
 
-    summary = build_summary_text(comparison_df, moransI_df, rf_metrics_df, convergence_df, importance_df)
+    summary = build_summary_text(comparison_df, moransI_df, rf_metrics_df, convergence_df, importance_df, hybrid_df)
     print(summary)
 
     MODULE3_RESULTS_SUMMARY_PATH.write_text(summary, encoding="utf-8")

@@ -4,7 +4,7 @@
 Living document. Update this file whenever the accepted architecture changes.
 
 ## Last Updated
-2026-07-29 (Early warning dashboard + climate refresh + M2 forward risk — Decision 027)
+2026-08-04 (Module 3 forward operational hotspot forecast — Decision 031)
 
 ## Architecture Version
 v1.0-initial-living-context
@@ -135,7 +135,7 @@ Correct baseline spatial risk using environmental and demographic context such a
 # Integration Layer
 
 The three modules feed into an **operational early-warning dashboard** (implemented
-2026-07-29, Decision 027):
+2026-07-29, Decision 027; Module 3 forward hotspot added 2026-08-04, Decision 031):
 
 ```text
 scripts/fetch_open_meteo_weather.py     → raw daily weather (observed + forecast)
@@ -143,6 +143,8 @@ scripts/refresh_dashboard_data.py     → full refresh orchestrator
 src/module1_forecasting/forecast_future.py → future_forecast.csv
 src/module2_classification/live_scoring.py   → live_risk_predictions.csv (recent weeks)
 src/module2_classification/forecast_future_risk.py → future_risk_predictions.csv (M1-fed)
+src/module3_spatial/forecast_future.py  → future_hotspot_forecast.csv (M1-fed case counts,
+                                            real observed climate - see Decision 031)
 src/dashboard/app.py                    → Streamlit dashboard (read-only CSV consumer)
 ```
 
@@ -150,8 +152,17 @@ Integrated outputs include:
 
 - Predicted weekly dengue case counts (Module 1 forward forecast)
 - Outbreak risk category or probability (Module 2 live + forward operational scoring)
-- Spatial hotspot map (Module 3 — planned)
+- Spatial hotspot map (Module 3 — historical `hybrid_risk_map.csv` + forward operational
+  `future_hotspot_forecast.csv`, Decision 031)
 - Alerts and decision-support summaries
+
+**Known gap (2026-08-04):** `module2_classification/live_scoring.py` and
+`forecast_future_risk.py` currently have pre-existing, unrelated bugs (a sklearn
+calibration reshape error and a reporting-anomaly boolean-mask error) that abort
+`scripts/refresh_dashboard_data.py` before it completes. Module 1 and Module 3's own
+steps are ordered before these in the orchestrator so they still refresh successfully;
+Module 2's live/forward operational outputs remain stale until these are fixed
+(Module 2-owned files, not fixed as part of Decision 031 - flagged, not fixed).
 
 **Evidence tiers:** holdout-validated metrics (walk-forward/holdout) vs. operational
 forward outputs (`evidence_tier=operational`) — must never be conflated in reporting.

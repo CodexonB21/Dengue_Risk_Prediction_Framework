@@ -84,7 +84,12 @@ def extract_elevation(weather_dir: Path = RAW_WEATHER_DIR) -> pd.DataFrame:
     metadata preamble (row 2, column 3 - see the `latitude,longitude,
     elevation,...` header on row 1). Static per district, no Year/Week grain.
     """
-    files = sorted(weather_dir.glob("*.csv"))
+    # Glob restricted to the "open-meteo-*" naming convention (not "*.csv") -
+    # `RAW_WEATHER_DIR` also holds `climate_fetch_manifest.csv`, written by
+    # `scripts/fetch_open_meteo_weather.py` alongside the 25 per-district
+    # files, which a bare "*.csv" glob would incorrectly count as a 26th
+    # district file.
+    files = sorted(weather_dir.glob("open-meteo-*.csv"))
     if len(files) != len(DISTRICTS):
         raise ValueError(f"Expected {len(DISTRICTS)} weather files, found {len(files)}")
 
