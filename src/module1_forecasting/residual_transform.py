@@ -44,12 +44,24 @@ def combine_stage2_forecast(
     sarima_pred: np.ndarray | float,
     predicted_residual: np.ndarray | float,
     mode: str = "additive",
+    weight: np.ndarray | float = 1.0,
 ) -> np.ndarray | float:
-    """Assemble final case-count forecast from Stage 1 + Stage 2."""
+    """Assemble final case-count forecast from Stage 1 + Stage 2.
+
+    `weight` scales Stage 2's correction before it is added back
+    (`final = sarima + weight * predicted_residual`, or the analogous scaling
+    in log space). Defaults to `1.0` (full-strength correction, unchanged
+    production behavior). Introduced for the Phase 3 per-district shrinkage
+    ablation (`shrinkage.py`) targeting districts where Stage 2 empirically
+    hurts holdout MASE - `weight` may be a scalar or an array broadcastable
+    against `sarima_pred`/`predicted_residual` (e.g. a per-row weight looked
+    up by District).
+    """
     validate_residual_mode(mode)
     sarima_arr = np.asarray(sarima_pred, dtype=float)
     pred_arr = np.asarray(predicted_residual, dtype=float)
+    weight_arr = np.asarray(weight, dtype=float)
     if mode == "additive":
-        return np.maximum(sarima_arr + pred_arr, 0.0)
-    log_level = np.log1p(np.maximum(sarima_arr, 0.0)) + pred_arr
+        return np.maximum(sarima_arr + weight_arr * pred_arr, 0.0)
+    log_level = np.log1p(np.maximum(sarima_arr, 0.0)) + weight_arr * pred_arr
     return np.maximum(np.expm1(log_level), 0.0)

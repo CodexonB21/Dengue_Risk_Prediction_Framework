@@ -134,10 +134,43 @@ def module1_stage2_paths(
 # holdout evaluation above: no ground truth exists yet to score against.
 MODULE1_FUTURE_FORECAST_PATH = MODULE1_PROCESSED_DIR / "future_forecast.csv"
 
+# Single-step "predict next week using all data up to the current week"
+# nowcast (Phase 0 of the Module 1 remediation plan). Thin wrapper around
+# `forecast_future.run_future_forecast(horizon=1)` - written to its own path
+# so it never overwrites (or is overwritten by) the 8-week
+# MODULE1_FUTURE_FORECAST_PATH artifact above.
+MODULE1_NOWCAST_PATH = MODULE1_PROCESSED_DIR / "nowcast_next_week.csv"
+
+# Default vintage-ensemble window for the production nowcast (Decision 039/
+# M1-015, promoted to production by Decision 040/M1-016): average
+# `MODULE1_NOWCAST_ENSEMBLE_WINDOW` independent SARIMA fits' forecasts for
+# the same next-week target instead of trusting a single fit. Validated at
+# this value (4) via the full 25-district rolling evaluation - see Decision
+# 039 for the evidence.
+MODULE1_NOWCAST_ENSEMBLE_WINDOW = 4
+
+# Prospective (not backtested) nowcast accuracy tracking (Decision 041/
+# M1-017): every run_nowcast() call appends its predictions - genuinely
+# future weeks, no ground truth yet - to this permanent, append-only log.
+# Once real data for a logged target week later appears in
+# weekly_modeling_table.csv, nowcast_tracking.reconcile_nowcast_log() joins
+# the log against it and writes the resolved comparisons here. This is the
+# only genuinely prospective (as opposed to backtested) accuracy evidence
+# for the nowcast - it accumulates over real time, never fabricated.
+MODULE1_NOWCAST_LOG_PATH = MODULE1_PROCESSED_DIR / "nowcast_prediction_log.csv"
+MODULE1_NOWCAST_ACCURACY_PATH = MODULE1_METRICS_DIR / "nowcast_prospective_accuracy.csv"
+
 # Operational rolling 1-step-ahead evaluation (distinct from the 104-week
 # one-shot holdout forecast in baseline_sarima.forecast_holdout).
 MODULE1_ROLLING_ONE_STEP_PATH = MODULE1_PROCESSED_DIR / "rolling_one_step_predictions.csv"
 MODULE1_ROLLING_ONE_STEP_METRICS_PATH = MODULE1_METRICS_DIR / "rolling_one_step_metrics.csv"
+
+# Higher-power Diebold-Mariano test computed on the rolling one-step series
+# (Phase 1 of the Module 1 remediation plan) - a much longer per-district
+# out-of-sample sample than the 104-week holdout used by
+# MODULE1_DM_TEST_PATH above, for exactly the reason that test's holdout-only
+# scope reaches significance for only 5/25 districts.
+MODULE1_ROLLING_ONE_STEP_DM_PATH = MODULE1_METRICS_DIR / "rolling_one_step_dm_test.csv"
 
 # 25 official Sri Lankan districts modeled post Kalmunai -> Ampara merge
 # (Decision 012). Kalmunai is a real ~19-year case series with no matching

@@ -187,3 +187,65 @@ Colombo at 200 cases may be normal; a low-incidence district at 30 may be an out
 **Defense one-liner:** “Module 1 quantifies expected cases; Module 2 detects relative epidemic exceedance. Thresholding M1 forecasts on holdout achieved 0.063 PR-AUC and 22.5% recall versus Module 2's 0.412 and 60% — Module 2 is not redundant.”
 
 **Evidence:** `scripts/m2_009_m1_alert_baseline.py`, `outputs/metrics/module2/m2_009_{m1_alert_baseline,summary,discordant_counts}.csv`, `module_2_classification/EXPERIMENT_LOG.md` M2-009.
+
+---
+
+## Why does Stage 2 use one pooled model across all 25 districts instead of one model per district?
+
+**Short answer:** We tested this directly rather than relying on the original design reasoning. A per-district Stage 2 — 25 separate XGBoost models instead of one pooled model, everything else (hyperparameters, features minus the now-redundant `District` column, fold structure, evaluation) held fixed — was **decisively worse**: validation-aggregate median MASE 0.7473 vs. the pooled baseline's 0.5821 (+28.4%), with only 1 of 13 folds and 4 of 25 districts improving. The pre-registered overfitting safeguard (must beat baseline on the aggregate **and** a majority of folds **and** a majority of districts) was not cleared, so no holdout check was even performed.
+
+**Why pooling wins for most districts:** Per-district training data is roughly 25× thinner than pooled at the same fold — the first fold with any residual history at all gives a single district only 52 rows, versus ~1,300 pooled. An explicit three-tier data-sufficiency rule (no-op below 104 trainable rows, fixed tree count 104–207 rows, early stopping only at 208+ rows) protected against fitting models to token amounts of data, but most districts (21/25) still depend on the cross-district information-sharing that pooling provides.
+
+**What the 4 exceptions tell us:** The districts that *did* improve without pooling — `Monaragala`, `Mannar`, `Vavuniya`, `Matale` — are not random; they are exactly the districts already flagged in earlier diagnostics (Decisions 017/034/037) as ones where the pooled correction underperforms. This sharpens the earlier shrinkage work: it suggests a **narrow, targeted** per-district remedy for those specific districts, not a wholesale architecture change, is the more promising follow-up (not built — deliberately scoped as future work).
+
+**Defense one-liner:** "We didn't just assume pooling was right — we ablated it. Pooling wins for 21/25 districts by a wide margin, and the 4 exceptions are the same districts already flagged as structurally different, which is itself useful diagnostic information, not noise."
+
+**Evidence:** Decision 045, M1-021 (`module_1_forecasting/EXPERIMENT_LOG.md`), `scripts/evaluate_per_district_stage2.py`, `outputs/metrics/module1/stage2_per_district_vs_pooled.csv`.
+
+---
+
+## Was there a data leakage risk in the reporting-anomaly features? How did you catch and handle it?
+
+**Short answer:** Yes — a subtle one, found by us during unrelated scoping work, and then **empirically verified not to have inflated any previously published result** before deciding no retraction was needed.
+
+**The leakage pathway:** `flag_reporting_anomalies()` (Decision 026/028) needs `cases[i+1]` — the *following* week's case count — to decide whether week *i* looks like a reporting dip. Every downstream consumer of that flag (the nowcast correction and Feature Group 6 in `feature_engineering.py`, and the residual-lag masking in `compensation_model.build_residual_lags()`) used week *T−1*'s flag as an input feature for predicting row *T*. Because week *T−1*'s flag is itself computed from `cases[T]`, the feature was — subtly, and unintentionally — informed by the very value being predicted.
+
+**How we checked whether it mattered (rather than assuming):** We built a causal-only replacement (`flag_reporting_dip_causal()` — drop-only, no rebound confirmation, uses only `cases[i-1]` and `cases[i]`) and re-ran the full Stage 2 + combine pipeline with it substituted everywhere the leaky flag had been used. **Result: median holdout MASE 0.3655 (causal-safe) vs. 0.3741 (production) — the leakage-closed variant is not worse, and if anything ~2.3% better.** This means the leakage existed in the code but did not meaningfully inflate Decision 030's reported improvement.
+
+**Why we didn't then build a real-time correction on top of the causal detector:** We also measured the causal detector's real-time precision against the retrospective flag as ground truth — 100% recall but only 42.9% precision overall, and worse in exactly the two highest-volume districts (`Colombo` 46.2%, `Gampaha` 30.0%). More than half of real-time alerts in those districts would be false alarms, so a point-forecast adjustment built on it was rejected before being built, rather than shipped and found wanting later.
+
+**Defense one-liner:** "We found and disclosed our own leakage pathway, quantified its actual impact instead of assuming the worst, and confirmed the published result stands — that's the level of scrutiny we applied to our own pipeline, not just to baselines."
+
+**Evidence:** Decision 043, M1-019 (`module_1_forecasting/EXPERIMENT_LOG.md`), `scripts/evaluate_reporting_leakage_fix.py`, `scripts/evaluate_causal_dip_detector.py`, `src/preprocessing/reporting_anomalies.py`.
+
+---
+
+## If a hyperparameter search found a better validation score, why wasn't the new configuration adopted?
+
+**Short answer:** Because it failed the one check that actually matters — the untouched holdout block — after passing every validation-fold check we threw at it. This is presented as a demonstration of *why* the holdout discipline exists, not as a wasted exercise.
+
+**What happened:** A 40-candidate randomized search over Stage 2's XGBoost hyperparameters (max depth, learning rate, subsample, column subsample, L2 regularization, min child weight) was scored on walk-forward folds 2–14 using the exact metric function production already publishes. 5 of 39 candidates cleared a pre-registered safeguard — beating baseline's aggregate **and** a majority of the 13 folds **and** a majority of the 25 districts, not just a lower single number. The best candidate reached a validation-aggregate median MASE of 0.5659, a 2.8% improvement over the published 0.5821.
+
+**Then the one-time holdout check:** median holdout MASE **0.3874 vs. production's 0.3741 — a 3.6% regression.** Per the pre-registered rule ("holdout touched once, only after a candidate already wins on validation, never for further selection"), no other qualifying candidate was checked afterward.
+
+**Why this matters for the thesis, not just as a null result:** A hyperparameter set that broadly beat production across all 13 validation folds — clearing a safeguard specifically designed to filter out fold-count noise — still did not generalize to genuinely unseen data. That is direct, first-hand evidence for why the project's holdout-integrity rule (Decision 009/010) is not a bureaucratic formality: a naive "pick whatever wins on validation" process would have shipped a regression here.
+
+**Defense one-liner:** "Our holdout protocol isn't just a rule we cite — this experiment is the proof it catches real overfitting-to-validation that a 13-fold majority vote alone did not."
+
+**Evidence:** Decision 044, M1-020 (`module_1_forecasting/EXPERIMENT_LOG.md`), `scripts/search_stage2_hyperparameters.py`.
+
+---
+
+## After all this investigation, is Module 1's forecasting accuracy actually better than before?
+
+**Short answer:** For the validated, historical-holdout accuracy number examiners will look at first (median holdout MASE), **no — it is unchanged at 0.374.** The one genuine, evidence-backed improvement found across this entire investigation arc (M1-007 through M1-021) applies to a different capability — the forward-looking, real-time "predict next week" nowcast — not to the headline backtest metric.
+
+**What was tried and rejected (six ablations):** warm-started SARIMA refitting (M1-013), a lower-frequency refit cadence (M1-014), robust ensemble aggregation via median/trimmed-mean (M1-018/Decision 042), a real-time reporting-dip point adjustment (M1-019/Decision 043, Option A), a 40-candidate XGBoost hyperparameter search (M1-020/Decision 044), and per-district Stage 2 models (M1-021/Decision 045). Each held everything else fixed and tested one structural or tuning change against the same walk-forward folds and the same untouched holdout block; each was reported and documented as a negative result rather than discarded quietly.
+
+**What was accepted:** vintage-ensembled SARIMA — averaging, in transformed space, the current week's fresh SARIMA fit with the last 3 weeks' own independently-fitted models' forecasts for the same target week. In the rolling one-step-ahead evaluator, this raised the number of districts where Stage 2 helps from 10/25 to 24/25 and improved rolling sMAPE for 22/25 districts (median 58.8% → 56.8%) at effectively zero extra cost (Decision 039/M1-015). It is now the production nowcast's default (Decision 040/M1-016), with a permanent prospective-accuracy log (Decision 041/M1-017) seeded to check its real-world performance as future weeks resolve.
+
+**Why the two evidence tiers must not be conflated:** the rolling-evaluator improvement is measured on a deployment-faithful, one-step-ahead re-simulation of history, not on the 104-week flat holdout forecast that produces the headline MASE — they answer different questions ("does this help predict the very next week, repeatedly, as data accumulates" vs. "how accurate is a single long-horizon forecast fit once"). Reporting the nowcast win as if it moved the holdout MASE would overstate the result.
+
+**Defense one-liner:** "The core two-stage architecture's backtest accuracy is stable, not broken — we spent this arc stress-testing it from six different angles and it held up. The one real improvement we found applies specifically to the operational next-week nowcast, and we built the infrastructure to keep measuring it honestly rather than declaring victory on a single retroactive check."
+
+**Evidence:** Decisions 039–045, M1-013 through M1-021 (`module_1_forecasting/EXPERIMENT_LOG.md`), "Investigation Summary: Module 1 Remediation Arc" section of `module_1_forecasting/MODULE_CONTEXT.md`.

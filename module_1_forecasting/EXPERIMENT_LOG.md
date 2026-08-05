@@ -737,3 +737,1368 @@ holdout median MASE **0.374** vs pre-promotion **0.386**, median sMAPE **34.2** 
 
 ### Phases Remaining
 - **M1-006C:** (Stretch) Quantile/distributional Stage 2
+
+---
+
+## Experiment ID: M1-007
+
+### Date
+2026-08-03/04
+
+### Research Question
+Does extending Stage 2's residual-lag feature set (`residual_lag_3`,
+`residual_lag_4`, and a strictly-causal `residual_ewma_4`) reduce the
+residual autocorrelation that survives Stage 2 (23/25 districts still fail
+Ljung-Box lag-26 on `actual - final_prediction`), without regressing
+holdout MASE?
+
+### Districts
+All 25.
+
+### Stage 1 Model
+Unchanged (production `sarima_selected_configs.csv`).
+
+### Stage 2 Model
+Unchanged pooled XGBoost architecture/hyperparameters. Feature set extended
+via `compensation_model.get_feature_columns(feature_variant="m1_007_residual_ext")`
+- `residual_lag_1/2` (production) plus `residual_lag_3`, `residual_lag_4`,
+`residual_ewma_4` (all built in the same leakage-safe, full-calendar-reindexed
+way as `residual_lag_1/2` in `build_residual_lags()`; the EWMA shifts by 1
+week before `.ewm(span=4).mean()`, matching the existing rolling-feature
+leakage-safety pattern in `feature_engineering.py`). Written to
+`_m1_007_residual_ext`-suffixed artifacts only - production paths untouched.
+
+### Features Used
+Production Feature Groups 1-6 + the three new residual-lag/EWMA columns.
+
+### Metrics
+Ljung-Box (lag 26) pass/fail per district (validation-aggregate row),
+holdout MASE, validation-aggregate MASE - all via the unchanged `combine.py`
+framework, run against the variant artifacts.
+
+### Results
+- Ljung-Box (lag 26) failing districts: baseline 23/25 -> variant 22/25 (1
+  newly passing - `Anuradhapura`; 0 newly failing).
+- Median **validation-aggregate** MASE improved: 0.651 -> 0.597.
+- Median **holdout** MASE regressed: 0.374 -> 0.395 - a validation-improves/
+  holdout-regresses pattern.
+- Full per-district table: `outputs/metrics/module1/m1_007_residual_ext_vs_baseline.csv`.
+
+### Residual Diagnostics
+Ljung-Box pass-rate barely moved (1 district flipped); the extra lags did
+not meaningfully whiten the residual for the large majority of districts
+that were already failing.
+
+### Interpretation
+This matches the exact overfitting pattern the pre-registered adoption
+criterion (Ljung-Box pass rate improves AND holdout MASE does not regress)
+exists to catch - see Decision 026 (SMOTE) for the same validation-improves/
+holdout-regresses signature. `residual_lag_1/2` already capture the large
+majority of exploitable autocorrelation (per M1-002's feature-importance
+finding); adding more lags mostly adds noise/variance to the pooled model
+rather than new signal.
+
+### Decision
+**REJECT.** Kept as an ablation switch (`feature_variant="m1_007_residual_ext"`,
+`compensation_model.RESIDUAL_EXT_VARIANT`) for future reference, not deleted
+- mirrors M1-006A's precedent. Production Stage 2 feature set unchanged.
+The residual-autocorrelation gap (23/25 districts) remains open; a different
+Stage 2 architecture (not just more lags of the same signal) is the more
+promising next candidate.
+
+### Documentation Updated
+`module_1_forecasting/MODULE_CONTEXT.md`, `research_context/RESEARCH_DECISIONS.md`
+(new decision), `research_context/CHANGELOG.md`, this entry.
+
+---
+
+## Experiment ID: M1-008
+
+### Date
+2026-08-03/04
+
+### Research Question
+`combine.py`'s Diebold-Mariano test only reaches `p < 0.05` for 5/25
+districts at its strict holdout-only scope (n=104/district). Does a much
+larger out-of-sample sample - every week scored by the existing rolling
+one-step-ahead evaluator (`rolling_one_step.py`, previously only run as a
+2-district Colombo/Gampaha spot-check) - give a higher-powered, more
+conclusive DM test?
+
+### Districts
+All 25 (first full-25-district run at `--scope all`, not just `holdout`;
+prior full-25 rolling runs, per M1-005, used `--scope holdout` only, n=104).
+
+### Stage 1 Model
+Refit weekly on all data strictly before week *t* (unchanged
+`rolling_one_step_district()` mechanism), `n_periods=1`.
+
+### Stage 2 Model
+The single frozen production `xgboost_final_model.json` applied to every
+scored week - **not** the per-fold walk-forward models `combine.py`'s DM
+test uses.
+
+### Features Used
+Unchanged production `FEATURE_COLUMNS`.
+
+### Metrics
+New `rolling_one_step.compute_dm_results_rolling()`: Diebold-Mariano test
+(`e1 = actual - sarima_prediction`, `e2 = actual - final_prediction`, masking
+only `is_imputed`, mirroring `combine.py`) on the full `scope="all"` series
+per district (mean n ≈ 852/district, vs. 104 for the holdout-only DM test).
+Run via a new parallel driver (`scripts/run_rolling_one_step_parallel.py`,
+process-pool across districts - a serial single-district timing test
+projected ~3.6 hours for all 25; the parallel run completed in ~43 minutes).
+
+### Results
+- **Only 2/25 districts reach `p < 0.05`** (`Ratnapura`, `Badulla`) - and
+  both are **significantly WORSE** under Stage 2 (`mean_loss_diff < 0`), not
+  better.
+- **Only 10/25 districts show `mean_loss_diff > 0`** (Stage 2 helping at
+  all) in this evaluation mode - well under half, a much weaker picture than
+  the holdout backtest's 23/25-districts-improve headline.
+- Full results: `outputs/metrics/module1/rolling_one_step_dm_test.csv`.
+
+### Residual Diagnostics
+Not applicable to this entry (DM test only).
+
+### Interpretation - important caveat, not a simple "bigger n" replication
+**This result must NOT be read as a higher-powered confirmation or
+refutation of `combine.py`'s holdout DM test - it is evidence about a
+different estimand.** The frozen `xgboost_final_model.json` used here was
+itself trained on out-of-sample residuals spanning almost the entire
+2010-2026 history (all 14 folds + holdout, per `train_final_production_model`).
+The rolling evaluator's weekly-refit SARIMA produces a systematically
+different `sarima_prediction` (and therefore different derived features)
+for those same historical weeks than the fold-based SARIMA refits Stage 2
+was actually trained against. So this DM test is closer to "how well does
+the fully-trained final model generalize under an input-distribution shift
+from weekly-refit vs. fold-refit SARIMA" than to genuine held-out
+generalization - the same distinction `module_1_forecasting/MODULE_CONTEXT.md`'s
+Rolling 1-Step section already draws for sMAPE ("do not cite rolling sMAPE
+alongside holdout MASE as the same estimand"), now shown to matter for the
+DM test too, and more starkly than expected. The **honest, new finding** is
+that Stage 2's benefit looks considerably weaker and less consistent under
+this deployment-faithful weekly-refit mode than the validated walk-forward/
+holdout backtest suggests - worth real further investigation, not something
+this entry resolves.
+
+### Decision
+**Report, do not act on prematurely.** This is evidence-gathering only - no
+model, feature, or threshold is selected from it. Flagged as a new, higher-
+priority open question (rolling-mode Stage 2 benefit is markedly weaker than
+holdout-mode) rather than folded into the original "thin DM significance"
+framing, which turned out to be the wrong lens for this result.
+
+### Documentation Updated
+`module_1_forecasting/MODULE_CONTEXT.md` (new Open Question), `research_context/
+RESEARCH_DECISIONS.md`, `research_context/CHANGELOG.md`, this entry.
+
+---
+
+## Experiment ID: M1-009
+
+### Date
+2026-08-04
+
+### Research Question
+`Kilinochchi` and `Mannar` get a WORSE holdout MASE after Stage 2 than Stage
+1 alone (Decision 017: -11.7%, -3.0%). Does a per-district shrinkage weight
+(`final = sarima + w * predicted_residual`, `w` grid-searched over
+`{0, 0.25, 0.5, 0.75, 1.0}` using only the 14 validation folds, confirmed -
+never selected - against the holdout) fix this for either district, and
+does it help any other district?
+
+### Districts
+All 25.
+
+### Stage 1 Model
+Unchanged.
+
+### Stage 2 Model
+Unchanged trained model; `residual_transform.combine_stage2_forecast()`
+extended with an optional `weight` parameter (scalar or per-row array) -
+pure post-hoc recombination of already-computed `sarima_prediction`/
+`predicted_residual`, no retraining.
+
+### Features Used
+Unchanged.
+
+### Metrics
+Per-district validation-fold MASE at each candidate weight
+(`shrinkage.select_shrinkage_weights()`), then holdout MASE at the
+validation-selected weight vs. `w=1.0` (`evaluate_shrinkage_on_holdout()`).
+Selection requires BOTH a better median fold MASE AND winning on `>= 50%`
+of individual scored folds (guards against the search overfitting a median
+to one or two folds - a real risk for exactly the low-fold-count districts
+this targets).
+
+### Results
+- **`Kilinochchi` and `Mannar` were NOT selected for shrinkage** (both kept
+  `w=1.0`) - correctly: both districts' VALIDATION-fold MASE is already
+  improved by Stage 2 (per M1-002/Decision 017's numbers); their problem is
+  holdout-specific (concentrated in a small number of folds - Mannar's
+  fold-13 explosive AR root, Decision 017), so no validation-fold-only
+  search can honestly justify shrinking their weight. For `Mannar`, `w=0.5`
+  did look better on median validation MASE (0.552 vs 0.617) but won on
+  **fewer than half** the individual folds - exactly the overfitting pattern
+  the fold-win-fraction guard exists to reject.
+- **Two different districts were selected and holdout-confirmed**:
+  `Monaragala` (`w=0.75`, holdout MASE 0.513 -> 0.505) and `Vavuniya`
+  (`w=0.75`, holdout MASE 0.365 -> 0.359) - both small (~1.6%) but genuine,
+  fold-consistent, holdout-confirmed improvements.
+- Applying the confirmed weights pipeline-wide changes the median holdout
+  MASE across all 25 districts not at all (0.374 -> 0.374, unsurprising -
+  only 2/25 districts change, neither near the median).
+- Full tables: `outputs/metrics/module1/sarima_stage2_shrinkage_weights.csv`,
+  `outputs/metrics/module1/sarima_stage2_shrinkage_holdout_check.csv`.
+
+### Residual Diagnostics
+Not applicable (point-forecast MASE only).
+
+### Interpretation
+A uniform per-district shrinkage weight is the wrong tool for
+`Kilinochchi`/`Mannar`'s specific problem - their holdout regression is
+driven by fold-specific dynamics already documented (Decision 017), not by
+Stage 2's correction being too strong on average across validation. The
+method did find a small, honestly-validated improvement elsewhere
+(`Monaragala`, `Vavuniya`), which is worth keeping as an opt-in refinement
+but does not move the pipeline's headline numbers.
+
+### Decision
+**Partial adopt.** `residual_transform.combine_stage2_forecast(weight=...)`
+and `shrinkage.py` are kept as a reusable, holdout-gated mechanism
+(`combine.run_combine_pipeline(apply_shrinkage=True, feature_variant=...)`,
+guarded to require an explicit `feature_variant` so it can never silently
+overwrite production output). Not wired into the default production path
+this session, given the small magnitude - available for the team to promote
+if desired. **Does not close** the `Kilinochchi`/`Mannar` open question -
+still flagged for a fold-specific look, not a global-weight fix.
+
+### Documentation Updated
+`module_1_forecasting/MODULE_CONTEXT.md`, `research_context/RESEARCH_DECISIONS.md`
+(new decision), `research_context/CHANGELOG.md`, this entry.
+
+---
+
+## Experiment ID: M1-010
+
+### Date
+2026-08-03/04
+
+### Research Question
+Build a genuine "predict next week's case count using all data available up
+to the current week" production capability - distinct from both the 8-week
+recursive `future_forecast.csv` (which is partly self-fed beyond step 1) and
+the historical-backtest-only rolling evaluator.
+
+### Districts
+All 25.
+
+### Stage 1 Model
+Refit on full available history, single-step forecast (`n_periods=1`) -
+unchanged `fit_and_forecast()`.
+
+### Stage 2 Model
+Frozen production `xgboost_final_model.json`, applied non-recursively (zero
+self-fed lags at horizon step 1).
+
+### Features Used
+Unchanged production `FEATURE_COLUMNS`, including the M1-006B reporting-delay
+group.
+
+### Metrics
+None (no ground truth for a genuine future week) - `feature_completeness_pct`
+reported per row as the honest confidence proxy, per `forecast_future.py`'s
+existing convention.
+
+### Results
+- **Bug found and fixed, pre-existing and unrelated to this feature's
+  design**: `forecast_future.forecast_district()`'s explicit feature-row
+  column list predated the M1-006B production promotion and omitted the
+  three reporting-delay columns now in production `FEATURE_COLUMNS`, causing
+  a `KeyError` on every invocation since that promotion - `future_forecast.csv`
+  could not actually be regenerated by the current codebase before this fix.
+  Fixed by plumbing `is_reporting_anomaly` history into the synthetic-row
+  builder and including the three columns in the feature-row dict.
+- Added `run_nowcast()` (`horizon=1` wrapper around `run_future_forecast()`)
+  writing to a new `nowcast_next_week.csv`, and an `evidence_tier` column
+  (`operational_nowcast` for step 1, `operational_forecast` for later steps)
+  on both outputs - closes Module 1's gap vs. Module 2's existing
+  `evidence_tier` provenance-tagging convention.
+- Verified bit-for-bit: the nowcast's row equals `horizon=8`'s step-1 row
+  exactly (same code path, `horizon=1` short-circuits all recursion).
+- Regenerated `future_forecast.csv` for all 25 districts with the fix;
+  `nowcast_next_week.csv` produced for all 25 districts (2026 week 26,
+  `feature_completeness_pct` 77-89%, notably higher than the pre-fix/pre-
+  climate-refresh 56% figure reported in M1-004, reflecting both the
+  Decision 027 climate refresh and this fix).
+- Wired into `scripts/refresh_dashboard_data.py` as a new `module1_nowcast`
+  step, right after the existing forecast step.
+
+### Residual Diagnostics
+Not applicable.
+
+### Interpretation
+The mechanism itself was already sound (`horizon=1` was always a genuine
+non-recursive nowcast in principle) - the blocker was a latent integration
+bug from an earlier, unrelated production promotion. Fixing it also
+retroactively corrects the 8-week `future_forecast.csv` artifact, which had
+been silently stale since 2026-07-29.
+
+### Decision
+**Keep**, as a new, clearly-separated deliverable (Decision 018's precedent)
+- not wired into `main.py`'s validated pipeline. `M1-008`'s rolling
+`--scope all` backtest is the closest available historical validation of
+this exact mechanism's accuracy, with the caveat noted there.
+
+### Documentation Updated
+`module_1_forecasting/MODULE_CONTEXT.md`, `research_context/RESEARCH_DECISIONS.md`,
+`research_context/CHANGELOG.md`, this entry.
+
+---
+
+## Experiment ID: M1-011
+
+### Date
+2026-08-04
+
+### Research Question
+Root-cause Open Question #17 (M1-008's finding that rolling-mode Stage 2
+benefit is far weaker than the holdout backtest's): is it (a) the frozen
+final model generalizing poorly to slightly different SARIMA inputs, (b)
+weekly-refit SARIMA itself being a noisier/different input distribution than
+fold-refit SARIMA, or (c) Stage 2 overfitting fold-specific SARIMA error
+patterns?
+
+### Districts
+All 25.
+
+### Stage 1 Model
+Not refit - this diagnostic reuses the already-computed
+`sarima_prediction` values from both `rolling_one_step_predictions.csv`
+(weekly-refit) and `sarima_stage1_predictions.csv` (fold-refit) verbatim.
+
+### Stage 2 Model
+Two scoring modes compared on the IDENTICAL already-computed rolling
+feature rows: (1) the single frozen `xgboost_final_model.json` (as M1-008
+used), (2) a new fold-matched resolver
+(`scripts/diagnose_rolling_dm_gap.py::build_fold_resolver_factory`) that
+looks up, per `(District, Year, Week)`, exactly which walk-forward fold's
+own saved model (`models/module1/xgboost_folds/fold_{k}.json`/
+`holdout.json`) was originally responsible for that week under the walk-
+forward scheme (via `compensation_model.compute_fold_boundaries()`,
+unchanged), and scores with that instead. `rolling_one_step_district()` was
+extended with `sarima_prediction_overrides`/`model_resolver` parameters to
+make this a pure recombination - no SARIMAX refitting, no XGBoost
+retraining (verified: `residual_lag_1/2` are built from ACTUAL residuals,
+not model predictions, so feature rows are model-independent; confirmed by
+a correctness check finding exactly 26 structural-gap fallback weeks per
+district, matching the already-documented ~26-week fold-14-to-holdout gap
+exactly).
+
+### Features Used
+Unchanged.
+
+### Metrics
+Per-district: mean/median absolute SARIMA drift (weekly-refit minus fold-
+refit prediction), correlation between the two prediction series,
+correlation between drift magnitude and rolling final-prediction error, and
+a DM test (`rolling_one_step.compute_dm_results_rolling()`, unchanged) on
+the fold-matched-model series, compared against M1-008's frozen-model DM
+results.
+
+### Results
+- **Weekly-refit and fold-refit SARIMA predictions are barely correlated**:
+  mean correlation across districts = **0.13**, with several districts near
+  zero or even negative (`Kegalle` -0.14, `Gampaha` -0.03, `Kurunegala`
+  -0.06). Mean absolute drift is large relative to typical case counts for
+  several districts (`Colombo` 150 cases, `Gampaha` 104, `Kandy` 65,
+  `Jaffna` 75).
+- **Fold-matched-model rescoring made things WORSE, not better**: districts
+  with Stage 2 helping (`mean_loss_diff > 0`) dropped from 10/25 (frozen
+  model) to 8/25 (fold-matched); DM-significant districts dropped from 2/25
+  to **0/25**.
+- **Drift correlates positively with rolling-mode error** for most
+  districts (mean correlation 0.26, e.g. `Vavuniya` 0.54, `Kegalle` 0.51,
+  `Kalutara` 0.39) - bigger weekly-vs-fold SARIMA disagreement tracks with
+  bigger rolling-mode forecast error.
+- Full tables: `outputs/metrics/module1/rolling_dm_gap_diagnosis.csv`,
+  `outputs/metrics/module1/rolling_one_step_dm_test_fold_matched.csv`.
+
+### Residual Diagnostics
+Not applicable (DM test / correlation diagnostics only).
+
+### Interpretation - hypothesis (b) confirmed, (a)/(c) ruled out
+Using the "correct," fold-appropriate Stage 2 model instead of the single
+frozen final model did **not** recover the holdout-level improvement - if
+anything it made the DM test's significance picture worse. This rules out
+(a)/(c): the frozen final model's generalization is not the dominant
+problem. Instead, weekly-refit SARIMA predictions are so weakly correlated
+with fold-refit SARIMA predictions for the same historical weeks (mean
+r=0.13, several districts near zero) that Stage 2 - whichever checkpoint
+scores it - is effectively being asked to correct a materially different
+Stage 1 signal than the one it was trained against. This is a real,
+substantial instability in the weekly SARIMA refit itself, not a Stage 2
+weakness. A plausible mechanism (not yet tested): the fixed
+`(order, seasonal_order)` per district was selected once on the full
+history and is refit with `enforce_stationarity=False`/
+`enforce_invertibility=False` (already documented, Decision 017, as prone
+to occasional explosive/unstable fits) - refitting the same fixed order
+on a training window that grows by only 1 week each time may let the MLE
+optimizer land on meaningfully different local optima week to week, in a
+way that annual-fold refits (much larger relative window changes between
+refits) do not exhibit to the same degree.
+
+### Decision
+**Report as the root cause, do not fix this session.** This is diagnostic
+evidence only - no model, feature, or refit cadence is changed here. The
+actionable implication - weekly SARIMA refitting may need a more stable
+cadence (e.g. monthly/quarterly) or parameter smoothing across refits
+before rolling-mode/production nowcast numbers can be trusted at face value
+- is flagged as a new, separately holdout-gated follow-up decision, not
+adopted automatically. This also means the rolling evaluator's own
+deployment-fidelity numbers (M1-005, M1-008) should be read with this
+instability in mind, not just as "Stage 2 doesn't transfer well."
+
+### Documentation Updated
+`module_1_forecasting/MODULE_CONTEXT.md` (Open Question #17 updated with
+root cause), `research_context/RESEARCH_DECISIONS.md` (new decision),
+`research_context/CHANGELOG.md`, this entry.
+
+---
+
+## Experiment ID: M1-012
+
+### Date
+2026-08-04
+
+### Research Question
+Does STL decomposition + a cheap non-seasonal ARIMA on the deseasonalized
+series recover a useful seasonal signal for districts whose current SARIMA
+has none (18/25 districts, `seasonal_order=(0,0,0,52)`, Open Question #12) -
+piloted on a narrow 3-district sample before considering any wider rollout?
+
+### Districts
+`Colombo`, `Gampaha`, `Kurunegala` - three confirmed non-seasonal, data-rich
+districts (two thesis-critical, one solid mid-volume). Deliberately NOT a
+full 18/25 or 25/25 rollout.
+
+### Stage 1 Model
+New `src/module1_forecasting/stl_arima.py`:
+`statsmodels.tsa.forecasting.stl.STLForecast(values, ARIMA, model_kwargs=
+{"order": order}, period=52)` - confirmed (verified directly against the
+installed statsmodels version before implementing) to handle seasonal +
+trend extrapolation internally, so no hand-rolled extrapolation logic was
+needed (de-risking the original, more speculative version of this plan).
+Non-seasonal order selected once per district per transform via
+`pm.auto_arima(seasonal=False, max_p=2, max_q=2)`, mirroring
+`baseline_sarima.select_order()`'s cost profile. Walk-forward validated via
+`validate_stl_candidate()`, reusing `validation.py`'s fold generator
+unchanged.
+
+### Stage 2 Model
+Not touched - this experiment only concerns Stage 1.
+
+### Features Used
+Univariate (case counts only), matching Stage 1's existing scope.
+
+### Metrics
+Walk-forward validation MASE (raw + log1p candidates, best transform kept),
+compared against each district's existing, already-selected SARIMA
+candidate's validation MASE (from `sarima_selected_configs.csv`). Holdout
+MASE checked once, only for a district where STL+ARIMA wins on validation
+(none did - see Results).
+
+### Results
+| District | Existing SARIMA (transform, order, val MASE) | STL+ARIMA (transform, order, val MASE) | STL wins? |
+|---|---|---|---|
+| Colombo | log1p, (1,1,1), 1.627 | raw, (0,1,2), 1.681 | No |
+| Gampaha | raw, (2,1,0), 1.055 | log1p, (0,1,1), 1.182 | No |
+| Kurunegala | log1p, (1,1,1), 0.856 | log1p, (2,1,2), 0.999 | No |
+
+**STL+ARIMA lost on validation MASE for all 3 piloted districts** - no
+holdout check was performed for any (per the pre-registered rule: holdout is
+only consulted for a district where the candidate already won on
+validation). A bug was found and fixed during implementation (not a
+research finding): `STLForecast`'s underlying `ARIMA` model rejected a
+constant trend term (`trend="c"`) whenever `d > 0` (`ValueError`, since
+differencing already eliminates a constant) - fixed by only passing
+`trend="c"` when `order[1] == 0`.
+
+A visual sanity check (`outputs/figures/module1/stl_decomposition_pilot_Colombo.png`)
+confirms the decomposition itself is not degenerate: STL genuinely extracts
+a recurring annual seasonal component (visible, not flat), and a trend
+component that tracks Colombo's multi-year outbreak cycles. The residual
+component remains large and spiky around the biggest outbreak weeks,
+suggesting the seasonal/trend components - however genuine - do not capture
+the dominant source of forecast error (large, irregularly-timed outbreak
+spikes), and the LOESS-smoothed seasonal shape may not match a specific
+future year's actual timing/amplitude closely enough to help point-forecast
+accuracy.
+
+### Residual Diagnostics
+Not computed (pilot-scale, validation MASE only per the plan's narrow scope).
+
+### Interpretation
+This is a genuine, informative negative result, not an implementation
+artifact - the decomposition itself looks reasonable, but a fixed seasonal
+shape does not translate into better point forecasts for these particular
+outbreak-driven series. This adds a fuller explanation to Open Question #12
+than previously available: the 18/25 non-seasonal-SARIMA finding is likely
+not simply an `auto_arima` search limitation that any seasonal-decomposition
+method would readily fix - dengue's seasonal pattern for these districts may
+be too irregular (in timing/amplitude, entangled with outbreak dynamics)
+for a fixed seasonal component to help, which is consistent with the
+already-established finding (M1-002) that Stage 2's own seasonal/monsoon/
+climate features compensate for this gap more effectively than reworking
+Stage 1's own seasonality handling.
+
+### Decision
+**Do not scale to the remaining 15 non-seasonal districts.** The pilot's
+explicit purpose was to gate a wider rollout on an early, cheap signal; a
+0/3 result is exactly the stopping condition the pilot design was built to
+catch. `stl_arima.py` is kept as a candidate module (not deleted) in case a
+different district subset or STL configuration is worth revisiting later,
+but no further STL work is planned this session. Stage 1's existing
+per-district raw/log1p SARIMA selection is unchanged.
+
+### Documentation Updated
+`module_1_forecasting/MODULE_CONTEXT.md`, `research_context/RESEARCH_DECISIONS.md`
+(new decision), `research_context/CHANGELOG.md`, this entry.
+
+---
+
+## Experiment ID: M1-013
+
+### Date
+2026-08-04
+
+### Research Question
+M1-011 (Decision 035) found weekly-refit SARIMA predictions are barely
+correlated with fold-refit SARIMA predictions for the same historical
+weeks (mean r=0.13), and hypothesized this could be the SARIMAX optimizer
+landing on different local optima week to week, given how little the
+training window changes between consecutive weekly refits. Does seeding
+each week's fit with the PREVIOUS week's converged parameters
+(`start_params`) reduce this instability?
+
+### Districts
+`Kilinochchi` (fast/sparse) and `Colombo` (thesis-critical, highest
+measured drift in M1-011) for an initial cheap check, before committing to
+a full 25-district run.
+
+### Stage 1 Model
+`baseline_sarima.fit_and_forecast()` extended with optional `start_params`/
+`return_params` keyword arguments (default behavior byte-identical when
+unset); `rolling_one_step.rolling_one_step_district()` extended with a
+`warm_start` parameter that chains each week's fitted params into the
+next week's `start_params`. Both changes are additive and backward-
+compatible - no existing caller's behavior changes.
+
+### Stage 2 Model
+Not touched.
+
+### Features Used
+Unchanged.
+
+### Metrics
+Per-fit wall-clock time; correlation and mean absolute difference between
+{cold-start, warm-start} predictions and the fold-refit SARIMA prediction
+for the identical `(District, Year, Week)`, on a 60-week sample per
+district (cheap decisive check, run before any full-scale evaluation).
+
+### Results
+- **Per-fit cost**: warm-started fits took **2.4-10s each** vs. the
+  cold-started baseline's **~0.6s** (a 5-10x slowdown) - a real,
+  non-trivial cost discovered during smoke testing, not anticipated when
+  the approach was proposed.
+- **Warm-started and cold-started predictions are virtually identical**:
+  e.g. Colombo week 2 of the sample: cold=80.250588, warm=80.251638 (differ
+  in the 3rd decimal); correlation with fold-refit SARIMA is unchanged to
+  4 decimal places for both districts (`Kilinochchi`: cold r=-0.0518, warm
+  r=-0.0517; `Colombo`: cold r=0.1809, warm r=0.1809). Mean absolute
+  difference from fold-refit is likewise unchanged (`Colombo`: 61.246 cold
+  vs 61.246 warm).
+- Given this cheap 60-week check fully falsified the hypothesis with no
+  ambiguity, **the planned full 25-district rolling re-run was not run** -
+  it would have cost ~2+ hours (5-10x the ~40 min budgeted, since warm-
+  started fits are that much slower) for a result already clear from a
+  much smaller, faster sample. Not running it is a deliberate, disclosed
+  scope decision, not a silent gap.
+
+### Residual Diagnostics
+Not applicable.
+
+### Interpretation
+The `SARIMAX` optimizer converges to essentially the SAME solution
+regardless of starting point for this model/data combination - it is
+already robust to its starting point, just less computationally efficient
+when given an explicit (as opposed to its own internally-computed) one.
+This means the M1-011 finding (weekly-refit SARIMA is only weakly
+correlated with fold-refit SARIMA) is **not** an optimizer-local-optima
+artifact fixable by warm-starting - the instability is a more fundamental
+property of how the true MLE optimum itself shifts as the training window
+grows by exactly one observation each week, for this fixed
+`(order, seasonal_order)`. This is a cleaner, more specific understanding
+than M1-011 alone provided, even though it rules out the specific fix
+tested.
+
+### Decision
+**Reject warm-starting.** No accuracy benefit, and a real, substantial
+performance cost. The `start_params`/`return_params`/`warm_start`
+parameters are kept (harmless, off by default, and now-useful generic
+infrastructure - e.g. a future ensemble/smoothing approach could still use
+`return_params`), but `warm_start=False` remains the only path anyone
+should use going forward. The underlying weekly-refit-instability question
+remains open; untried candidates for future work include refitting on a
+less frequent cadence (e.g. monthly, holding parameters fixed for
+intermediate weeks) or smoothing/ensembling forecasts across the last few
+weeks' independent refits, rather than trying to change what a single
+week's optimizer converges to.
+
+### Documentation Updated
+`module_1_forecasting/MODULE_CONTEXT.md`, `research_context/RESEARCH_DECISIONS.md`
+(new decision), `research_context/CHANGELOG.md`, this entry.
+
+---
+
+## Experiment ID: M1-014
+
+### Date
+2026-08-04
+
+### Research Question
+M1-013 ruled out "optimizer starting point" as the cause of weekly SARIMA
+refit instability - the true MLE optimum itself appears to shift week to
+week. Does refitting LESS often (e.g. every 4 weeks) - using
+`SARIMAXResults.append(refit=False)` (a cheap Kalman-filter state update,
+confirmed via the statsmodels docstring, NOT a re-optimization) to
+incorporate new observations between refits without re-estimating
+parameters - produce more stable, more fold-refit-like predictions than
+refitting fresh every single week?
+
+### Districts
+`Kilinochchi`, `Colombo` (60-week cheap check, same districts/sample as
+M1-013, before considering any full run).
+
+### Stage 1 Model
+New `rolling_one_step._low_freq_refit_step()`: cold `.fit()` every
+`refit_interval_weeks` (4, i.e. monthly), `.append(new_obs, refit=False)`
+in between, `.forecast(steps=1)` every week regardless of which path was
+taken that week.
+
+### Stage 2 Model
+Not touched.
+
+### Features Used
+Unchanged.
+
+### Metrics
+Correlation and mean absolute difference between the low-frequency-refit
+prediction and the fold-refit SARIMA prediction for the same
+`(District, Year, Week)`, compared against the plain weekly cold-refit
+baseline, on the same 60-week sample.
+
+### Results
+- **Per-fit cost**: substantially cheaper than weekly refitting, as
+  expected (`Kilinochchi`: 60.1s total vs cold's 237.4s for the same 60
+  weeks - roughly a 4x reduction, consistent with refitting only 1 week in
+  4).
+- **No meaningful stability improvement**: `Kilinochchi` correlation with
+  fold-refit moved from -0.0518 (cold) to +0.0034 (low-freq) - both
+  statistically indistinguishable from zero on this sample size, not a
+  real improvement. `Colombo` correlation was effectively unchanged (0.1809
+  cold vs 0.1833 low-freq); mean absolute difference from fold-refit was
+  also essentially unchanged (61.25 vs 61.50).
+
+### Residual Diagnostics
+Not applicable.
+
+### Interpretation
+Refitting less often is cheaper (as expected - fewer full optimizations)
+but does not address the underlying instability - `.append(refit=False)`
+by construction keeps the SAME parameters from the last cold refit, so it
+cannot correct for whatever caused that refit's own parameters to already
+differ from the fold-refit vintage's. This is consistent with, and adds to,
+M1-013's finding: the problem is in what a SINGLE fit's true optimum is for
+a given window, not in how often a fit happens or how its optimizer is
+seeded.
+
+### Decision
+**Reject** as a general stabilization strategy - no accuracy signal to
+justify further testing at full scale, unlike M1-015 (tested in parallel,
+see that entry). `_low_freq_refit_step()` is kept as working, reusable
+infrastructure (a genuine refit-cadence control that some future use case
+might still want for its cost savings alone) but not pursued further this
+session.
+
+### Documentation Updated
+`module_1_forecasting/MODULE_CONTEXT.md`, `research_context/RESEARCH_DECISIONS.md`
+(new decision), `research_context/CHANGELOG.md`, this entry.
+
+---
+
+## Experiment ID: M1-015
+
+### Date
+2026-08-04
+
+### Research Question
+Does averaging, in transformed space, this week's fresh SARIMA forecast for
+week *t* with the forecasts that the last several weeks' OWN independently-
+fitted SARIMA models make for the SAME target week *t* (each extended
+forward via a cheap `.forecast(steps=h)` call, not refit) produce more
+accurate rolling-mode forecasts than using a single week's fit alone? This
+is a standard forecast-combination approach (averaging reduces variance
+when individual forecasts have partly independent errors) - distinct from,
+and not ruled out by, M1-013's rejected warm-start approach (which tried to
+change what a single fit converges to, not combine several independent
+fits).
+
+### Districts
+All 25 (after a cheap 6-district check - `Colombo`, `Gampaha`, `Kandy`,
+`Ratnapura`, `Badulla` showed a consistent positive signal; `Kilinochchi`
+was inconclusive due to near-zero counts - justified committing to a full
+run).
+
+### Stage 1 Model
+New `rolling_one_step._vintage_ensemble_step()`: fresh weekly `.fit()`
+(identical cost to the existing default path - no slowdown), but the
+week's SARIMA prediction is the mean, in transformed (log1p or raw) space,
+of this week's own 1-step forecast AND the last `ensemble_window - 1 = 3`
+weeks' own independently-fitted models' forecasts extended forward to the
+same target week. Leakage-safe by construction: every ingredient is a
+forecast from a model fit using data strictly before the target week - nothing
+uses information from week *t* or later.
+
+### Stage 2 Model
+Unchanged (frozen `xgboost_final_model.json`, as in the standard rolling
+evaluator).
+
+### Features Used
+Unchanged.
+
+### Metrics
+Full 25-district rolling one-step DM test (`compute_dm_results_rolling`,
+unchanged) and rolling sMAPE (`summarize_metrics`, `holdout_all` period),
+compared against the M1-008 baseline (single-vintage weekly refit).
+Computed via a new parallel driver, `scripts/
+run_rolling_one_step_ensemble_parallel.py` (mirrors `run_rolling_one_step_
+parallel.py`'s process-pool pattern; ~3,326s wall time for all 25
+districts, comparable to the baseline run since per-district cost is
+essentially unchanged).
+
+### Results
+- **Districts with Stage 2 helping (`mean_loss_diff > 0`): 10/25 (baseline)
+  -> 24/25 (ensemble).** Only `Kilinochchi` (a known extreme-sparse,
+  near-zero-count district) shows a negative `mean_loss_diff`, and it is
+  tiny and not significant (`p=0.83`).
+- **DM-significant districts: 2/25 (baseline) -> 3/25 (ensemble)**
+  (`Batticaloa` `p=0.012`, `Galle` `p=0.017`, `Hambantota` `p=0.015`;
+  `Colombo` at `p=0.052` narrowly misses conventional significance).
+- **Rolling sMAPE improved for 22/25 districts**, several substantially:
+  `Gampaha` 51.7% -> 43.9% (-15.1%), `Ratnapura` 53.5% -> 46.3% (-13.5%),
+  `Badulla` 66.0% -> 58.2% (-11.8%), `Colombo` 37.9% -> 35.2% (-7.1%).
+  Median rolling sMAPE across all 25 districts: 58.8% -> 56.8%. The only 3
+  districts that got (marginally) worse - `Kilinochchi`, `Mannar`,
+  `Mullaitivu` - are exactly the most extreme zero-inflated districts, all
+  by <1 percentage point.
+- Full tables: `outputs/metrics/module1/rolling_one_step_dm_test_ensemble.csv`,
+  `outputs/metrics/module1/rolling_one_step_metrics_ensemble.csv`,
+  `data/processed/module1/rolling_one_step_predictions_ensemble.csv`.
+
+### Residual Diagnostics
+Not applicable (point-forecast comparison only).
+
+### Interpretation
+This is the first genuine, broad-based accuracy improvement found across
+the M1-007 through M1-015 investigation arc. The mechanism is exactly the
+one classic forecast-combination theory predicts: each week's fresh MLE
+fit has real, partly-independent noise (M1-011/M1-013's finding), and
+averaging several such fits' opinions about the same target week
+cancels out some of that noise without needing to fix what any single fit
+converges to. Crucially, unlike M1-013's warm-start (which cost 5-10x more
+per fit for no benefit), this costs essentially nothing extra - the
+vintage models being averaged are fits the rolling evaluator was already
+going to need for subsequent weeks; ensembling just reuses their cheap
+`.forecast()` calls.
+
+### Decision
+**Accept.** This is a genuine, broad, low-cost improvement to rolling-mode
+(deployment-faithful) forecast accuracy. Directly relevant to the actual
+"predict next week using data up to now" production nowcast
+(`forecast_future.run_nowcast()`, Decision 031): that pathway currently
+uses a SINGLE SARIMA refit, so it does not yet benefit from this finding.
+Recommended next step (not yet implemented this session, pending user
+sign-off given the scope of touching the production nowcast path): extend
+`run_nowcast()`/`forecast_future.py` to construct a small ensemble of
+recent retrospective refits (e.g. fit on data through the last 4 available
+weeks separately, each forecasting forward to the SAME target week) rather
+than relying on a single fit, mirroring `_vintage_ensemble_step()`'s logic.
+
+### Documentation Updated
+`module_1_forecasting/MODULE_CONTEXT.md`, `research_context/RESEARCH_DECISIONS.md`
+(new decision), `research_context/CHANGELOG.md`, this entry.
+
+---
+
+## Experiment ID: M1-016
+
+### Date
+2026-08-05
+
+### Research Question
+M1-015 (Decision 039) validated vintage-ensembled SARIMA as a genuine
+rolling-mode accuracy improvement, but only inside the rolling evaluator -
+the actual production "predict next week" nowcast
+(`forecast_future.run_nowcast()`) still used a single SARIMA fit. Does
+bringing the same ensembling technique into the production nowcast path
+work correctly, and should it become the new default?
+
+### Districts
+All 25 (production regeneration).
+
+### Stage 1 Model
+`forecast_future._ensembled_next_week_sarima()` (new): averages, in
+transformed space, `MODULE1_NOWCAST_ENSEMBLE_WINDOW` (4) independent SARIMA
+fits' forecasts for the same next-week target - each fit on the district's
+full available history trimmed back by 0..3 additional weeks, each
+extended forward via `fit_and_forecast`'s own multi-step forecasting to
+reach that same target week. Unlike the rolling evaluator (which reuses
+persisted fitted-model state across a long sequential loop), each vintage
+is refit fresh here, since a single nowcast call has no such history
+sitting around - `ensemble_window` fits instead of 1, still cheap for a
+script that isn't run in a tight loop.
+
+### Stage 2 Model
+Unchanged - frozen `xgboost_final_model.json`, same additive combination.
+The two-stage SARIMA -> XGBoost architecture is not altered; only how
+Stage 1's single number is computed for the nowcast changes.
+
+### Features Used
+Unchanged.
+
+### Metrics
+Backward-compatibility check: `ensemble_window=None` reproduces the
+pre-existing single-fit nowcast numbers exactly (verified for `Colombo`/
+`Kilinochchi` - identical to the last decimal). No new ground-truth
+evaluation performed here (M1-015's full 25-district rolling evaluation is
+the evidence base for this change; this entry is the production wiring and
+verification that it runs correctly at full scale).
+
+### Results
+- `forecast_district()`/`run_future_forecast()`/`run_nowcast()` extended
+  with an `ensemble_window` parameter (`forecast_district`/
+  `run_future_forecast` default to `None` - unaffected 8-week recursive
+  path; `run_nowcast` defaults to `MODULE1_NOWCAST_ENSEMBLE_WINDOW = 4` -
+  the new production default).
+  A new `n_sarima_vintages` output column reports how many vintages
+  actually succeeded per row (transparency, not hidden).
+- Production `nowcast_next_week.csv` regenerated for all 25 districts;
+  `n_sarima_vintages == 4` for every district (no vintage fits failed for
+  the current 2026 Wk26 target).
+- CLI: `python -m src.module1_forecasting.forecast_future --nowcast
+  [--ensemble-window N]` (0 disables ensembling, falls back to the single-
+  fit path).
+
+### Residual Diagnostics
+Not applicable (no ground truth for a genuine future week).
+
+### Interpretation
+This is a direct, low-risk production application of a result already
+validated at full 25-district scale (M1-015) - no new modeling risk is
+introduced beyond what that evaluation already covered, since the
+mechanism (average several independent SARIMA vintages targeting the same
+week) is identical; only the "one-off vs. persisted-state" implementation
+detail differs, and that difference doesn't change the statistical
+argument (each vintage is still an independent fit on real historical
+data, still leakage-free).
+
+### Decision
+**Promote to production.** `run_nowcast()`'s default behavior now uses
+vintage ensembling. The core Stage 1 -> Stage 2 architecture and the
+validated walk-forward/holdout backtest pipeline (`main.py`, `combine.py`)
+are completely untouched - this only changes the forward/operational
+nowcast path, consistent with keeping that path structurally separate
+(Decision 018).
+
+### Documentation Updated
+`module_1_forecasting/MODULE_CONTEXT.md`, `research_context/RESEARCH_DECISIONS.md`
+(new decision), `research_context/CHANGELOG.md`, this entry.
+
+---
+
+## Experiment ID: M1-017
+
+### Date
+2026-08-05
+
+### Research Question
+M1-016 promoted vintage-ensembled SARIMA into the production nowcast, but
+its real-world accuracy can't be checked yet - there is no ground truth
+for a genuinely future week. Can a mechanism be built that automatically
+accumulates genuinely prospective (not backtested) accuracy evidence over
+real calendar time, as future weeks actually resolve?
+
+### Districts
+All 25.
+
+### Stage 1 Model
+Not touched - this is tracking infrastructure, not a modeling change.
+
+### Stage 2 Model
+Not touched.
+
+### Features Used
+Not applicable.
+
+### Metrics
+New `src/module1_forecasting/nowcast_tracking.py`:
+- `append_to_nowcast_log()`: every `run_nowcast()` call appends its
+  predictions to a permanent, append-only log
+  (`data/processed/module1/nowcast_prediction_log.csv`), timestamped. Wired
+  into `run_nowcast()` itself (`log_prediction=True` by default) - no
+  separate step to remember to run.
+- `reconcile_nowcast_log()`: joins the log against
+  `weekly_modeling_table.csv`'s real case counts wherever a logged target
+  week has since received real data, computing absolute error and sMAPE.
+  Output (`outputs/metrics/module1/nowcast_prospective_accuracy.csv`) is
+  strictly additive over time - unresolved predictions are simply absent,
+  never estimated or fabricated. Wired into `scripts/
+  refresh_dashboard_data.py` as a new `module1_nowcast_reconcile` step,
+  and runnable standalone (`python -m
+  src.module1_forecasting.nowcast_tracking`).
+
+### Results
+- Seeded the log with the already-generated 2026 Wk26 nowcast (25 rows,
+  one per district) - the one prediction that predates this logging
+  mechanism.
+- First reconciliation run: **0/25 resolved, 25/25 pending** - correct and
+  expected, since 2026 Wk26 has not happened yet. This number will only
+  start moving as real weeks pass and `weekly_modeling_table.csv` is
+  refreshed with their actual case counts.
+
+### Residual Diagnostics
+Not applicable.
+
+### Interpretation
+This is infrastructure, not evidence - it doesn't itself show whether
+M1-016 improved anything. What it does is guarantee that a genuinely
+prospective accuracy read WILL exist going forward, without relying on
+anyone remembering to manually save and later compare each week's
+prediction. This is a structurally different (and, for a genuinely future
+quantity, the only truly honest) evidence source compared to every other
+Module 1 metric in this document, all of which score against data already
+in the dataset.
+
+### Decision
+**Accept.** Kept as permanent infrastructure alongside `run_nowcast()`.
+`reconcile_nowcast_log()`'s output should be checked periodically (e.g.
+each time `refresh_dashboard_data.py` runs) rather than assumed silent -
+once enough weeks have resolved to be meaningful, that table becomes the
+first real answer to "did M1-016 actually help", independent of and not a
+substitute for M1-015's rolling-evaluation evidence.
+
+### Documentation Updated
+`module_1_forecasting/MODULE_CONTEXT.md`, `research_context/RESEARCH_DECISIONS.md`
+(new decision), `research_context/CHANGELOG.md`, this entry.
+
+---
+
+## Experiment ID: M1-018
+
+### Date
+2026-08-05
+
+### Research Question
+A first retroactive spot-check (7 recent weeks, 175 pairs) found the
+vintage-ensembled nowcast beats the single-fit nowcast on median/mean
+absolute error but with a noisier ~59% individual-week win rate than the
+full-history rolling evaluation (M1-015) suggested. Two follow-up
+questions: (1) does a larger retroactive sample give a cleaner read, and
+(2) does aggregating the 4 vintage forecasts with a median or trimmed mean
+(more robust to any single vintage landing oddly) reduce that noise
+further than the plain mean (Decision 040's production default)?
+
+### Districts
+All 25, last 24 known weeks each (600 (district, week) pairs - up from
+175 in the first spot-check).
+
+### Stage 1 Model
+`forecast_future.py` refactored: `_ensembled_next_week_sarima()` split into
+`_collect_vintage_forecasts()` (the expensive fitting step) and
+`_aggregate_vintage_forecasts()` (cheap, now supporting `"mean"`,
+`"median"`, `"trimmed_mean"` - drops the single highest/lowest vintage).
+`forecast_district()` gained a `precomputed_sarima_forecast` override so
+`scripts/backtest_nowcast_ensemble.py` can compare all three aggregation
+rules against the SAME underlying vintage fits (collected once) rather
+than refitting per rule.
+
+### Stage 2 Model
+Unchanged.
+
+### Features Used
+Unchanged.
+
+### Metrics
+Absolute error vs. real outcomes, per (district, week), for single-fit vs.
+mean/median/trimmed-mean vintage ensembles - all computed via the actual
+production `forecast_district()` function.
+
+### Results
+- **Larger sample gives a cleaner, still-positive, more modest read**:
+  median absolute error 13.05 -> 11.70 (mean aggregation, -10%), mean
+  absolute error 47.03 -> 42.41 (-10%). Individual-week win rate settled
+  at **56.8%** (341/600 better, 223/600 worse, 36 tied) - lower than the
+  175-pair spot-check's 59%, consistent with that check's own win rate
+  being somewhat noisy at n=175, not a sign the effect is disappearing.
+  Holds after excluding the 2026 Wk24/25 outbreak weeks and all
+  `is_reporting_anomaly` rows (n=590: median 12.80 -> 11.30, mean
+  38.34 -> 35.02).
+- **Median and trimmed-mean are NOT meaningfully different from plain
+  mean**: median abs error 11.75 (vs mean-aggregation's 11.70), mean abs
+  error 41.95 (vs 42.41) - a ~1% difference, not a real signal at this
+  sample size. (Median and trimmed-mean are mathematically IDENTICAL at
+  `ensemble_window=4` - averaging the middle two sorted values is exactly
+  what both reduce to - so this comparison only actually tested 2 distinct
+  rules, not 3.)
+- **Per-district win rate (mean aggregation) ranges from 0% to 83%**.
+  `Mannar` is a clean, complete loser (**0/24** weeks) - fully consistent
+  with, not a new finding: Mannar's Stage 1 has a documented explosive-
+  AR-root history (Decision 017) and was already the one district the
+  M1-015 rolling evaluation and the M1-009 shrinkage search both flagged as
+  not helped by Stage 2/ensembling. `Vavuniya`, `Nuwara Eliya`, `Kandy`,
+  `Matale` sit at ~50% (a wash). Most other districts are solidly positive
+  (60-83%).
+- Full table: `outputs/metrics/module1/nowcast_ensemble_recent_weeks_backtest.csv`.
+
+### Residual Diagnostics
+Not applicable.
+
+### Interpretation
+The bigger sample confirms the improvement is real but more modest (56.8%
+individual-week win rate, not the 90%+ one might have hoped for) - this
+matches, rather than contradicts, M1-015's district-level finding (a
+district can have Stage 2 "help on net" while still losing on plenty of
+individual weeks; noise at the single-week level is expected and was never
+claimed away). The aggregation-method question has a clear, if
+anticlimactic, answer: **median/trimmed-mean do NOT reduce noise beyond
+what plain averaging already achieves** - the remaining per-week variance
+isn't being driven by one outlying vintage that a robust statistic would
+suppress; it looks like genuine forecast uncertainty inherent to the
+target week itself (real epidemiological volatility), which no
+combination rule over the same 4 fits can average away. `Mannar`'s
+complete, consistent loss is a DIFFERENT, already-diagnosed problem
+(Stage 1 fit instability specific to that district) that an aggregation
+tweak was never going to fix either.
+
+### Decision
+**Keep `aggregation="mean"` as the production default** - median/
+trimmed-mean are implemented and available (`aggregation="median"` /
+`"trimmed_mean"`) but not promoted, since neither shows a real advantage
+over mean at this sample size. Do not chase further aggregation-rule
+tuning on a small sample - the honest conclusion is that per-week noise
+here is mostly real epidemiological variance, not an artifact fixable by
+how 4 numbers get combined. `Mannar`'s standing exception is flagged again
+as a still-open, district-specific problem, not something this round of
+testing was aimed at fixing.
+
+### Documentation Updated
+`module_1_forecasting/MODULE_CONTEXT.md`, `research_context/RESEARCH_DECISIONS.md`
+(new decision), `research_context/CHANGELOG.md`, this entry.
+
+---
+
+## Experiment ID: M1-019
+
+### Date
+2026-08-06
+
+### Research Question
+Two questions from the reporting-catch-up-spike scoping exercise: (1) is a
+REAL-TIME-usable (causal) reporting-dip detector - one that doesn't need
+the rebound week's own value to confirm a dip - precise enough to be worth
+building an adjustment on top of? (2) The existing retrospective detector
+(`flag_reporting_anomalies()`) needs `cases[i+1]` to flag week *i*, which
+means every downstream feature/mask that uses week *T-1*'s flag to help
+predict row *T* is (subtly) informed by `cases[T]` itself - does closing
+this leakage pathway change Decision 030's reported ~3% median-MASE
+improvement?
+
+### Districts
+All 25 (both checks - detector precision/recall, and Stage 2 re-run).
+
+### Stage 1 Model
+Unchanged.
+
+### Stage 2 Model
+Unchanged architecture. New `reporting_anomalies.flag_reporting_dip_causal()`:
+drops the rebound-confirmation half of the existing test, flagging week *i*
+using only `cases[i-1]`/`cases[i]` - usable in real time, at the cost of
+precision (a genuine decline also produces a sharp drop). New
+`compensation_model.assemble_stage2_table()`/`run_stage2_pipeline()`
+`weekly_table_path`/`feature_table_path` overrides (additive, backward-
+compatible) let `scripts/evaluate_reporting_leakage_fix.py` re-run the
+FULL Stage 2 + combine pipeline with `is_reporting_anomaly` swapped for the
+causal flag everywhere it currently feeds masking/features, under the
+existing `feature_variant="causal_safe"` artifact-suffix mechanism - no
+production default path touched.
+
+### Features Used
+Unchanged feature set; only the underlying `is_reporting_anomaly` data
+differs between the production and causal-safe runs.
+
+### Metrics
+(1) Precision/recall of the causal detector against the retrospective flag
+as ground truth (`scripts/evaluate_causal_dip_detector.py`). (2) Median
+holdout MASE, causal-safe vs. production (`scripts/
+evaluate_reporting_leakage_fix.py`).
+
+### Results
+- **Causal detector: 100% recall, 42.9% precision** (33 true positives, 44
+  false positives, 0 false negatives; 77 flagged vs. 33 retrospectively
+  confirmed). Precision is WORSE for exactly the thesis-critical districts:
+  `Colombo` 46.2%, `Gampaha` 30.0% - more than half of the causal flags in
+  those two districts would be false alarms (likely genuine declines, not
+  reporting delays).
+- **Leakage-closed Stage 2 does NOT show a worse result - if anything,
+  slightly better**: median holdout MASE 0.3741 (production, has the
+  leakage pathway) vs. **0.3655** (causal-safe, leakage closed) - a
+  **-2.3%** delta. 24/25 districts still show Stage 2 improving on
+  validation-aggregate MASE with the causal-safe features. Full tables:
+  `outputs/metrics/module1/combined_vs_baseline_metrics_causal_safe.csv`,
+  `outputs/metrics/module1/causal_dip_detector_precision_recall.csv` (+
+  per-district breakdown).
+
+### Residual Diagnostics
+Not separately re-examined - the causal-safe run's own ACF diagnostics were
+generated as a side effect of reusing `combine.py`'s unchanged pipeline,
+not specifically inspected for this entry.
+
+### Interpretation
+Two independent, decisive answers. (1) The causal detector's 42.9%
+precision (worse still for Colombo/Gampaha specifically) means an
+adjustment built on top of it would mis-fire on a genuine decline more
+than half the time - not a sound basis for changing a point forecast
+(Option A from the scoping plan). (2) The leakage pathway found during
+scoping is real (verified directly in code: `is_reporting_anomaly[T-1]`
+depends on `cases[T]`) but does NOT appear to have inflated Decision 030's
+reported improvement - the leakage-closed variant performs at least as
+well, most likely because the causal-safe masking, despite being less
+precise (flagging more weeks), doesn't meaningfully confuse Stage 2 either
+way. This is a reassuring integrity check, not a retraction: Decision
+030's production promotion stands.
+
+### Decision
+**Do not pursue Option A** (point-forecast adjustment from the causal
+flag) - the precision numbers directly rule it out, worst of all for the
+districts it would matter most for. **Option B** (attach a
+`possible_reporting_dip`-style uncertainty flag to the nowcast, no change
+to the point estimate) remains available as low-risk future work but is
+not built this session - the scoping request was answered with real
+numbers, not by building speculative code. **No change to production
+Decision 030/M1-006B** - the leakage-closed re-run confirms rather than
+undermines it, so no retraction or asterisk is warranted; documenting the
+mechanism here is for completeness/rigor, not because it changes any
+current claim. `flag_reporting_dip_causal()` is kept as reusable
+infrastructure for any future Option B work.
+
+### Documentation Updated
+`module_1_forecasting/MODULE_CONTEXT.md`, `research_context/RESEARCH_DECISIONS.md`
+(new decision), `research_context/CHANGELOG.md`, this entry.
+
+---
+
+## Experiment ID: M1-020
+
+### Date
+2026-08-06
+
+### Research Question
+`compensation_model.XGB_BASE_PARAMS` (`max_depth=3, learning_rate=0.05,
+subsample=0.8, colsample_bytree=0.8, reg_lambda=1.0, min_child_weight=5`)
+has been fixed since the project's earliest implementation, never tuned via
+any validation process. Does a proper walk-forward-validated randomized
+search over these six hyperparameters find a genuine improvement over the
+production defaults?
+
+### Districts
+All 25.
+
+### Stage 1 Model
+Unchanged.
+
+### Stage 2 Model
+`train_and_predict_fold()`/`train_and_predict_holdout()`/
+`_fit_with_early_stopping()` (`compensation_model.py`) extended with an
+additive, backward-compatible `xgb_params: dict | None = None` override
+(`None` reproduces production exactly - verified, see Results). New
+`scripts/search_stage2_hyperparameters.py`: 40-candidate randomized search
+(candidate 0 = current production defaults; 39 more sampled from a
+6-dimension grid around the defaults, seeded for reproducibility), each
+scored via `combine.compute_district_fold_metrics()` (unchanged, reused
+verbatim) on folds 2-14 only - the exact function and exact metric
+production already publishes, so scores are directly comparable.
+
+### Features Used
+Unchanged.
+
+### Metrics
+Aggregate median `stage1_plus_stage2` MASE across folds 2-14 (selection
+metric, holdout never touched during search); per-fold and per-district
+win counts against the baseline (overfitting safeguard: a candidate only
+counts as a real improvement if it beats baseline AND wins a majority of
+the 13 scored folds AND a majority of the 25 districts). One holdout check,
+once, for the single best qualifying candidate only.
+
+### Results
+- **Harness verified correct before trusting anything else**: candidate 0
+  (production defaults) reproduced the already-published validation-
+  aggregate median MASE (0.5821) to 4 decimal places once the harness was
+  corrected to apply the same 0-floor clip production uses
+  (`combine_stage2_forecast`'s `np.maximum(..., 0.0)` - initially omitted,
+  caught and fixed before trusting any candidate's score).
+- **5/39 candidates cleared the overfitting safeguard** (beat baseline AND
+  majority-of-folds AND majority-of-districts). Best: `max_depth=3,
+  learning_rate=0.02, subsample=0.7, colsample_bytree=0.9, reg_lambda=0.1,
+  min_child_weight=1` - validation-aggregate median MASE 0.5659 vs
+  baseline's 0.5821 (-2.8%), 7/13 folds better, 17/25 districts better.
+- **The one-time holdout check rejected it**: median holdout MASE **0.3874**
+  vs production's **0.3741** - a **+3.6% regression**, not an improvement.
+  Full candidate table: `outputs/metrics/module1/stage2_hyperparameter_search.csv`.
+- Per the pre-registered rule, no other qualifying candidate was checked
+  against holdout - checking further candidates after the first one failed
+  would defeat the purpose of holding the block out only once.
+
+### Residual Diagnostics
+Not applicable.
+
+### Interpretation
+This is exactly the failure mode walk-forward-then-holdout discipline
+exists to catch: a hyperparameter set that robustly beat the production
+defaults across 13 validation folds - clearing a safeguard specifically
+designed to filter out fold-count noise - still did not generalize to
+genuinely unseen data. This is not evidence the search or the safeguard was
+flawed; it is evidence that 13-14 folds, even with a majority-vote
+requirement, remain a limited enough sample that "wins broadly across
+folds" and "wins on the holdout" are not the same claim. Consistent with
+nearly every other ablation this session, the honest conclusion is that
+`XGB_BASE_PARAMS`'s original defaults were already reasonable for this
+project's regime, and this genuinely untried lever does not yield a
+validated improvement either.
+
+### Decision
+**Reject.** Production `XGB_BASE_PARAMS` unchanged. The `xgb_params`
+override on `train_and_predict_fold`/`train_and_predict_holdout`/
+`_fit_with_early_stopping` is kept as reusable, harmless infrastructure
+(default `None` reproduces exact production behavior) in case a future,
+differently-scoped search is worth running, but no further hyperparameter
+search is planned this session - the holdout rejection is a clear enough
+signal to stop here rather than keep sampling.
+
+### Documentation Updated
+`module_1_forecasting/MODULE_CONTEXT.md`, `research_context/RESEARCH_DECISIONS.md`
+(new decision), `research_context/CHANGELOG.md`, this entry.
+
+---
+
+## Experiment ID: M1-021
+
+### Date
+2026-08-06
+
+### Research Question
+Decision 002/014 chose a pooled Stage 2 model (one XGBoost per fold across
+all 25 districts, `District` as a categorical feature) over 25 separate
+per-district models, reasoning that per-district data would be too thin
+("fold 2 would have as few as ~52 rows for one district"). That reasoning
+was never directly tested. Does training genuinely separate per-district
+models - with everything else (hyperparameters, feature set minus
+`District`, fold structure, evaluation) held fixed - actually do better or
+worse than pooling?
+
+### Districts
+All 25.
+
+### Stage 1 Model
+Unchanged.
+
+### Stage 2 Model
+New, additive functions in `compensation_model.py` (existing pooled
+functions untouched): `train_and_predict_fold_per_district()` /
+`train_and_predict_holdout_per_district()`, each looping `DISTRICTS` and
+applying a three-tier data-sufficiency rule per district per fold:
+`< 104` trainable rows -> no-op (`predicted_residual = 0`, i.e. Stage 1
+only); `104-207` rows -> fixed `n_estimators=100`, no early stopping;
+`>= 208` rows -> the existing two-pass early-stopping approach. `District`
+dropped from the feature set (`PER_DISTRICT_FEATURE_COLUMNS`) as redundant/
+constant within one district's own model. `_prepare_xy()` fixed to only
+categorical-encode `District` when it's actually in `feature_columns`
+(previously assumed it always was - a latent bug this change surfaced,
+harmless until now since every prior caller always included it).
+
+### Features Used
+Unchanged except dropping `District`.
+
+### Metrics
+Same as M1-020: validation-aggregate median MASE (folds 2-14) via
+`combine.compute_district_fold_metrics()` (unchanged, reused verbatim),
+same pre-registered overfitting safeguard (beat baseline AND majority of
+folds AND majority of districts), one-time holdout check only if cleared.
+
+### Results
+- **Data-sufficiency gating behaved exactly as designed**: folds 1-3 are
+  entirely no-op (0/1300 district-rows fit a real model - matches the
+  arithmetic exactly: fold 2 has 52 prior rows/district, fold 3 has 52-104
+  depending on path, both below the 104-row floor). Fold 4 is mostly real
+  (1248/1300 - one district's worth of rows still no-op, likely a
+  district with reduced trainable rows from a masked/failed Stage 1 fold).
+  Folds 5-14 are 100% real fits (1300/1300) - matches the ~4-year
+  (208-week) threshold for the early-stopping tier being reached by then.
+- **Decisively worse overall**: validation-aggregate median MASE **0.7473**
+  vs. the pooled baseline's **0.5821** - a **+28.4%** regression. Only
+  1/13 folds and 4/25 districts improved - nowhere close to the safeguard's
+  majority bar. No holdout check performed (correctly skipped per the
+  pre-registered rule).
+- **The 4 districts that DID improve are informative**: `Monaragala`
+  (-16.9%), `Mannar` (-16.6%), `Vavuniya` (-12.3%), `Matale` (~flat,
+  -0.1%). `Mannar` in particular has been flagged repeatedly this session
+  (Decisions 017, 034, 037) as a district where the POOLED model's
+  correction actively hurts - removing pooling's cross-district information
+  sharing helps exactly the districts pooling was already failing, which is
+  a coherent, not coincidental, pattern.
+- **The other 21/25 districts got meaningfully worse**, several
+  dramatically: `Jaffna` +115.8%, `Matara` +78.3%, `Puttalam` +68.4%,
+  `Trincomalee` +54.0%, `Galle` +43.1%. Full per-fold, per-district table:
+  `outputs/metrics/module1/stage2_per_district_vs_pooled.csv`.
+
+### Residual Diagnostics
+Not applicable.
+
+### Interpretation
+This directly confirms, with real ablation evidence rather than a-priori
+reasoning, why Decision 002/014 chose pooling in the first place: most
+districts benefit substantially from the shared learning pooling provides,
+and losing that (even with an explicit data-sufficiency gate protecting
+against fitting on token amounts of data) costs far more than it gains for
+21/25 districts. The exception - a handful of districts where pooled
+Stage 2 was already known to underperform - is consistent with a specific,
+already-diagnosed problem (cross-district contamination of an unusual
+residual pattern into the shared model) rather than evidence that
+per-district modeling is broadly viable.
+
+### Decision
+**Reject.** Stage 2 remains pooled. The finding does, however, sharpen
+Decision 037's shrinkage work: districts where a per-district model
+improves on pooling (`Mannar`, `Vavuniya`, `Monaragala`) are exactly
+candidates for a *targeted*, per-district remedy (shrinkage weight, or
+conceivably a per-district model used ONLY for that district while pooling
+continues for the other 21+) rather than a wholesale architecture change -
+flagged as a possible narrow follow-up, not built this session.
+`train_and_predict_fold_per_district()`/`train_and_predict_holdout_per_district()`
+are kept as reusable infrastructure for that narrower follow-up if pursued.
+
+### Documentation Updated
+`module_1_forecasting/MODULE_CONTEXT.md`, `research_context/RESEARCH_DECISIONS.md`
+(new decision), `research_context/CHANGELOG.md`, this entry.
