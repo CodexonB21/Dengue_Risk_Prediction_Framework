@@ -1,5 +1,12 @@
 # Team Codexon FYP Report Diagram Plan
 
+**Updated 2026-08-06:** All Module 2 references to "isotonic" as the official Stage 2
+calibrator and to τ=0.14/high=0.35 thresholds were corrected to Platt scaling and
+τ=0.10/high=0.50 after Decision 047/M2-013 (Random Forest hyperparameter tuning changed
+Stage 1's probability distribution enough to flip Stage 2's architecture selection).
+Figure 7.4's generator script was also fixed to label the calibrated curve dynamically
+from the data rather than a hardcoded name, so this cannot silently go stale again.
+
 ## Purpose
 
 This file tracks diagrams, figures, charts, and tables planned for the final report.
@@ -98,7 +105,7 @@ Status: Planned (caption/text ready)
 
 Purpose:
 
-Show epidemic-threshold labelling → Random Forest baseline probability → isotonic calibration → alert flag and risk tier.
+Show epidemic-threshold labelling → tuned Random Forest baseline probability → Platt-scaling calibration → alert flag and risk tier.
 
 Caption: Figure 4.3: Two-stage Module 2 workflow for outbreak risk classification.
 
@@ -177,7 +184,7 @@ Notes:
 
 - Must show shared vs module-specific preprocessing, not one undifferentiated preprocessing block.
 - Modules are largely parallel peers; optional dashed M1→M2 for operational forward only.
-- Correct models: M1 SARIMA→XGBoost; M2 RF→isotonic; M3 KDE/Moran→RF α=0.05.
+- Correct models: M1 SARIMA→XGBoost; M2 tuned RF→Platt scaling (Decision 047 — was isotonic before Stage 1 tuning); M3 KDE/Moran→RF α=0.05.
 
 ---
 
@@ -256,7 +263,7 @@ Show Module 2 design flow in the same four-column layout as Figure 5.3 (Inputs |
 Caption:
 
 ```text
-Figure 5.4: High-level architecture of Module 2 — Hybrid Outbreak Risk Classification (Random Forest baseline → isotonic probability compensation → alert / risk-tier outputs)
+Figure 5.4: High-level architecture of Module 2 — Hybrid Outbreak Risk Classification (tuned Random Forest baseline → Platt-scaling probability compensation → alert / risk-tier outputs)
 ```
 
 Source / file:
@@ -268,8 +275,8 @@ Source / file:
 
 Key design facts on the figure:
 
-- Stage 1 official model = **Random Forest** (Decision 025)
-- Stage 2 = **isotonic regression** (probability calibration, not case-residual ML)
+- Stage 1 official model = **Random Forest** (Decision 025), tuned (Decision 047)
+- Stage 2 = **Platt scaling** (probability calibration, not case-residual ML) — flipped from isotonic after Decision 047's Stage 1 tuning
 - Climate included in Stage 1
 - Week 53 kept unmerged
 - Evaluation: PR-AUC, ROC-AUC, Brier, BSS
@@ -404,7 +411,7 @@ Status: **Created (2026-07-30)** — PNG adapted from Figure 5.4 (`figure_6_3_mo
 
 Purpose:
 
-Show Module 2 implementation: preprocessing → labels → Random Forest → isotonic → alert/risk tier.
+Show Module 2 implementation: preprocessing → labels → tuned Random Forest → Platt scaling → alert/risk tier.
 
 Caption:
 
@@ -536,17 +543,17 @@ Status: Created
 
 Purpose:
 
-Show Stage 1 raw vs isotonic Stage 2 calibration (reliability diagrams) on validation and holdout.
+Show Stage 1 raw vs Platt-scaled Stage 2 calibration (reliability diagrams) on validation and holdout.
 
 File:
 
 - `research_context/report_drafts/diagrams/figure_7_4_module2_reliability.png`
-- Generator: `research_context/report_drafts/diagrams/generate_figure_7_4.py`
+- Generator: `research_context/report_drafts/diagrams/generate_figure_7_4.py` (labels the calibrated curve dynamically from the data's `architecture` column, so it cannot silently go stale like this did after Decision 047)
 
 Notes:
 
-- Source: `data/processed/module2/stage2_compensated_predictions.csv` (`architecture=isotonic`, selected).
-- Do **not** paste older `outputs/figures/module2/reliability_diagram_*.png` (labelled Platt; superseded architecture label).
+- **2026-08-06 update:** regenerated after Decision 047/M2-013 (Random Forest tuning flipped the official Stage 2 architecture from isotonic to Platt). Source: `data/processed/module2/stage2_compensated_predictions.csv` (`architecture=platt`, selected).
+- The old note here previously said "do not paste `reliability_diagram_*.png` labelled Platt" — that guidance is now backwards; Platt is the current official architecture. If in doubt, regenerate via the script above rather than trusting either PNG's filename/date.
 - Holdout panel is sparse (~40 positives); secondary check only.
 
 ---
@@ -711,7 +718,7 @@ Status: Planned
 
 Purpose:
 
-Summarise isotonic BSS selection, alert performance at τ=0.14, and observed outbreak rates by risk tier.
+Summarise Platt-scaling BSS selection (was isotonic pre–Decision 047), alert performance at τ=0.10 (was 0.14), and observed outbreak rates by risk tier.
 
 Suggested columns / panels:
 

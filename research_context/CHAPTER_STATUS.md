@@ -374,11 +374,14 @@ Status: Drafting
 
 ## Notes
 
-Architecture must match `CURRENT_ARCHITECTURE.md` and module contexts (Module 2 Stage 2 = isotonic calibration; Module 3 complete with KDE + RF iterative loop).
+Architecture must match `CURRENT_ARCHITECTURE.md` and module contexts (Module 2 Stage 2 = **Platt scaling**, post–Decision 047/M2-013 — was isotonic before Stage 1's Random Forest was tuned; Module 3 complete with KDE + RF iterative loop).
+
+**2026-08-06 update:** `chapter5_5.4.2_module2_v2.md` created (Stage 2 = Platt scaling, tuned Random Forest, thresholds 0.100/0.500) — supersedes `chapter5_5.4.2_module2.md` below, which is retained unchanged for reference (describes the pre–Decision-047 isotonic-era design). ~650 words in v2.
 
 Primary draft: `research_context/report_drafts/chapter5_analysis_and_design.md`  
 Standalone 5.4.1: `research_context/report_drafts/chapter5_5.4.1_module1.md`  
-Standalone 5.4.2: `research_context/report_drafts/chapter5_5.4.2_module2.md`  
+Standalone 5.4.2 (v1, superseded): `research_context/report_drafts/chapter5_5.4.2_module2.md`  
+Standalone 5.4.2 (v2, current): `research_context/report_drafts/chapter5_5.4.2_module2_v2.md`  
 Standalone 5.4.3: `research_context/report_drafts/chapter5_5.4.3_module3.md`  
 Standalone 5.5: `research_context/report_drafts/chapter5_5.5_integration.md`  
 Standalone 5.6: `research_context/report_drafts/chapter5_5.6_summary.md`  
@@ -430,7 +433,11 @@ Status: **Draft ready** (full hybrid 6.1–6.8, 2026-07-30)
 
 Avoid excessive code screenshots in the main chapter.
 
-Primary draft: `research_context/report_drafts/chapter6_implementation.md` (~4,840 words)  
+**2026-08-06 update:** `chapter6_6.5_module2_v2.md` created (Stage 2 = Platt scaling, tuned Random Forest, thresholds 0.100/0.500, plus M2-012/010/011/014 mentioned where relevant) — supersedes `chapter6_6.5_module2.md` below, which is retained unchanged for reference (describes the pre–Decision-047 isotonic-era implementation). ~950 words in v2. The combined `chapter6_implementation.md` file below still has the v1 text inline and was **not** re-spliced this pass (its M1/M3 sections are unaffected; only 6.5 needs the swap if/when the team merges v2 in).
+
+Primary draft: `research_context/report_drafts/chapter6_implementation.md` (~4,840 words; 6.5 section is v1/stale, see above)  
+Standalone 6.5 (v1, superseded): `research_context/report_drafts/chapter6_6.5_module2.md`  
+Standalone 6.5 (v2, current): `research_context/report_drafts/chapter6_6.5_module2_v2.md`  
 Earlier M1/M2 stub: `research_context/report_drafts/chapter6_6.2_6.3_m1_m2.md` (superseded numbering 6.3.x → 6.4/6.5)
 
 | Section | Status | Approx. words |
@@ -450,7 +457,7 @@ Key corrections vs interim draft:
 - Seasonal-naive imputation + `is_imputed`
 - Walk-forward + 2-year holdout (M1/M2); spatial CV (M3)
 - Module 1 week-53 merge vs Module 2 week-53 keep
-- Module 2: Random Forest + isotonic; no SMOTE
+- Module 2: Random Forest (tuned, Decision 047) + Platt scaling (was isotonic pre-tuning); no SMOTE, no balanced_subsample, no Gradient Boosting
 - Module 3: KDE + Moran’s I + RF iterative loop (α=0.05); IDW viz-only
 - Soft decision-support dashboard (no Command Centre)
 
@@ -486,6 +493,24 @@ Status: **Drafting** (accepted full three-module structure, 2026-07-30)
 | 7.7 Discussion | Draft Complete | ~410 |
 | 7.8 Summary | Draft Complete | ~155 |
 | **Chapter 7 total** | **Draft ready** | **~4,475** |
+
+**2026-08-06 update (Decision 047/M2-013 — Random Forest tuning adopted):** Random
+Forest hyperparameter tuning changed Module 2's production numbers and flipped Stage 2's
+official architecture (isotonic → Platt) and thresholds (τ 0.14→0.10, high 0.35→0.50).
+Rather than edit 7.4/7.6-7.8 in place, **new v2 files were created and the v1 files kept
+unchanged**:
+- `chapter7_7.4_module2_v2.md` (~900 words) — supersedes `chapter7_7.4_module2.md`
+- `chapter7_7.6_7.8_comparative_discussion_summary_v2.md` (~460+420+165 words) — supersedes
+  `chapter7_7.6_7.8_comparative_discussion_summary.md`
+- Word counts above (7.4: ~950, 7.6-7.8: ~430/410/155) are the v1 figures; use the v2 files'
+  own counts once v2 is adopted as final. Chapter 7 total is unaffected until the team
+  decides to adopt v2 over v1.
+- **Follow-up pass (2026-08-06, same day) — all previously-outstanding items closed:**
+  - `chapter7_evaluation_v2.md` created (full combined chapter, v1 `chapter7_evaluation.md` retained unchanged) — v2's 7.4/7.6-7.8 match the standalone v2 files above; word-count summary table updated to ~4,480 total.
+  - `PRESENTATION_MODULE2_SLIDES_v2.md` and `PRESENTATION_MODULE2_COPY_PASTE_v2.md` created with every number updated (v1 files retained unchanged for reference — do not present from v1).
+  - Figure 7.4 fixed at the source: `generate_figure_7_4.py` now labels the calibrated curve dynamically from the data's `architecture` column instead of a hardcoded "isotonic", and was rerun — `figure_7_4_module2_reliability.png` now correctly shows Platt (regenerated 2026-08-06).
+  - `chapter5_5.4.2_module2_v2.md`, `chapter6_6.5_module2_v2.md`, `REPORT_DIAGRAM_PLAN.md`, and `PRESENTATION_DIAGRAM_DESCRIPTIONS_M1_M2.md` also corrected (see Chapter 5/6 sections below) — these were not part of the original outstanding list but were found to have the same stale isotonic/threshold claims.
+  - **Still not done, lower priority:** the combined `chapter5_analysis_and_design.md` and `chapter6_implementation.md` mega-files still have v1 text inline for their Module 2 sections (5.4.2/6.5) — only the standalone section files were updated, since re-splicing a full 6-8-section combined file for a one-section change was judged disproportionate. Use the `_v2` standalone files as the current source until/unless the team re-splices the combined files.
 
 ## Required Content
 

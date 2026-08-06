@@ -6,6 +6,304 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-08-06 - Chapter 7 (Module 2 sections) updated to v2 drafts after Decision 047 - v1 kept
+
+### Module
+Module 2 / Report
+
+### Change
+Created `research_context/report_drafts/chapter7_7.4_module2_v2.md` and
+`chapter7_7.6_7.8_comparative_discussion_summary_v2.md` reflecting Decision
+047/M2-013's numbers (tuned Random Forest, Platt-scaled Stage 2, τ=0.10/0.50,
+updated Table 7.7 from a rerun of `scripts/m2_009_m1_alert_baseline.py`). The
+v1 files are UNCHANGED, per explicit instruction, so both versions exist
+side by side - same precedent as the existing `chapter7_evaluation.md` /
+`chapter7_m1_m2_evaluation.md` (legacy) pair.
+
+### Reason
+Decision 047 made the existing v1 chapter text and Table 7.7 numbers stale
+(wrong architecture name, wrong thresholds, wrong tier rates); user asked
+for the report to be brought current without losing the old version.
+
+### Impact
+- `scripts/m2_009_m1_alert_baseline.py`'s hardcoded "isotonic, tau=0.14" row
+  label replaced with one read dynamically from the data, so it cannot
+  silently go stale the same way again.
+- `research_context/CHAPTER_STATUS.md` updated with a dated note pointing at
+  the v2 files and the still-outstanding stale artifacts: the combined
+  `chapter7_evaluation.md`, `PRESENTATION_MODULE2_{SLIDES,COPY_PASTE}.md`,
+  and the report's manually-composed Figure 7.4 asset
+  (`report_drafts/diagrams/figure_7_4_module2_reliability.png`, dated
+  2026-07-30, predating this update) - none of these were edited this pass.
+
+### Status
+v2 drafted; v1 retained; adoption (replacing v1, or merging into the
+combined chapter file) left for the team to decide.
+
+---
+
+## 2026-08-06 - Module 2 documentation/report completion pass - all remaining stale isotonic/threshold references fixed
+
+### Module
+Module 2 / Report
+
+### Change
+Follow-up to the same-day Chapter 7 v2 update: fixed every remaining Module-2-specific
+report, presentation, and planning artefact still asserting the pre–Decision-047 facts
+(isotonic as official Stage 2, τ=0.14/high=0.35, pre-tuning holdout numbers). Created,
+v1 retained unchanged in every case:
+- `chapter7_evaluation_v2.md` (full combined Chapter 7)
+- `chapter5_5.4.2_module2_v2.md`, `chapter6_6.5_module2_v2.md` (standalone Analysis/Design
+  and Implementation sections)
+- `PRESENTATION_MODULE2_SLIDES_v2.md`, `PRESENTATION_MODULE2_COPY_PASTE_v2.md`
+
+Edited in place (planning/reference docs, not graded chapters, with dated notes rather
+than full duplication):
+- `REPORT_DIAGRAM_PLAN.md` (multiple Module 2 diagram-plan entries)
+- `PRESENTATION_DIAGRAM_DESCRIPTIONS_M1_M2.md`
+- `research_context/report_drafts/diagrams/generate_figure_7_4.py` — the underlying bug
+  fixed at the source: it hardcoded "isotonic" in the plot legend/title/docstring instead
+  of reading the actual selected architecture from the data. Now labels dynamically from
+  the `architecture` column, so this cannot silently go stale again the way it just did.
+  Rerun to regenerate `figure_7_4_module2_reliability.png` (now correctly shows Platt).
+
+### Reason
+User asked to complete the Module 2 documentation refresh rather than leave it partially
+done - the isotonic/τ=0.14 staleness turned out to be more widespread than the three items
+originally flagged (Chapter 5 and 6's standalone Module 2 sections and the presentation
+decks all made the same now-false claims).
+
+### Impact
+- No production code changed in this pass (all changes are documentation, presentation
+  content, and one plotting-script label fix).
+- `CHAPTER_STATUS.md` updated throughout (Chapter 5, 6, 7 sections) with dated notes
+  pointing at every new v2 file and confirming the figure fix.
+- **Deliberately not done:** the combined `chapter5_analysis_and_design.md` and
+  `chapter6_implementation.md` mega-files still have v1 text inline for their Module 2
+  subsections - re-splicing a full multi-section combined file for a one-section change
+  was judged disproportionate; the standalone `_v2` files are the current source until the
+  team merges them in.
+
+### Status
+Complete for all explicitly-requested and discovered items; combined-file re-splicing
+explicitly deferred.
+
+---
+
+## 2026-08-06 - Module 2: Random Forest hyperparameter tuning adopted - genuine holdout-confirmed improvement, cascades into Stage 2 architecture flip and new thresholds (M2-013/Decision 047)
+
+### Module
+Module 2
+
+### Change
+`RF_PARAMS` in `src/module2_classification/baseline_classifier.py` updated to Optuna-tuned
+values (`n_estimators=472, max_depth=16, min_samples_leaf=11, min_samples_split=18,
+max_features="sqrt"`, `class_weight="balanced"` unchanged) after a 50-trial search
+(`scripts/m2_013_stage1_rf_refresh.py`) beat the prior hand-picked defaults on validation AND
+the one-time holdout check. Two other levers tested alongside (`class_weight=
+"balanced_subsample"`; untuned Gradient Boosting) were negative and not adopted. The full
+Module 2 pipeline (Stage 1 -> Stage 2 -> risk thresholds) was rerun under the new
+hyperparameters to keep every artifact consistent.
+
+### Reason
+Random Forest became Stage 1's official model via Decision 025's label re-estimation but had
+never itself been hyperparameter-tuned - it inherited defaults chosen before it was even
+selected. Only XGBoost had gone through this treatment (Decision 023), for an architecture no
+longer in production. User asked for this to actually be tested, alongside two other untried
+levers, rather than left as an assumption.
+
+### Impact
+- Stage 1 holdout: PR-AUC 0.4129 -> 0.4228, ROC-AUC 0.883 -> 0.905, Brier 0.028 -> 0.018.
+- **Stage 2's official architecture flipped isotonic -> platt** (median validation BSS 0.2271
+  vs. 0.2195) - the tuned RF's changed probability distribution drove this, the same mechanism
+  (opposite direction) as Decision 023's earlier XGBoost-tuning-driven flip. Holdout BSS
+  improved 0.2315 -> 0.2673.
+- **Alert threshold moved 0.140 -> 0.100; high-confidence boundary moved 0.350 -> 0.500**
+  (re-selected fresh from the new probability distribution).
+- Holdout alert-rule recall improved 60.0% -> 62.5% at similar precision (33.8% -> 34.2%);
+  tier separation improved (low/medium/high observed rate 0.6%/13.3%/48.8% ->
+  0.6%/20.4%/62.5%, medium/high holdout counts small - 49/24 rows).
+- `research_context/report_drafts/chapter7_7.4_module2.md` is now STALE - cites pre-adoption
+  numbers throughout, and its Figure 7.4 note about which calibration method the reliability
+  diagram shows is now backwards (says isotonic, current production is platt). Flagged, not
+  yet rewritten.
+- New reusable, additive infrastructure: `fit_and_predict`'s `model_params` override (RF/LR
+  path, default `None` reproduces prior behaviour exactly) and a `gradient_boosting` model path
+  (not in `MODEL_NAMES`, so it never affects automatic model selection).
+- `research_context/RESEARCH_DECISIONS.md` (new Decision 047), `module_2_classification/
+  MODULE_CONTEXT.md` (Stage 1/Stage 2/Risk Thresholds sections), `module_2_classification/
+  EXPERIMENT_LOG.md` (new entry M2-013).
+
+### Status
+Adopted
+
+---
+
+## 2026-08-06 - Module 2: leakage-safe lagged Module 3 risk feature tested and rejected (M2-014)
+
+### Module
+Module 2
+
+### Change
+Added `src/module2_classification/m3_risk_join.py` (new, inert - not imported
+by any production stage): builds `m3_risk_lag_1/2` from Module 3's
+`hybrid_risk_map.csv` `Risk` column, lagged 1-2 weeks per district
+(gap-safe, same construction as `m1_forecast_join.py`). Benchmarked the
+official Random Forest with vs. without these features added
+(`scripts/m2_014_m3_risk_feature.py`).
+
+### Reason
+A same-week version of this idea was proposed earlier and found, before any
+code was written, to have a real leakage bug (Module 3's `Risk` is
+mass-conserved to that week's own actual case total). User asked for the
+corrected, lagged version to actually be built and tested, not just
+designed.
+
+### Impact
+- Validation median PR-AUC got WORSE with the feature added (0.3838 vs.
+  0.3896 without) - holdout not checked (pre-registered rule: only spent on
+  a validation winner). Rejected.
+- Plausible reason: `case_anomaly_lag_1/2` already dominate Stage 1 feature
+  importance, and Module 3's `Risk` is itself largely a spatially-smoothed
+  transform of the same underlying case-count signal - likely redundant
+  information plus one extra week of staleness, not new signal.
+- No production feature set or model changed.
+- `module_2_classification/EXPERIMENT_LOG.md` (new entry M2-014).
+
+### Status
+Rejected
+
+---
+
+## 2026-08-06 - Module 2: Venn-Abers uncertainty bands added as a companion output (M2-012)
+
+### Module
+Module 2
+
+### Change
+Added `src/module2_classification/uncertainty_bands.py`: a new, purely
+additive companion output that wraps Stage 2's calibrated probability with a
+statistically principled uncertainty interval, using the Inductive
+Venn-Abers Predictor (IVAP) built on `sklearn.isotonic.IsotonicRegression` -
+the same primitive the official isotonic Stage 2 calibrator already uses.
+Same no-leakage fold structure as Stage 2's own calibrator. Standalone, not
+wired into `main.py`'s `PIPELINE_STAGES` (same precedent as
+`live_scoring.py`/`forecast_future_risk.py`).
+
+### Reason
+User asked to build and evaluate an uncertainty-quantification companion
+output after two other proposed improvements (Stage 1 ensembling, M2-010;
+district-adaptive label `k`, M2-011) failed to clear the holdout bar or
+resolve their motivating problem - this one was specifically chosen because
+it does not touch any existing point prediction or spend the holdout as a
+selection check, so it carries no equivalent failure risk.
+
+### Impact
+- New output: `data/processed/module2/stage2_uncertainty_bands.csv`
+  (18,200 rows: validation folds 2-13 + holdout).
+- Point-estimate agreement with the official `calibrated_probability` is
+  very close (correlation 0.997, mean |difference| 0.004) - confirms
+  correctness and that no existing headline number changes.
+- Interval width scales sensibly with risk tier (holdout mean width: low
+  0.001, medium 0.004, high 0.011) - the real payoff, giving each calibrated
+  probability an honest "how much should this be trusted" companion
+  statement.
+- An initial per-bin validity check was designed wrong (conflated a narrow
+  per-point interval with a binned group's own sampling noise) - caught,
+  corrected, and documented transparently in the eval script rather than
+  silently dropped or misreported as a validity failure.
+- `module_2_classification/MODULE_CONTEXT.md` (new "Uncertainty
+  Quantification" section), `module_2_classification/EXPERIMENT_LOG.md`
+  (new entry M2-012).
+
+### Status
+Adopted (companion output, standalone script)
+
+---
+
+## 2026-08-06 - Module 2: adaptive-k label audit run - homogenizes prevalence, does not fix the Colombo near-miss (M2-011)
+
+### Module
+Module 2
+
+### Change
+Read-only audit (`scripts/m2_011_adaptive_k_label.py`) testing a per-district
+`k` in the epidemic-threshold label instead of Decision 025's single global
+`k=3.0` - the harmonic mean/SD estimator itself was reused unchanged;
+`labels.py` was not modified. Per-district `k` was chosen as the smallest
+grid value bringing that district's own pooled prevalence at or below a 10%
+target.
+
+### Reason
+Decision 025 flagged district-specific/variance-adaptive `k` as a candidate
+future refinement (the global `k=3.0` fixes an aggregate-prevalence problem
+but not every individual district, e.g. the documented Colombo 2025 Wk15
+near-miss). User asked to actually test this idea and evaluate the result.
+
+### Impact
+- Cross-district prevalence spread narrowed (std 2.41pp -> 1.29pp) without
+  worsening the pooled undefined rate (10.72% -> 10.72%) - a genuine partial
+  win on the homogenization goal.
+- Did **not** fix the Colombo 2025 Wk15 case: Colombo's own large
+  `historical_sd` (209.0) means the prevalence-target rule assigns it a
+  HIGHER `k` (3.5, vs. global 3.0), raising its threshold rather than
+  lowering it - homogenizing cross-district prevalence and lowering one
+  high-variance district's specific threshold are in tension under this
+  selection rule, not aligned.
+- 2017 Wk29 Colombo/Gampaha (the worst recorded epidemic year) remained
+  correctly flagged under both the global and adaptive label - no regression
+  on the one hard "must never miss this" sanity check.
+- No pipeline rerun performed - `labels.py`, Stage 1, Stage 2, and thresholds
+  are all unchanged. Adopting this would require a `feature_variant`-suffixed
+  full rerun (mirrors M2-007/M2-008's pattern); left as an open decision given
+  the mixed result, not committed to unilaterally.
+- `module_2_classification/MODULE_CONTEXT.md` (Open Question #8 status note),
+  `module_2_classification/EXPERIMENT_LOG.md` (new entry M2-011).
+
+### Status
+Audited - adoption decision pending team input.
+
+---
+
+## 2026-08-06 - Module 2: Stage 1 ensembling tested and rejected - holdout regression (M2-010/Decision 046)
+
+### Module
+Module 2
+
+### Change
+Benchmarked three ways of blending Stage 1's three existing models' (Random
+Forest, XGBoost, Logistic Regression) out-of-fold probabilities instead of
+selecting one official model (`scripts/m2_010_stage1_ensemble.py`, read-only
+- reused already-computed OOF probabilities, no refitting): a simple average
+of all three, a simple average of RF+XGBoost, and a no-leakage fold-aware
+logistic stacking blend.
+
+### Reason
+User asked whether ensembling could improve on Decision 025's single-model
+selection (Random Forest), given the three benchmarked models' validation
+PR-AUCs were already close (0.358-0.377).
+
+### Impact
+- On the exact 13-fold median-PR-AUC protocol Stage 1 selection itself uses,
+  the simple three-model average won on validation (0.4156 vs. Random
+  Forest's 0.3766) - triggering the pre-registered one-time holdout check.
+- **Holdout check showed a regression**: 0.3968 vs. Random Forest's 0.4292 -
+  the same validation-improves/holdout-regresses pattern already documented
+  for Module 1 (Decision 044). Not promoted.
+- Production Stage 1 unchanged - still a single official Random Forest
+  model.
+- Secondary, non-decisive observation: on a folds-2-13-only window (needed to
+  make the logistic-stacking variant comparable), plain XGBoost outscores
+  both Random Forest and every ensemble variant - flagged for future
+  reference, not acted on.
+- `research_context/RESEARCH_DECISIONS.md` (new Decision 046),
+  `module_2_classification/EXPERIMENT_LOG.md` (new entry M2-010).
+
+### Status
+Rejected
+
+---
+
 ## 2026-08-06 - Module 1: defense entries drafted for the remediation arc
 
 ### Module
