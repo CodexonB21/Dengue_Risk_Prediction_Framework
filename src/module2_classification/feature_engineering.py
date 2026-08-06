@@ -274,9 +274,13 @@ def compute_case_anomaly_lags(df: pd.DataFrame) -> pd.DataFrame:
 
     case_zscore = (stats["Number_of_Cases"] - stats["historical_mean"]) / stats["historical_sd"]
     case_zscore = case_zscore.replace([np.inf, -np.inf], np.nan)
-    case_zscore = case_zscore.where(~stats["is_imputed"])
+    case_zscore = case_zscore.where(~stats["is_imputed"].fillna(False).astype(bool))
     if "is_reporting_anomaly" in stats.columns:
-        case_zscore = case_zscore.where(~stats["is_reporting_anomaly"])
+        # `.fillna(False)` guards against a NaN-contaminated boolean column
+        # (e.g. synthetic forward-week rows lacking this field, which
+        # upcasts the whole column to object/float and breaks `~`) - found
+        # via forecast_future_risk.py's forward scoring (M2-013 follow-up).
+        case_zscore = case_zscore.where(~stats["is_reporting_anomaly"].fillna(False).astype(bool))
 
     stats["case_zscore"] = case_zscore
     grouped_zscore = stats.groupby("District")["case_zscore"]

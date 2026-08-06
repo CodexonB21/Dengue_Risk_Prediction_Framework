@@ -6,6 +6,59 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-08-07 - Module 2: prospective forward-risk accuracy tracker added (M2-015/Decision 048)
+
+### Module
+Module 2
+
+### Change
+Added `src/module2_classification/risk_tracking.py`, mirroring Decision 041/M1-017's
+nowcast tracker exactly: `append_to_risk_log()` (wired into `forecast_future_risk.
+run_forward_risk()`, default on) permanently logs every genuinely-forward prediction row;
+`reconcile_risk_log()` (wired into `refresh_dashboard_data.py` as a new
+`module2_risk_reconcile` step) joins the log against real outcomes once a logged target
+week resolves, recomputing the actual epidemic-threshold label fresh each time. New config
+paths `MODULE2_RISK_LOG_PATH` / `MODULE2_RISK_PROSPECTIVE_ACCURACY_PATH`.
+
+### Reason
+User asked whether Module 2 can predict next week's outbreak risk. Confirming this
+required actually running the forward-scoring scripts, which crashed - two real,
+previously-latent bugs, both only surfaced because Decision 047 made Platt scaling the
+official Stage 2 architecture for the first time ever:
+1. `scoring_utils.score_feature_rows()` scored Platt exactly like isotonic - calling
+   `.predict()` on the raw 1D probability instead of `.predict_proba()` on its log-odds,
+   2D-reshaped. Fixed with an explicit `platt` branch mirroring
+   `compensation_model.fit_and_calibrate`'s own logic, plus type assertions.
+2. `compute_case_anomaly_lags()` crashed scoring forward weeks - `forecast_future_risk.py`'s
+   synthetic row never set `is_reporting_anomaly`, upcasting the whole column to float once
+   NaN-filled and breaking a boolean negation. Fixed at the root (field added to the
+   synthetic row) and defensively (`.fillna(False).astype(bool)`).
+
+Once both scripts ran clean, the same evidence-tier gap Module 1 already had before
+Decision 041 was still open: a forward prediction has no ground truth to check against
+until the target week actually passes. The tracker closes that gap the only honest way -
+by logging now and waiting.
+
+### Impact
+- Both live/forward scoring bugs fixed; `live_scoring.py` and `forecast_future_risk.py`
+  now run correctly against the current (tuned-RF/Platt) production model.
+- New permanent artifacts: `data/processed/module2/risk_prediction_log.csv` (seeded with
+  200 rows), `outputs/metrics/module2/risk_prospective_accuracy.csv` (0/200 resolved so
+  far, correctly - none of those weeks have happened yet).
+- Concrete finding while verifying the fix: next week's (2026 Wk26) forward scoring shows
+  7/25 districts "high" tier and 20/25 crossing the alert threshold, closely matching the
+  most recent real observed week's split (9 high/8 medium/8 low) - driven by genuinely
+  large case counts (Colombo 1,138; Gampaha 1,294), not a scoring artifact. Flagged for the
+  team to verify against source data, not investigated further here.
+- `module_2_classification/MODULE_CONTEXT.md` (new "Prospective Forward-Risk Accuracy
+  Tracking" section + bug-fix note), `module_2_classification/EXPERIMENT_LOG.md` (new
+  entry M2-015), `research_context/RESEARCH_DECISIONS.md` (new Decision 048).
+
+### Status
+Bugs fixed and verified by rerun. Tracker adopted as new operational infrastructure.
+
+---
+
 ## 2026-08-06 - Chapter 7 (Module 2 sections) updated to v2 drafts after Decision 047 - v1 kept
 
 ### Module
@@ -39,6 +92,60 @@ for the report to be brought current without losing the old version.
 ### Status
 v2 drafted; v1 retained; adoption (replacing v1, or merging into the
 combined chapter file) left for the team to decide.
+
+---
+
+## 2026-08-06 - Module 2: two live/forward scoring bugs found and fixed - Platt scaling and forward-week feature construction were both silently broken
+
+### Module
+Module 2
+
+### Change
+Rerunning `live_scoring.py` and `forecast_future_risk.py` after Decision 047 (the first
+time Platt scaling has ever been the official Stage 2 architecture) surfaced two real,
+previously-latent bugs, neither triggered while isotonic was the only architecture ever
+run through these scripts:
+1. `scoring_utils.score_feature_rows()`'s generic Stage 2 branch called
+   `stage2_model.predict(predicted_probability)` on a bare 1D array. Isotonic accepts
+   that directly; Platt's `LogisticRegression` needs the LOG-ODDS of the probability
+   (2D-reshaped), and `.predict()` on a classifier returns a discrete class label, not a
+   probability - both errors were latent because Platt was never live-scored before.
+   Fixed with an explicit `platt` branch mirroring `compensation_model.fit_and_calibrate`'s
+   own Platt logic exactly, plus a type assertion on both branches so a future architecture
+   change fails loudly instead of silently miscomputing.
+2. `feature_engineering.compute_case_anomaly_lags()`'s `~stats["is_reporting_anomaly"]`
+   raised `TypeError: bad operand type for unary ~: 'float'` when scoring forward
+   (synthetic) weeks - `forecast_future_risk.py`'s synthetic row dict never set
+   `is_reporting_anomaly`, so concatenating it with real rows upcast the whole column to
+   float wherever NaN appeared, breaking the boolean negation. Fixed at the root
+   (`is_reporting_anomaly: False` added to the synthetic row) and defensively
+   (`.fillna(False).astype(bool)` before negating, protecting any future caller from the
+   same class of bug).
+
+### Reason
+User asked directly whether Module 2 can currently predict next week's outbreak risk.
+Checking required actually rerunning the forward-scoring scripts against today's
+retrained models rather than trusting stale output files (dated 2026-07-29, before
+Decision 047) - both scripts crashed on the first attempt.
+
+### Impact
+- `data/processed/module2/{live_risk_predictions,future_risk_predictions}.csv`
+  regenerated under the current tuned-RF/Platt production stack.
+- Both scripts now run cleanly. Next-week (2026 Week 26) forward scoring: 7/25 districts
+  "high" tier, 13 "medium", 5 "low" - broadly consistent with the most recent REAL
+  observed week's tier split (9 high/8 medium/8 low from `live_scoring.py`'s own log),
+  suggesting a genuine current elevated-risk signal in the underlying case data rather
+  than a forward-extrapolation artifact - flagged for the team to look at, not
+  investigated further here.
+- This is "operational" evidence-tier output (per `evidence_tier` column /
+  `QUESTIONS_FOR_DEFENSE.md`'s existing holdout-vs-operational distinction) - it must not
+  be cited as a holdout-validated skill claim, only as what the frozen production model
+  currently says about the coming week.
+
+### Status
+Fixed and verified by rerun. Not yet added as a formal EXPERIMENT_LOG entry (this is a
+bug fix in operational infrastructure, not a research ablation) - noted here for the
+Living Documentation trail.
 
 ---
 

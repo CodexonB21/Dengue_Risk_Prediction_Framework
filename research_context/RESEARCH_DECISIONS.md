@@ -1994,3 +1994,53 @@ threshold re-pick or a competing model that happened to win once.
 ### Documentation Updated
 `module_2_classification/MODULE_CONTEXT.md` (Stage 1/Stage 2/Risk Thresholds status sections),
 `module_2_classification/EXPERIMENT_LOG.md` (M2-013), `research_context/CHANGELOG.md`.
+
+---
+
+## Decision 048: Prospective Forward-Risk Accuracy Tracking Added (M2-015)
+
+**Module:** Module 2
+**Status:** Accepted (implemented and run 2026-08-07)
+**Date:** 2026-08-07
+
+### Decision
+Added `src/module2_classification/risk_tracking.py`, mirroring Decision 041/M1-017's
+nowcast tracker exactly: `append_to_risk_log()` (wired into `forecast_future_risk.
+run_forward_risk()`, default on) appends every genuinely-forward
+(`prediction_type == "forward_week"`) row to a permanent, append-only log
+(`risk_prediction_log.csv`) - the already-resolved `observed_week` row is deliberately
+excluded, since it has ground truth at logging time and is not a prospective prediction.
+`reconcile_risk_log()` (wired into `scripts/refresh_dashboard_data.py` as a new
+`module2_risk_reconcile` step) recomputes the actual epidemic-threshold label from the
+current `weekly_modeling_table.csv` and joins it against the log wherever a logged target
+week has since resolved, writing `risk_prospective_accuracy.csv`. Seeded with the current
+200-row (25 districts x 8 horizon weeks) forward risk run; first reconciliation correctly
+shows 0/200 resolved (none of those weeks have happened yet).
+
+### Reason
+User asked directly whether Module 2 can predict next week's outbreak risk. Answering
+required actually running the forward-scoring pipeline, which surfaced two real bugs
+(Platt-scaling scored incorrectly, a forward-week feature-construction crash - both fixed
+same day) and then the same honest gap Module 1 already had before Decision 041: the
+forward prediction itself has no way to be checked against reality yet. The only honest
+fix is to log now and wait for real weeks to resolve, exactly as Module 1 already does.
+
+### Implication
+- Pure infrastructure - does not itself demonstrate whether the forward scoring is
+  accurate. `risk_prospective_accuracy.csv` will grow additively as real weeks resolve
+  and should be checked periodically, not assumed silent. Given the label's own ~1.5%
+  holdout prevalence, accumulating enough resolved OUTBREAK weeks specifically (as opposed
+  to just resolved weeks generally) to say anything statistically meaningful will take a
+  long real-calendar time - flagged explicitly so this is not mistaken for a fast-arriving
+  evidence source.
+- Not a substitute for, and should not be conflated with, the holdout-validated
+  PR-AUC/recall/BSS numbers in Chapter 7 - a different, much slower-arriving, but
+  genuinely prospective evidence tier, same distinction already documented for Module 1's
+  nowcast vs. its backtest MASE.
+- No existing Module 2 pipeline, model, or default artifact affected beyond
+  `run_forward_risk()` gaining a side-effect (the log append) and
+  `refresh_dashboard_data.py` gaining one more step.
+
+### Documentation Updated
+`module_2_classification/MODULE_CONTEXT.md`, `module_2_classification/EXPERIMENT_LOG.md`
+(M2-015), `research_context/CHANGELOG.md`.

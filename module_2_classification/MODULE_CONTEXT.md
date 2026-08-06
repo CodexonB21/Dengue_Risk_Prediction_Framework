@@ -632,6 +632,40 @@ Module 1 `future_forecast.csv` is now an **operational input** to Module 2 forwa
 risk (Decision 027) — not used in training/evaluation pipelines (Decision 019/022
 deferral unchanged).
 
+**2026-08-07 update — two live/forward scoring bugs found and fixed, M2-015.** Rerunning
+`live_scoring.py` and `forecast_future_risk.py` against the post–Decision-047 production
+model (the first time Platt scaling had ever been live-scored) crashed on two latent bugs:
+`scoring_utils.score_feature_rows()` called `.predict()` on the raw Stage 1 probability for
+every Stage 2 architecture uniformly — correct for isotonic, wrong for Platt (needs the
+log-odds, 2D-reshaped, and `.predict_proba()`, not `.predict()`); and
+`compute_case_anomaly_lags()` crashed on forward weeks because the synthetic row builder
+never set `is_reporting_anomaly`. Both fixed (see M2-015 for full detail) — `live_scoring.py`
+and `forecast_future_risk.py` now run cleanly against the current production model.
+
+## Prospective Forward-Risk Accuracy Tracking (2026-08-07, new, M2-015/Decision 048)
+
+`src/module2_classification/risk_tracking.py` closes the "how would a forward prediction
+ever be checked" gap, mirroring Decision 041/M1-017's nowcast tracker exactly.
+`append_to_risk_log()` (wired into `forecast_future_risk.run_forward_risk()`, default on)
+appends every genuinely-forward (`prediction_type == "forward_week"`) row to a permanent,
+append-only log (`data/processed/module2/risk_prediction_log.csv`) — the already-resolved
+`observed_week` row (horizon_step=0) is deliberately excluded, since it already has ground
+truth at logging time. `reconcile_risk_log()` (wired into `refresh_dashboard_data.py` as a
+new `module2_risk_reconcile` step) recomputes the actual epidemic-threshold label from the
+current `weekly_modeling_table.csv` and joins it against the log wherever a logged target
+week has since resolved, writing `outputs/metrics/module2/risk_prospective_accuracy.csv`.
+
+**Pure infrastructure — accumulates evidence, does not itself demonstrate accuracy.**
+Seeded 2026-08-07 with 200 rows (25 districts x 8 horizon weeks); first reconciliation
+correctly shows 0/200 resolved, since none of those weeks have happened yet. Given the
+label's own ~1.5% holdout prevalence, accumulating enough resolved OUTBREAK weeks
+specifically (not just resolved weeks generally) to say anything statistically meaningful
+will take a long real-calendar time — this is a slow-arriving evidence tier by design, not
+a bug. Must not be conflated with the holdout-validated PR-AUC/recall/BSS numbers in
+Chapter 7 — same evidence-tier distinction already documented for Module 1's nowcast vs.
+its backtest MASE. Check `risk_prospective_accuracy.csv` periodically as real weeks
+resolve; do not assume silence means success.
+
 ## Uncertainty Quantification (2026-08-06, new, M2-012)
 
 `src/module2_classification/uncertainty_bands.py` adds a companion output: a

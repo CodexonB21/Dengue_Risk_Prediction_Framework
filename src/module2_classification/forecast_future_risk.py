@@ -63,6 +63,7 @@ from src.module2_classification.scoring_utils import (  # noqa: E402
     score_feature_rows,
 )
 from src.module2_classification.baseline_classifier import attach_fold_anomalies  # noqa: E402
+from src.module2_classification.risk_tracking import append_to_risk_log  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +174,7 @@ def _extend_with_forward_weeks(
                 "Week_End_Date": week_end,
                 "Number_of_Cases": np.nan,
                 "is_imputed": False,
+                "is_reporting_anomaly": False,
                 "cases_per_100k": np.nan,
                 "Estimated_Population": np.nan,
                 "Source_Type": np.nan,
@@ -255,7 +257,16 @@ def _cases_source_label(row: pd.Series) -> tuple[str, bool]:
     return "na", False
 
 
-def run_forward_risk(horizon: int = FORECAST_HORIZON_WEEKS) -> pd.DataFrame:
+def run_forward_risk(horizon: int = FORECAST_HORIZON_WEEKS, *, log_prediction: bool = True) -> pd.DataFrame:
+    """`log_prediction=True` (default, mirrors Decision 041/M1-017) appends
+    this run's genuinely-forward (`prediction_type == "forward_week"`) rows
+    to the permanent risk prediction log
+    (`risk_tracking.append_to_risk_log()`) - the only source of genuinely
+    prospective (not backtested) accuracy evidence for Module 2's forward
+    scoring, since every other Module 2 evaluation scores against data
+    already in the dataset. Set `False` for one-off/exploratory calls that
+    shouldn't pollute that permanent record (e.g. ad hoc testing).
+    """
     modeling_df = pd.read_csv(
         MODULE2_WEEKLY_MODELING_TABLE_PATH, parse_dates=["Week_Start_Date", "Week_End_Date"]
     )
@@ -335,6 +346,8 @@ def run_forward_risk(horizon: int = FORECAST_HORIZON_WEEKS) -> pd.DataFrame:
         "Forward risk scoring complete: %d rows (%d districts) -> %s",
         len(out), out["District"].nunique(), MODULE2_FUTURE_RISK_PREDICTIONS_PATH,
     )
+    if log_prediction:
+        append_to_risk_log(out)
     return out
 
 
@@ -344,10 +357,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--horizon", type=int, default=FORECAST_HORIZON_WEEKS,
         help=f"Forward epi-weeks to score beyond last case week (default: {FORECAST_HORIZON_WEEKS}).",
     )
+    parser.add_argument(
+        "--no-log", action="store_true",
+        help="Skip appending to the permanent prospective-accuracy log (ad hoc/exploratory runs only).",
+    )
     return parser.parse_args(argv)
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     args = _parse_args()
-    run_forward_risk(horizon=args.horizon)
+    run_forward_risk(horizon=args.horizon, log_prediction=not args.no_log)

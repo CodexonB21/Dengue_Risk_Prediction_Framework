@@ -27,6 +27,8 @@ from src.module2_classification.compensation_model import (  # noqa: E402
     _prepare_tree_stage2_xy,
     _sigmoid,
 )
+from sklearn.isotonic import IsotonicRegression  # noqa: E402
+from sklearn.linear_model import LogisticRegression  # noqa: E402
 from src.module2_classification.feature_engineering import build_module2_feature_table
 from src.module2_classification.risk_thresholds import assign_risk_tier, select_thresholds
 
@@ -120,7 +122,24 @@ def score_feature_rows(
             0.0,
             1.0,
         )
+    elif stage2_architecture == "platt":
+        # Mirrors compensation_model.fit_and_calibrate's "platt" branch
+        # exactly: Platt scaling is a LogisticRegression fit on the LOG-ODDS
+        # of the Stage 1 probability (2D input), not the raw probability -
+        # `.predict()` on a bare 1D array (the old code path, inherited from
+        # isotonic's different calling convention) both skipped the logit
+        # transform and returned a discrete class label instead of a
+        # probability. Never caught before Decision 047 because Platt had
+        # never been the official Stage 2 architecture until then.
+        assert isinstance(stage2_model, LogisticRegression), (
+            f"Expected a fitted LogisticRegression for platt scoring, got {type(stage2_model)!r}."
+        )
+        X2 = _logit(predicted_probability, eps=LOGIT_EPS).reshape(-1, 1)
+        calibrated_probability = stage2_model.predict_proba(X2)[:, 1]
     else:
+        assert isinstance(stage2_model, IsotonicRegression), (
+            f"Expected a fitted IsotonicRegression for '{stage2_architecture}' scoring, got {type(stage2_model)!r}."
+        )
         calibrated_probability = stage2_model.predict(predicted_probability)
 
     out = target_df.copy()

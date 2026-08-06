@@ -98,6 +98,10 @@ def run_refresh(skip_weather: bool = False) -> pd.DataFrame:
         "module2_forecast_future_risk",
         [PYTHON, "-m", "src.module2_classification.forecast_future_risk"],
     )
+    _run_step(
+        "module2_risk_reconcile",
+        [PYTHON, "-m", "src.module2_classification.risk_tracking"],
+    )
     return _summarize_outputs()
 
 

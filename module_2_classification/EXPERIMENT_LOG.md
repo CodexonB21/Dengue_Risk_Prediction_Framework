@@ -1461,3 +1461,43 @@ A clean negative result — the corrected, leakage-safe version of this idea sti
 
 ### Documentation Updated
 `module_2_classification/EXPERIMENT_LOG.md`, `research_context/CHANGELOG.md`.
+
+---
+
+## Experiment ID: M2-015
+
+### Date
+2026-08-07
+
+### Research Question
+Can Module 2 currently predict next week's outbreak risk — and if a genuine forward-scoring mechanism exists, how would its accuracy ever actually be checked, given the target week has no ground truth yet?
+
+### Label Definition
+Unchanged (Decision 025 harmonic estimator, `k=3.0`) — recomputed fresh at reconciliation time from whatever `weekly_modeling_table.csv` currently contains, so a logged target week's label is only ever the real, eventually-observed one, never estimated early.
+
+### Data Period
+`forecast_future_risk.py`'s forward scoring (25 districts x 8 horizon weeks beyond the last real case week). No holdout or validation folds involved — this is operational-tier evidence, not a backtest.
+
+### Stage 1 / Stage 2 Model
+No retraining. Two real bugs were found and fixed while actually running the forward-scoring pipeline against today's production model (both latent since Decision 047, never triggered because Platt scaling had never been live-scored before):
+1. `scoring_utils.score_feature_rows()` called `stage2_model.predict()` on the raw Stage 1 probability for every Stage 2 architecture uniformly — correct for isotonic, but Platt scaling needs the LOG-ODDS of the probability (not raw) and `.predict_proba()` (not `.predict()`, which returns a discrete class label for a classifier, not a probability). Fixed with an explicit `platt` branch mirroring `compensation_model.fit_and_calibrate`'s own logic, plus type assertions so a future architecture change fails loudly instead of silently miscomputing.
+2. `feature_engineering.compute_case_anomaly_lags()`'s `~stats["is_reporting_anomaly"]` crashed on forward (synthetic) weeks, because `forecast_future_risk.py`'s synthetic row never set that field, upcasting the whole column to float once concatenated with real rows and NaN-filled. Fixed at the root (field added to the synthetic row) and defensively (`.fillna(False).astype(bool)` before negating).
+
+Then, to close the "how would this ever be checked" gap, added `src/module2_classification/risk_tracking.py` — mirrors Decision 041/M1-017's nowcast tracker exactly: `append_to_risk_log()` (wired into `run_forward_risk()`, default on) logs every genuinely-forward row permanently; `reconcile_risk_log()` (wired into `refresh_dashboard_data.py`) joins the log against real outcomes once they exist.
+
+### Results
+- Both bugs fixed; both scripts rerun clean. Concrete next-week (2026 Wk26) output: 7/25 districts "high" tier, 13 "medium", 5 "low", 20/25 crossing the alert threshold.
+- Cross-check against the most recent REAL observed week (2026 Wk25, via `live_scoring.py`): 9 "high" / 8 "medium" / 8 "low" — a similar split, and driven by large absolute case counts (Colombo 1,138; Gampaha 1,294 — already more than half of 2017's worst-recorded peak week). This indicates the widespread simultaneous alerting reflects a real signal in the underlying case data, not a forward-extrapolation or threshold-sensitivity artifact — flagged for the team to verify against the source WER data, not investigated further here.
+- Tracker seeded: 200 rows logged (`risk_prediction_log.csv`), first reconciliation correctly shows 0/200 resolved (none of those weeks have happened yet — the mechanism does not fabricate results).
+
+### Interpretation
+Answering a direct capability question ("can it predict next week") surfaced two genuine production bugs that would otherwise have kept silently returning wrong live/forward scores. This is the second time in two days a code path went untested until an architecture change (Decision 047) or a direct question exercised it — worth noting as a pattern: production-adjacent scripts that aren't part of the automated pipeline (`main.py`'s `PIPELINE_STAGES`) and aren't covered by the holdout-evaluation machinery can silently drift out of sync with the models they're supposed to score with. The tracker itself doesn't produce results yet — by design — but it means Module 2's forward predictions will, for the first time, accumulate real, checkable evidence over the coming weeks/months instead of remaining permanently unverifiable.
+
+### Decision
+**Bugs fixed and adopted. Tracker adopted as new operational infrastructure**, wired into `refresh_dashboard_data.py`'s `module2_risk_reconcile` step (Decision 048).
+
+### Artifacts
+`src/module2_classification/risk_tracking.py` (new), `src/module2_classification/scoring_utils.py` (Platt fix), `src/module2_classification/feature_engineering.py` (NaN-guard fix), `src/module2_classification/forecast_future_risk.py` (`is_reporting_anomaly` fix + logging wiring), `scripts/refresh_dashboard_data.py` (new step), `data/processed/module2/risk_prediction_log.csv`, `outputs/metrics/module2/risk_prospective_accuracy.csv`.
+
+### Documentation Updated
+`research_context/RESEARCH_DECISIONS.md` (new Decision 048), `module_2_classification/MODULE_CONTEXT.md`, `module_2_classification/EXPERIMENT_LOG.md`, `research_context/CHANGELOG.md`.

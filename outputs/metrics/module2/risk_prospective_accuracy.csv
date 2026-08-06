@@ -1,0 +1,1 @@
+District,Year,Week,Week_Start_Date,horizon_step,prediction_type,predicted_probability,calibrated_probability,alert_flag,risk_tier,feature_completeness_pct,cases_source,climate_source,uses_module1_cases,evidence_tier,logged_at_utc,Number_of_Cases,is_imputed,is_reporting_anomaly,actual_label,alert_correct
