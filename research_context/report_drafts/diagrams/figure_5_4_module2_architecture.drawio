@@ -1,0 +1,140 @@
+<mxfile host="app.diagrams.net" agent="Codexon FYP" version="22.1.0" type="device">
+  <diagram id="figure-5-4-module2" name="Figure 5.4 Module 2">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="720" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Module 2: Hybrid Outbreak Risk Classification" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontStyle=1;fontSize=18;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="280" y="10" width="600" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Figure 5.4 — High-level architecture (Random Forest baseline → isotonic probability compensation)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontColor=#4B5563;" vertex="1" parent="1">
+          <mxGeometry x="200" y="38" width="760" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="col1_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F3F4F6;strokeColor=#D1D5DB;opacity=40;" vertex="1" parent="1">
+          <mxGeometry x="20" y="70" width="270" height="590" as="geometry" />
+        </mxCell>
+        <mxCell id="col2_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#93C5FD;opacity=35;" vertex="1" parent="1">
+          <mxGeometry x="300" y="70" width="270" height="590" as="geometry" />
+        </mxCell>
+        <mxCell id="col3_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EDE9FE;strokeColor=#C4B5FD;opacity=35;" vertex="1" parent="1">
+          <mxGeometry x="580" y="70" width="280" height="590" as="geometry" />
+        </mxCell>
+        <mxCell id="col4_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#86EFAC;opacity=35;" vertex="1" parent="1">
+          <mxGeometry x="870" y="70" width="270" height="590" as="geometry" />
+        </mxCell>
+
+        <mxCell id="h1" value="Inputs" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontStyle=1;fontSize=14;fontColor=#374151;" vertex="1" parent="1">
+          <mxGeometry x="20" y="75" width="270" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="h2" value="Stage 1 — Base Classifier" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontStyle=1;fontSize=14;fontColor=#1E40AF;" vertex="1" parent="1">
+          <mxGeometry x="300" y="75" width="270" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="h3" value="Stage 2 — Compensation" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontStyle=1;fontSize=14;fontColor=#5B21B6;" vertex="1" parent="1">
+          <mxGeometry x="580" y="75" width="280" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="h4" value="Output" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontStyle=1;fontSize=14;fontColor=#166534;" vertex="1" parent="1">
+          <mxGeometry x="870" y="75" width="270" height="26" as="geometry" />
+        </mxCell>
+
+        <!-- INPUTS -->
+        <mxCell id="in_cases" value="&lt;b&gt;Weekly Dengue Cases&lt;/b&gt;&lt;br&gt;Historical district-week counts&lt;br&gt;(25 districts; MoH epi-weeks)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#86EFAC;strokeColor=#15803D;fontColor=#14532D;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="45" y="115" width="220" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="in_climate" value="&lt;b&gt;Climate Features&lt;/b&gt;&lt;br&gt;Precipitation / temp / humidity&lt;br&gt;(lags + current week)&lt;br&gt;Fold-aware anomalies" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="45" y="200" width="220" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="in_eng" value="&lt;b&gt;Engineered Features&lt;/b&gt;&lt;br&gt;Case lags 1–4 · rolling stats&lt;br&gt;Seasonal / monsoon&lt;br&gt;Case-anomaly lags · District" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="45" y="295" width="220" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="in_pre" value="&lt;b&gt;Module 2 Preprocessing&lt;/b&gt;&lt;br&gt;Week-53 kept unmerged&lt;br&gt;Seasonal-naive gaps · &lt;i&gt;is_imputed&lt;/i&gt; mask" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0E7FF;strokeColor=#4F46E5;fontColor=#312E81;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="45" y="395" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="in_src" value="&lt;b&gt;Data Sources&lt;/b&gt;&lt;br&gt;Epidemiology Unit, MoH&lt;br&gt;Open-Meteo climate API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6B7280;fontColor=#374151;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="45" y="490" width="220" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="in_note" value="Unlike Module 1:&lt;br&gt;week 53 NOT merged" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#FEE2E2;strokeColor=#DC2626;fontColor=#991B1B;fontSize=10;size=12;align=center;" vertex="1" parent="1">
+          <mxGeometry x="60" y="575" width="190" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- STAGE 1 -->
+        <mxCell id="s1_label" value="&lt;b&gt;Epidemic-Threshold Labels&lt;/b&gt;&lt;br&gt;outbreak = 1 if cases &amp;gt;&lt;br&gt;mean + k × SD&lt;br&gt;(prior years only · harmonic)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E9D5FF;strokeColor=#7C3AED;fontColor=#4C1D95;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="325" y="120" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s1_model" value="&lt;b&gt;Random Forest&lt;/b&gt;&lt;br&gt;Pooled outbreak classifier&lt;br&gt;(climate included in Stage 1)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1E3A8A;strokeColor=#1E3A8A;fontColor=#FFFFFF;fontSize=12;align=center;" vertex="1" parent="1">
+          <mxGeometry x="325" y="240" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="s1_prob" value="&lt;b&gt;Predicted Probability&lt;/b&gt;&lt;br&gt;p̂ per district-week" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E5E7EB;strokeColor=#4B5563;fontColor=#111827;fontSize=12;align=center;" vertex="1" parent="1">
+          <mxGeometry x="325" y="360" width="220" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="s1_note" value="Class imbalance via&lt;br&gt;class_weight (no SMOTE)" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#FEE2E2;strokeColor=#DC2626;fontColor=#991B1B;fontSize=10;size=12;align=center;" vertex="1" parent="1">
+          <mxGeometry x="340" y="450" width="190" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s1_climate" value="Climate enters Stage 1&lt;br&gt;(unlike Module 1)" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#FEF3C7;strokeColor=#D97706;fontColor=#92400E;fontSize=10;size=12;align=center;" vertex="1" parent="1">
+          <mxGeometry x="340" y="520" width="190" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- STAGE 2 -->
+        <mxCell id="s2_model" value="&lt;b&gt;Isotonic Regression&lt;/b&gt;&lt;br&gt;Probability compensation&lt;br&gt;/ calibration layer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1E3A8A;strokeColor=#1E3A8A;fontColor=#FFFFFF;fontSize=12;align=center;" vertex="1" parent="1">
+          <mxGeometry x="610" y="180" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_cal" value="&lt;b&gt;Calibrated Probability&lt;/b&gt;&lt;br&gt;p̃ = g(p̂)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FECACA;strokeColor=#DC2626;fontColor=#7F1D1D;fontSize=12;align=center;" vertex="1" parent="1">
+          <mxGeometry x="610" y="310" width="220" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_note" value="Not case-residual regression&lt;br&gt;— probability calibration" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#FEF3C7;strokeColor=#D97706;fontColor=#92400E;fontSize=10;size=12;align=center;" vertex="1" parent="1">
+          <mxGeometry x="625" y="400" width="190" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_bench" value="Benchmarked vs Platt&lt;br&gt;and stacked XGBoost" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F9FAFB;strokeColor=#9CA3AF;fontColor=#374151;fontSize=10;align=center;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="610" y="480" width="220" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- OUTPUT -->
+        <mxCell id="out_dec" value="&lt;b&gt;Decision Outputs&lt;/b&gt;&lt;br&gt;alert_flag&lt;br&gt;risk_tier (low / medium / high)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#86EFAC;strokeColor=#15803D;fontColor=#14532D;fontSize=12;align=center;" vertex="1" parent="1">
+          <mxGeometry x="895" y="160" width="220" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="out_eval" value="&lt;b&gt;Evaluation&lt;/b&gt;&lt;br&gt;PR-AUC · ROC-AUC&lt;br&gt;Brier · BSS&lt;br&gt;Walk-forward + holdout" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6B7280;fontColor=#374151;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="895" y="290" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="out_thr" value="Fixed absolute&lt;br&gt;probability thresholds" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F9FAFB;strokeColor=#9CA3AF;fontColor=#374151;fontSize=10;align=center;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="895" y="410" width="220" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Edges -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#15803D;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="in_cases" target="s1_label">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#15803D;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="in_cases" target="s1_model">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2563EB;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="in_climate" target="s1_model">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2563EB;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="in_eng" target="s1_model">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#4B5563;strokeWidth=1;dashed=1;endArrow=block;endFill=1;" edge="1" parent="1" source="in_pre" target="s1_model">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#7C3AED;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="s1_label" target="s1_model">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#1E40AF;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="s1_model" target="s1_prob">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5B21B6;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="s1_prob" target="s2_model">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5B21B6;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="s2_model" target="s2_cal">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#15803D;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="s2_cal" target="out_dec">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6B7280;strokeWidth=1;endArrow=block;endFill=1;" edge="1" parent="1" source="out_dec" target="out_eval">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
