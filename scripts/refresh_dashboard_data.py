@@ -18,6 +18,8 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.config import (  # noqa: E402
     DASHBOARD_REFRESH_MANIFEST_PATH,
     MODULE1_FUTURE_FORECAST_PATH,
+    MODULE1_NOWCAST_ACCURACY_PATH,
+    MODULE1_NOWCAST_PATH,
     MODULE1_WEEKLY_MODELING_TABLE_PATH,
     MODULE2_FUTURE_RISK_PREDICTIONS_PATH,
     MODULE2_LIVE_RISK_PREDICTIONS_PATH,
@@ -58,6 +60,8 @@ def _summarize_outputs() -> pd.DataFrame:
     _max_epi(MODULE1_WEEKLY_MODELING_TABLE_PATH, "module1_weekly")
     _max_epi(MODULE2_WEEKLY_MODELING_TABLE_PATH, "module2_weekly")
     _max_epi(MODULE1_FUTURE_FORECAST_PATH, "future_forecast")
+    _max_epi(MODULE1_NOWCAST_PATH, "nowcast_next_week")
+    _max_epi(MODULE1_NOWCAST_ACCURACY_PATH, "nowcast_prospective_accuracy")
     _max_epi(MODULE2_LIVE_RISK_PREDICTIONS_PATH, "live_risk")
     _max_epi(MODULE2_FUTURE_RISK_PREDICTIONS_PATH, "future_risk")
     summary = pd.DataFrame(rows)
@@ -81,6 +85,14 @@ def run_refresh(skip_weather: bool = False) -> pd.DataFrame:
     _run_step("module1_preprocessing", [PYTHON, "-m", "src.preprocessing.module1_preprocessing"])
     _run_step("module2_preprocessing", [PYTHON, "-m", "src.preprocessing.module2_preprocessing"])
     _run_step("module1_forecast_future", [PYTHON, "-m", "src.module1_forecasting.forecast_future"])
+    _run_step(
+        "module1_nowcast",
+        [PYTHON, "-m", "src.module1_forecasting.forecast_future", "--nowcast"],
+    )
+    _run_step(
+        "module1_nowcast_reconcile",
+        [PYTHON, "-m", "src.module1_forecasting.nowcast_tracking"],
+    )
     _run_step("module2_live_scoring", [PYTHON, "-m", "src.module2_classification.live_scoring"])
     _run_step(
         "module2_forecast_future_risk",

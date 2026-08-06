@@ -1,0 +1,4 @@
+District,existing_sarima_order,existing_sarima_seasonal_order,existing_sarima_transform,existing_sarima_validation_mase,existing_sarima_holdout_mase,stl_arima_order,stl_arima_transform,stl_arima_validation_mase,stl_wins_on_validation,stl_arima_holdout_mase,stl_confirmed_on_holdout
+Colombo,"(1, 1, 1)","(0, 0, 0, 52)",log1p,1.6268529281356776,0.6532630106007116,"(0, 1, 2)",raw,1.6805659177849661,False,,False
+Gampaha,"(2, 1, 0)","(0, 0, 0, 52)",raw,1.0547031700485603,0.735804281695634,"(0, 1, 1)",log1p,1.1817006463365798,False,,False
+Kurunegala,"(1, 1, 1)","(0, 0, 0, 52)",log1p,0.8561816109045319,0.3792080838306196,"(2, 1, 2)",log1p,0.9994131014840171,False,,False

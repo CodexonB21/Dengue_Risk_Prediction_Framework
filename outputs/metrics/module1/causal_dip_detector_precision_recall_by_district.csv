@@ -1,0 +1,26 @@
+District,n_causal_flagged,tp,fp,precision
+Ampara,1,0,1,0.0
+Anuradhapura,1,1,0,1.0
+Badulla,2,1,1,0.5
+Batticaloa,1,1,0,1.0
+Colombo,13,6,7,0.4615
+Galle,1,1,0,1.0
+Gampaha,10,3,7,0.3
+Hambantota,1,0,1,0.0
+Jaffna,4,2,2,0.5
+Kalutara,8,5,3,0.625
+Kandy,7,5,2,0.7143
+Kegalle,1,0,1,0.0
+Kilinochchi,3,0,3,0.0
+Kurunegala,4,0,4,0.0
+Mannar,2,0,2,0.0
+Matale,3,1,2,0.3333
+Matara,2,2,0,1.0
+Monaragala,2,0,2,0.0
+Mullaitivu,1,0,1,0.0
+Nuwara Eliya,1,0,1,0.0
+Polonnaruwa,1,0,1,0.0
+Puttalam,3,2,1,0.6667
+Ratnapura,1,1,0,1.0
+Trincomalee,2,2,0,1.0
+Vavuniya,2,0,2,0.0

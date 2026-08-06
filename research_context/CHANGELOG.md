@@ -6,6 +6,463 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-08-06 - Module 1: defense entries drafted for the remediation arc
+
+### Module
+Module 1
+
+### Change
+Added five Q&A-style entries to `research_context/QUESTIONS_FOR_DEFENSE.md`: (1) why
+Stage 2 stays pooled rather than per-district, backed by the M1-021/Decision 045 ablation
+numbers; (2) the reporting-anomaly leakage pathway found and verified not to have
+inflated Decision 030 (M1-019/Decision 043); (3) why the winning hyperparameter-search
+candidate was rejected after failing the holdout check (M1-020/Decision 044); (4) the
+vintage-ensembled SARIMA nowcast improvement and why it is evidence-backed
+(M1-015/016/Decision 039/040); (5) a synthesis entry answering "is accuracy actually
+better now?" that distinguishes the unchanged holdout MASE (0.374) from the accepted
+nowcast improvement, so the two evidence tiers are not conflated under questioning.
+
+### Reason
+User asked to draft defense material from the just-consolidated remediation arc summary,
+per the Living Documentation Rule's "Defense explanation improved" mapping.
+
+### Impact
+Documentation only - no code, model, or default changed.
+
+### Status
+Reference material - extend if new findings from this arc surface during further review
+or if a supervisor/evaluator raises a related question not yet covered.
+
+---
+
+## 2026-08-06 - Module 1: remediation arc consolidated (M1-007–M1-021 summary)
+
+### Module
+Module 1
+
+### Change
+Added a consolidated "Investigation Summary" section to `module_1_forecasting/
+MODULE_CONTEXT.md` (placed after the Supervisor Flag/Open Questions section) covering
+the full M1-007–M1-021 arc: what was accepted (Decisions 040/041, and 034 from the
+earlier phase), what was rejected (Decisions 033/036/037/038/042/043/044/045, plus one
+ad hoc null check), what was learned diagnostically without being a fix (Decisions
+035/043, the Colombo Wk14/Wk24-25 data-quality ceiling), and what remains open but not
+built (Option B uncertainty flagging, targeted per-district Stage 2 for 3 districts).
+
+### Reason
+User asked to stop and consolidate findings after a run of 15 experiments across three
+sessions - this is a documentation task (per the Living Documentation Rule), not a new
+finding, so it belongs here rather than as another experiment entry.
+
+### Impact
+Documentation only - no code, model, or default changed. The bottom line recorded:
+production holdout median MASE is unchanged at 0.374; the one deployed improvement is
+the nowcast (Decision 040), not the backtested pipeline itself.
+
+### Status
+Reference summary - update it if a future session reopens or extends this arc.
+
+---
+
+## 2026-08-06 - Module 1: per-district Stage 2 rejected - pooling confirmed by direct ablation (M1-021)
+
+### Module
+Module 1
+
+### Change
+Tested training 25 separate per-district Stage 2 models instead of the current pooled
+model (Decision 002/014), holding hyperparameters, feature set (minus the now-redundant
+`District` categorical), fold structure, and evaluation method fixed. A three-tier data-
+sufficiency rule (no-op below 104 trainable rows, fixed tree count 104-207, early
+stopping at 208+) protected against fitting on token amounts of per-district data.
+**Decisively worse**: validation-aggregate median MASE 0.7473 vs. pooled's 0.5821
+(+28.4%), only 1/13 folds and 4/25 districts improved - no holdout check performed
+(safeguard not cleared). The 4 districts that improved (`Monaragala`, `Mannar`,
+`Vavuniya`, `Matale`) are already-flagged cases where pooled Stage 2 underperforms.
+
+### Reason
+Following up on the user's request to try a genuinely structural change (not another
+tuning pass) after every recent tuning ablation returned null - this directly tests, for
+the first time with real evidence, the pooling decision itself.
+
+### Impact
+New, additive functions `train_and_predict_fold_per_district()`/
+`train_and_predict_holdout_per_district()` in `compensation_model.py` (existing pooled
+functions untouched). Fixed a latent bug in `_prepare_xy()` (only categorical-encodes
+`District` when present in `feature_columns` - harmless until this experiment needed a
+feature set without it). New `scripts/evaluate_per_district_stage2.py`. No production
+default changed.
+
+### Status
+Rejected. Stage 2 remains pooled - directly confirms Decision 002/014's original
+reasoning with ablation evidence.
+
+---
+
+## 2026-08-06 - Module 1: XGBoost hyperparameter search rejected - winner failed the holdout check (M1-020)
+
+### Module
+Module 1
+
+### Change
+Ran a 40-candidate randomized search over Stage 2's XGBoost hyperparameters
+(`max_depth, learning_rate, subsample, colsample_bytree, reg_lambda, min_child_weight`,
+fixed and never tuned since the earliest implementation), scored via
+`combine.compute_district_fold_metrics()` on walk-forward folds 2-14 only - the exact
+function/metric production already publishes (verified: candidate 0, the production
+defaults, reproduced the published 0.5821 validation-aggregate median MASE exactly).
+5/39 candidates cleared a pre-registered overfitting safeguard (beat baseline AND a
+majority of folds AND a majority of districts); the best reached 0.5659 (-2.8%). **The
+one-time holdout check on that single candidate showed a regression**: 0.3874 vs.
+production's 0.3741 (+3.6%) - rejected. No other qualifying candidate was checked against
+holdout, per the pre-registered rule.
+
+### Reason
+Following up on the user's request to scope and then run a proper walk-forward-validated
+hyperparameter search - the genuinely untried lever after every other Stage 1/2 tuning
+attempt this session returned null.
+
+### Impact
+New `scripts/search_stage2_hyperparameters.py`. Additive, backward-compatible `xgb_params`
+override on `train_and_predict_fold()`/`train_and_predict_holdout()`/
+`_fit_with_early_stopping()` (`compensation_model.py`) - default `None` reproduces
+production behavior exactly. No production default changed.
+
+### Status
+Rejected. Production `XGB_BASE_PARAMS` unchanged.
+
+---
+
+## 2026-08-06 - Module 1: reporting-guard leakage pathway audited (not material); real-time catch-up adjustment ruled out (M1-019)
+
+### Module
+Module 1
+
+### Change
+While scoping the reporting catch-up spike problem (Colombo/Gampaha 2026 Wk24-25),
+found that the retrospective reporting-anomaly detector (`flag_reporting_anomalies()`,
+Decision 026/028) needs the rebound week's own case count to confirm a dip, so features/
+masks derived from it are subtly informed by the very week they help predict - a real
+leakage pathway. Two follow-up checks:
+
+1. **Materiality check**: built a leakage-closed variant (new
+   `reporting_anomalies.flag_reporting_dip_causal()`, no rebound confirmation) and
+   re-ran the full Stage 2 + combine pipeline (`scripts/evaluate_reporting_leakage_fix.py`,
+   new `assemble_stage2_table()`/`run_stage2_pipeline()` path overrides). Result: median
+   holdout MASE 0.3655 (leakage-closed) vs. 0.3741 (production) - **not worse, if
+   anything slightly better**. Decision 030's promotion stands; no retraction needed.
+2. **Real-time usability check**: characterized the causal detector's precision/recall
+   against the retrospective flag (`scripts/evaluate_causal_dip_detector.py`) - 100%
+   recall, only 42.9% precision (worse for `Colombo`/`Gampaha`: 46.2%/30.0%). **Rules
+   out** building any real-time point-forecast adjustment for catch-up spikes - more
+   than half of live flags would be false alarms on a genuine decline.
+
+### Reason
+Following up on the reporting-catch-up-spike scoping plan's own recommendation: verify
+research integrity (the leakage pathway) and get real numbers on real-time detector
+viability before building anything.
+
+### Impact
+New `flag_reporting_dip_causal()`, `scripts/evaluate_causal_dip_detector.py`,
+`scripts/evaluate_reporting_leakage_fix.py`. Additive path-override params on
+`compensation_model.assemble_stage2_table()`/`run_stage2_pipeline()` (production
+defaults unchanged). No production artifact or default path changed - all new outputs
+use isolated `_causal_safe` suffixes.
+
+### Status
+Leakage documented, verified not material (no action needed). Real-time point-forecast
+adjustment (Option A) rejected. Uncertainty-flagging alternative (Option B) remains open,
+not built.
+
+---
+
+## 2026-08-05 - Module 1: retroactive nowcast spot-check scaled up; robust aggregation tested, not promoted (M1-018)
+
+### Module
+Module 1
+
+### Change
+Scaled the retroactive nowcast spot-check from 175 to 600 (district, week) pairs (25
+districts x last 24 known weeks) and added selectable Stage 1 ensemble aggregation rules
+(`aggregation="mean"|"median"|"trimmed_mean"`) to test whether a robust-to-outliers
+combination reduces the individual-week noise seen in the smaller sample.
+`forecast_future._ensembled_next_week_sarima()` was split into
+`_collect_vintage_forecasts()` (fitting) and `_aggregate_vintage_forecasts()`
+(aggregation) so comparing rules doesn't require refitting per rule;
+`forecast_district()` gained a `precomputed_sarima_forecast` override for the same
+reason.
+
+**Results**: the bigger sample confirms a real but more modest improvement (median
+absolute error -10%, mean -10%, individual-week win rate 56.8% - not near-universal, and
+lower than the smaller sample's noisier 59%, consistent with that being sample noise, not
+a weakening effect). Median and trimmed-mean do NOT meaningfully beat plain mean (a ~1%
+difference, and mathematically identical to each other at `ensemble_window=4`) - the
+remaining per-week noise looks like genuine forecast uncertainty, not an artifact of
+vintage combination. `Mannar` is a clean, complete loser regardless of aggregation
+(0/24 weeks) - a distinct, already-diagnosed Stage 1 issue (Decision 017).
+
+### Reason
+User asked whether the noisier-than-expected first spot-check could be reduced by (a) a
+bigger sample and (b) a more robust ensemble aggregation.
+
+### Impact
+Modified `forecast_future.py` (new aggregation infrastructure, `aggregation="mean"`
+remains the only production default), `scripts/backtest_nowcast_ensemble.py` (rewritten
+to compare 3 aggregation rules efficiently). No production default changed.
+
+### Status
+Accepted as evidence; robust aggregation not promoted (no clear benefit found).
+
+---
+
+## 2026-08-05 - Module 1: prospective nowcast accuracy tracking added (M1-017)
+
+### Module
+Module 1
+
+### Change
+New `src/module1_forecasting/nowcast_tracking.py`: `append_to_nowcast_log()` (wired into
+`run_nowcast()`, on by default) permanently logs every nowcast prediction
+(`data/processed/module1/nowcast_prediction_log.csv`); `reconcile_nowcast_log()` (new
+`module1_nowcast_reconcile` step in `scripts/refresh_dashboard_data.py`) joins the log
+against real case counts as they arrive, writing
+`outputs/metrics/module1/nowcast_prospective_accuracy.csv`. Seeded with the already-
+generated 2026 Wk26 nowcast (25 rows); first reconciliation correctly shows 0/25 resolved.
+
+### Reason
+M1-016's production change (vintage-ensembled SARIMA) has no existing evidence source that
+can check its real-world accuracy - every other Module 1 metric scores against data
+already in the dataset. This builds the only honest way to get that evidence: log now,
+resolve as real weeks pass.
+
+### Impact
+New file `nowcast_tracking.py`; modified `forecast_future.py` (`run_nowcast()` now logs by
+default, new `--no-log` CLI flag), `scripts/refresh_dashboard_data.py` (new step), `src/config.py`
+(two new path constants). Pure infrastructure - no existing model or evaluation changed.
+
+### Status
+Accepted. `nowcast_prospective_accuracy.csv` will grow additively as real weeks resolve;
+check it periodically rather than assuming silence means nothing to report.
+
+---
+
+## 2026-08-05 - Module 1: vintage-ensembled SARIMA promoted to the production nowcast (M1-016)
+
+### Module
+Module 1
+
+### Change
+`forecast_future.run_nowcast()` (the production "predict next week using all data up to
+now" pathway) now defaults to the vintage-ensembled Stage 1 prediction validated at full
+25-district scale in M1-015/Decision 039: instead of one SARIMA fit, it averages, in
+transformed space, `MODULE1_NOWCAST_ENSEMBLE_WINDOW` (4) independent fits on the history
+trimmed back by 0-3 additional weeks, each extended forward to the same next-week target
+(new `forecast_future._ensembled_next_week_sarima()`). Each vintage is refit fresh (a
+one-off nowcast call has no persisted state to reuse, unlike the rolling evaluator) -
+`ensemble_window` fits instead of 1, still cheap. `forecast_district()`/
+`run_future_forecast()` gained an `ensemble_window` parameter defaulting to `None`
+(unaffected 8-week recursive path); only `run_nowcast()` defaults it on. New
+`n_sarima_vintages` output column for transparency. Verified backward-compatible
+(`ensemble_window=None` reproduces the old single-fit numbers exactly). Production
+`nowcast_next_week.csv` regenerated for all 25 districts.
+
+### Reason
+User asked to bring the M1-015 rolling-evaluation improvement into the actual production
+nowcast, after confirming it does not change the core Stage 1 -> Stage 2 architecture.
+
+### Impact
+Modified `forecast_future.py`, `src/config.py` (new `MODULE1_NOWCAST_ENSEMBLE_WINDOW`
+constant). Does NOT touch Stage 2, the additive combination formula, `run_future_forecast()`'s
+default 8-week path, or the validated walk-forward/holdout pipeline (`main.py`,
+`combine.py`) - the headline holdout MASE numbers are unaffected. CLI: `--nowcast
+[--ensemble-window N]`.
+
+### Status
+Accepted.
+
+---
+
+## 2026-08-04 - Module 1: vintage-ensembled SARIMA accepted (M1-015); less-frequent refit rejected (M1-014)
+
+### Module
+Module 1
+
+### Change
+Two more candidate fixes for the weekly-SARIMA-refit instability found in M1-011/Decision
+035, tested after warm-starting (M1-013) was rejected:
+
+1. **M1-014 (Decision 038, rejected):** refitting every 4 weeks instead of weekly, using
+   `SARIMAXResults.append(refit=False)` to incorporate new data between refits without
+   re-optimizing. ~4x cheaper but no meaningful stability improvement on a cheap sample -
+   not run at full scale.
+2. **M1-015 (Decision 039, ACCEPTED):** averaging each week's fresh SARIMA forecast with
+   the last 3 weeks' own independently-fitted models' forecasts for the same target week
+   (`rolling_one_step._vintage_ensemble_step()`, cheap `.forecast()` extension, no extra
+   refitting cost). Full 25-district test: districts with Stage 2 helping in rolling mode
+   rose from 10/25 to **24/25**; rolling sMAPE improved for 22/25 districts (median 58.8%
+   → 56.8%, several districts improving 10-15%). **This is the first broad accuracy
+   improvement found across the entire M1-007 through M1-015 investigation arc.**
+
+### Reason
+User asked to try the two remaining candidates flagged after M1-013's rejection.
+
+### Impact
+New: `rolling_one_step._low_freq_refit_step()`, `_vintage_ensemble_step()` (both additive,
+off by default). New scripts: `scripts/run_rolling_one_step_ensemble_parallel.py`. No
+production Stage 1/2 default path changed - both evaluated via `_ensemble`/isolated
+artifact paths. **Recommended follow-up** (not implemented this session): extend
+`forecast_future.run_nowcast()` to use the same vintage-ensemble approach, since the
+production nowcast currently uses a single SARIMA refit and does not yet benefit from
+this finding.
+
+### Status
+M1-014: Rejected. M1-015: **Accepted** - the strongest positive result across this whole
+remediation effort, pending a decision on rolling it into the production nowcast path.
+
+---
+
+## 2026-08-04 - Module 1: SARIMA warm-starting tested and rejected (M1-013)
+
+### Module
+Module 1
+
+### Change
+Tested whether seeding each week's rolling SARIMAX refit with the previous week's
+converged parameters (`start_params`) stabilizes weekly-refit predictions - the leading
+untried candidate flagged after M1-011 root-caused the rolling-mode DM gap to weekly
+SARIMA refit instability. Added backward-compatible `start_params`/`return_params`
+parameters to `baseline_sarima.fit_and_forecast()` and a `warm_start` parameter to
+`rolling_one_step.rolling_one_step_district()` (both off/unset by default - no existing
+caller's behavior changes). A cheap 60-week/2-district check, run before any full-scale
+evaluation, found warm-started and cold-started predictions are virtually identical while
+warm-started fits take 5-10x longer per fit - fully falsifying the hypothesis without
+needing the originally-planned full 25-district run (which was therefore skipped, a
+disclosed scope decision, not a silent gap).
+
+### Reason
+User asked to build and test the warm-start idea proposed as the most evidence-backed
+lever for improving next-week prediction accuracy, after being told upfront it was
+untested and not guaranteed to work.
+
+### Impact
+Modified `baseline_sarima.py`, `rolling_one_step.py` (both additive/backward-compatible).
+No production code path, model, or default artifact changed - `warm_start=False` remains
+the only path used anywhere by default.
+
+### Status
+Rejected. Open Question #17 (weekly SARIMA refit instability) remains open; untried
+candidates are a less frequent refit cadence or cross-refit smoothing/ensembling.
+
+---
+
+## 2026-08-04 - Module 1 follow-up: rolling-DM gap root-caused; STL+ARIMA pilot rejected
+
+### Module
+Module 1
+
+### Change
+Two follow-up investigations from the prior remediation pass (Decisions 035-036,
+`EXPERIMENT_LOG.md` M1-011/M1-012):
+
+1. **M1-011 (Decision 035):** root-caused Open Question #17 (why rolling-mode Stage 2
+   benefit is far weaker than the holdout backtest's). New `scripts/
+   diagnose_rolling_dm_gap.py` re-scored every rolling-evaluated week with the walk-
+   forward fold model that actually owned that week (via `compensation_model.
+   compute_fold_boundaries()`), using new `sarima_prediction_overrides`/`model_resolver`
+   parameters added to `rolling_one_step.rolling_one_step_district()` (pure
+   recombination, no retraining). **Result: this made things worse, not better**
+   (Stage-2-helps districts 10/25 → 8/25; DM-significant 2/25 → 0/25) - ruling out "the
+   frozen model generalizes poorly" as the cause. Instead, weekly-refit and fold-refit
+   SARIMA predictions for the same historical weeks are barely correlated (mean r=0.13),
+   and this drift correlates with rolling-mode error (mean r=0.26). **Conclusion: weekly
+   SARIMA refit instability itself is the dominant driver**, not Stage 2. A more stable
+   refit cadence is flagged as future work, not implemented this session.
+2. **M1-012 (Decision 036):** piloted STL + ARIMA (`src/module1_forecasting/
+   stl_arima.py`, using `statsmodels.tsa.forecasting.stl.STLForecast`) on 3 non-seasonal
+   districts (`Colombo`, `Gampaha`, `Kurunegala`), targeting the 18/25-non-seasonal-
+   SARIMA finding. **Rejected**: 0/3 districts beat their existing SARIMA on validation
+   MASE; a visual decomposition check confirmed this is a genuine result, not an
+   implementation artifact. No wider rollout planned.
+
+Per the user's explicit framing before this work began, neither investigation was
+expected or promised to improve accuracy - both are reported honestly regardless of
+outcome, consistent with the project's established practice.
+
+### Reason
+User asked to run the remaining candidate investigations flagged at the end of the prior
+session and see whether they produced improvements.
+
+### Impact
+New: `scripts/diagnose_rolling_dm_gap.py`, `scripts/pilot_stl_arima.py`,
+`src/module1_forecasting/stl_arima.py`. Modified: `rolling_one_step.py` (new reusable
+`sarima_prediction_overrides`/`model_resolver` parameters, default behavior unchanged).
+No production Stage 1/2 config, model, or default artifact changed.
+
+### Status
+M1-011: accepted as a documented root cause (not a fix). M1-012: rejected.
+
+---
+
+## 2026-08-04 - Module 1 remediation pass: next-week nowcast + three Stage 2 ablations + an important rolling-DM caveat
+
+### Module
+Module 1
+
+### Change
+Four related pieces of work addressing a prior review's critique of Module 1, executed as
+a phased plan (`Decisions 031-034`, `EXPERIMENT_LOG.md` M1-007 through M1-010):
+
+1. **M1-010 (Decision 031):** `forecast_future.run_nowcast()` - genuine `horizon=1`
+   "predict next week using all data up to now" production output
+   (`nowcast_next_week.csv`), wired into `refresh_dashboard_data.py`. Both this and
+   `future_forecast.csv` now carry an `evidence_tier` column. Found and fixed a latent bug:
+   `forecast_district()` had never been updated for the M1-006B reporting-delay features
+   added to production `FEATURE_COLUMNS` (Decision 030), so `run_future_forecast()` had
+   been raising `KeyError` since that 2026-07-29 promotion - `future_forecast.csv` was
+   stale and regenerated with the fix.
+2. **M1-008 (Decision 032):** first full 25-district rolling one-step `--scope all`
+   backtest (new `scripts/run_rolling_one_step_parallel.py`, ~43 min parallelized vs. a
+   projected ~3.6h serial) plus a new higher-sample Diebold-Mariano test
+   (`rolling_one_step.compute_dm_results_rolling()`). **Important finding, flagged not
+   spun**: only 2/25 districts reach significance (both showing Stage 2 significantly
+   worse), and only 10/25 show Stage 2 helping at all in this deployment-faithful mode -
+   markedly weaker than the holdout backtest's 23/25-improve headline. Identified a real
+   methodological reason this is NOT a simple bigger-n replication (fold-refit vs.
+   weekly-refit SARIMA input-distribution mismatch against the frozen final model) -
+   flagged as new Open Question #17, the module's current highest priority.
+3. **M1-007 (Decision 033):** `residual_lag_3/4` + causal EWMA Stage 2 feature extension,
+   targeting the 23/25-districts-fail-Ljung-Box gap. **Rejected**: validation MASE
+   improved but holdout MASE regressed (0.374 → 0.395) - kept as an ablation switch only.
+4. **M1-009 (Decision 034):** per-district Stage 2 shrinkage weight
+   (`residual_transform.combine_stage2_forecast(weight=...)`, `shrinkage.py`), targeting
+   `Kilinochchi`/`Mannar`'s holdout regression. **Correctly declined to "fix" either
+   target district** (their problem is fold-specific, not validation-visible); instead
+   found a small, holdout-confirmed win for two different districts (`Monaragala`,
+   `Vavuniya`, ~1.6% each). Available via `apply_shrinkage=True`, not promoted to
+   default production given the small magnitude.
+
+STL+SARIMA (targeting the 18/25-non-seasonal-districts finding) remains explicitly
+deferred a third time - flagged as the largest remaining lift, not attempted this session.
+
+### Reason
+User requested the critique points from a prior review be addressed, plus a genuine
+production "predict next week" capability.
+
+### Impact
+New files: `scripts/run_rolling_one_step_parallel.py`, `scripts/m1_007_residual_lag_extension.py`,
+`src/module1_forecasting/shrinkage.py`. Modified: `forecast_future.py`, `rolling_one_step.py`,
+`compensation_model.py`, `combine.py`, `residual_transform.py`, `config.py`,
+`refresh_dashboard_data.py`. Regenerated: `future_forecast.csv` (bugfix), new
+`nowcast_next_week.csv`, `rolling_one_step_predictions.csv`/`_metrics.csv`, new
+`rolling_one_step_dm_test.csv`. Production Stage 1/2 defaults **unchanged** - every
+ablation writes to isolated `feature_variant`-suffixed paths.
+
+### Status
+Accepted (M1-010, M1-008 as evidence/capability), Rejected (M1-007), Partial adopt (M1-009,
+not wired into default production path).
+
+---
+
 ## 2026-07-31 - Presentation outlines: presentation-safe revision (all modules)
 
 ### Module

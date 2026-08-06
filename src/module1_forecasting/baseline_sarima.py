@@ -229,16 +229,36 @@ def fit_and_forecast(
     seasonal_order: tuple[int, int, int, int],
     use_log1p: bool,
     context: str = "",
-) -> np.ndarray:
+    *,
+    start_params: np.ndarray | None = None,
+    return_params: bool = False,
+) -> np.ndarray | tuple[np.ndarray, np.ndarray | None]:
     """Fit a fixed-order SARIMAX on `train_series` and forecast `n_periods`
     steps ahead, returning predictions back on the RAW case-count scale.
 
     Never raises: any fit/forecast failure is logged with `context` and
     returns an all-`NaN` array so the caller can continue with other
     folds/districts rather than aborting the whole run (decision 3).
+
+    `start_params`/`return_params` (added for the M1-013 warm-start ablation,
+    `rolling_one_step.py`'s `warm_start` option) are optional and additive:
+    with both left at their defaults, behavior and return type are byte-
+    identical to before this change. `start_params`, if given, is passed to
+    `SARIMAX.fit()` as the optimizer's starting point instead of its own
+    default initialization - valid because `order`/`seasonal_order` (and
+    therefore the parameter vector's length) are fixed for the life of a
+    walk-forward/rolling loop; only `train_series` grows. `return_params=True`
+    changes the return value to `(forecast, fitted_params_or_None)` so a
+    caller can chain one fit's converged parameters into the next fit's
+    `start_params` - `fitted_params` is `None` on any failure path (the
+    caller should then cold-start the next fit rather than propagate a stale
+    or nonexistent vector).
     """
     values = train_series.to_numpy(dtype=float)
     fit_values = np.log1p(values) if use_log1p else values
+
+    def _done(forecast_array: np.ndarray, params: np.ndarray | None):
+        return (forecast_array, params) if return_params else forecast_array
 
     try:
         with warnings.catch_warnings():
@@ -250,7 +270,7 @@ def fit_and_forecast(
                 enforce_stationarity=False,
                 enforce_invertibility=False,
             )
-            fitted = model.fit(disp=False)
+            fitted = model.fit(disp=False, start_params=start_params)
             if _has_explosive_ar_root(fitted):
                 logger.warning(
                     "SARIMAX fit for %s (order=%s, seasonal_order=%s, "
@@ -264,8 +284,9 @@ def fit_and_forecast(
                     seasonal_order,
                     use_log1p,
                 )
-                return np.full(n_periods, np.nan)
+                return _done(np.full(n_periods, np.nan), None)
             forecast = fitted.forecast(steps=n_periods)
+            fitted_params = np.asarray(fitted.params, dtype=float)
     except Exception:
         logger.warning(
             "SARIMAX fit/forecast failed for %s (order=%s, seasonal_order=%s, "
@@ -276,7 +297,7 @@ def fit_and_forecast(
             use_log1p,
             exc_info=True,
         )
-        return np.full(n_periods, np.nan)
+        return _done(np.full(n_periods, np.nan), None)
 
     forecast = np.asarray(forecast, dtype=float)
     if use_log1p:
@@ -286,7 +307,7 @@ def fit_and_forecast(
     # transformed-space forecast can dip below log1p(0) == 0, so this floor
     # is applied unconditionally rather than only for the raw candidate.
     forecast = np.clip(forecast, a_min=0.0, a_max=None)
-    return forecast
+    return _done(forecast, fitted_params)
 
 
 # ---------------------------------------------------------------------------
