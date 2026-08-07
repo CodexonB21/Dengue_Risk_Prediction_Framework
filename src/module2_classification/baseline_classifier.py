@@ -62,7 +62,7 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
@@ -122,12 +122,29 @@ HOLDOUT_YEARS = DEFAULT_HOLDOUT_YEARS
 MIN_TRAIN_YEARS = MODULE2_MIN_TRAIN_YEARS
 N_FOLDS = 13  # Verified empirically (Decision 021) for MIN_TRAIN_YEARS=4.
 
-# Fixed, conservative hyperparameters - not tuned per fold (see module docstring).
+# Tuned via Optuna (50 trials, 13-fold median PR-AUC objective) and
+# holdout-gated in scripts/m2_013_stage1_rf_refresh.py (Decision 047).
+# Adopted: holdout PR-AUC improved 0.4129 -> 0.4228 (+0.0099), holdout ROC-AUC
+# 0.883 -> 0.905, holdout Brier 0.028 -> 0.018. Random Forest became Stage
+# 1's official model via Decision 025's label re-estimation but had never
+# itself been tuned - only XGBoost went through this treatment (Decision
+# 023), for an architecture no longer selected. `class_weight="balanced"`
+# was held fixed during the search (kept separate from the also-tested,
+# rejected `"balanced_subsample"` variant - see M2-013). Previous
+# hand-picked defaults, kept here for reference:
+# n_estimators=300, max_depth=8, min_samples_leaf=5.
 RF_PARAMS = dict(
-    n_estimators=300, max_depth=8, min_samples_leaf=5,
-    class_weight="balanced", random_state=42, n_jobs=-1,
+    n_estimators=472, max_depth=16, min_samples_leaf=11, min_samples_split=18,
+    max_features="sqrt", class_weight="balanced", random_state=42, n_jobs=-1,
 )
 LR_PARAMS = dict(class_weight="balanced", max_iter=2000, random_state=42)
+# M2-013: Gradient Boosting was listed as a "possible Stage 1 model" in
+# MODULE_CONTEXT.md but never benchmarked (Decision 021 only ran LR/RF/
+# XGBoost). Conservative defaults mirroring RF_PARAMS's philosophy - not
+# tuned. No class_weight param exists on GradientBoostingClassifier -
+# imbalance handled via a fold-fresh sample_weight instead (see
+# fit_and_predict's docstring).
+GB_PARAMS = dict(n_estimators=300, max_depth=3, learning_rate=0.05, min_samples_leaf=5, random_state=42)
 # Tuned via Optuna (60 trials, 13-fold median PR-AUC objective) and
 # holdout-gated in scripts/tune_stage1_xgboost.py (Decision 023). Adopted:
 # holdout PR-AUC improved 0.5380 -> 0.5577 (+0.0198) and holdout ROC-AUC
@@ -279,7 +296,7 @@ def build_sklearn_preprocessor(
 
 def fit_and_predict(
     model_name: str, train_df: pd.DataFrame, val_df: pd.DataFrame, feature_columns: list[str] | None = None,
-    xgb_params: dict | None = None,
+    xgb_params: dict | None = None, model_params: dict | None = None,
 ):
     """Fit `model_name` on `train_df` (must already be filtered to rows with
     a defined label) and predict probabilities for `val_df`.
@@ -294,6 +311,22 @@ def fit_and_predict(
     candidate hyperparameter sets. `scale_pos_weight` is still always
     computed fresh from the fold's own training labels, never overridable -
     it is a leakage-safety property of the fold, not a tunable hyperparameter.
+
+    `model_params` (`random_forest`/`logistic_regression` only) overrides
+    `RF_PARAMS`/`LR_PARAMS` when given - same additive, backward-compatible
+    pattern as `xgb_params` (default `None` reproduces production exactly),
+    added for `scripts/m2_013_stage1_rf_refresh.py`'s RF hyperparameter/
+    class-weight search (M2-013).
+
+    `model_name="gradient_boosting"` (new, M2-013 - NOT in `MODEL_NAMES`,
+    so it never participates in `run_stage1_pipeline()`'s official-model
+    selection unless explicitly added there) uses the same sklearn
+    preprocessing pipeline as RF/LR. `sklearn.ensemble.GradientBoostingClassifier`
+    has no `class_weight` parameter, unlike RF/LR - imbalance is handled via
+    a `sample_weight` computed fresh from the fold's OWN training labels
+    (mirrors XGBoost's `scale_pos_weight`: positive-class rows get
+    `n_neg/n_pos`, negative-class rows get `1.0`), never overridable, for
+    the same leakage-safety reason.
 
     Returns `(predicted_probability: np.ndarray, fitted_model)`.
     """
@@ -326,14 +359,23 @@ def fit_and_predict(
         numeric_feature_columns=numeric_cols,
     )
     if model_name == "logistic_regression":
-        clf = LogisticRegression(**LR_PARAMS)
+        clf = LogisticRegression(**(model_params or LR_PARAMS))
     elif model_name == "random_forest":
-        clf = RandomForestClassifier(**RF_PARAMS)
+        clf = RandomForestClassifier(**(model_params or RF_PARAMS))
+    elif model_name == "gradient_boosting":
+        clf = GradientBoostingClassifier(**(model_params or GB_PARAMS))
     else:
         raise ValueError(f"Unknown model_name: {model_name!r}")
 
     pipeline = Pipeline([("preprocess", preprocessor), ("clf", clf)])
-    pipeline.fit(X_train, y_train)
+    if model_name == "gradient_boosting":
+        n_pos = int(y_train.sum())
+        n_neg = len(y_train) - n_pos
+        pos_weight = (n_neg / n_pos) if n_pos > 0 else 1.0
+        sample_weight = np.where(y_train == 1, pos_weight, 1.0)
+        pipeline.fit(X_train, y_train, clf__sample_weight=sample_weight)
+    else:
+        pipeline.fit(X_train, y_train)
     proba = pipeline.predict_proba(X_val)[:, 1]
     return proba, pipeline
 

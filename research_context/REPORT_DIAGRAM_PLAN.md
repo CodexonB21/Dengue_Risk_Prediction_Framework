@@ -1,5 +1,29 @@
 # Team Codexon FYP Report Diagram Plan
 
+**Updated 2026-08-06:** All Module 2 references to "isotonic" as the official Stage 2
+calibrator and to τ=0.14/high=0.35 thresholds were corrected to Platt scaling and
+τ=0.10/high=0.50 after Decision 047/M2-013 (Random Forest hyperparameter tuning changed
+Stage 1's probability distribution enough to flip Stage 2's architecture selection).
+Figure 7.4's generator script was also fixed to label the calibrated curve dynamically
+from the data rather than a hardcoded name, so this cannot silently go stale again.
+
+**Updated 2026-08-07 (poster-prep audit):** the 2026-08-06 correction above updated this
+plan's *text* but the actual Figure 5.1/5.4 diagram files were never regenerated — both
+still rendered "Isotonic Regression" until now. Fixed and regenerated (Isotonic → Platt
+scaling, "Random Forest" → "Random Forest (tuned)"): `figure_5_1_system_architecture.png`
+(via `generate_figure_5_1_architecture.py`) and `figure_5_4_module2_architecture.png`/
+`.drawio` (new companion generator `generate_figure_5_4_module2_architecture.py`, so the
+PNG can be regenerated after any future drawio text edit instead of drifting again).
+Figure 5.6 was also stale on an unrelated axis — it predated the 2026-08-07 dashboard
+redesign (Decision — 4-page multipage app) and showed only two evidence tiers, missing
+the Prospective Tracking tier added by Decisions 041/048. Corrected: dashboard views now
+list the actual four pages (Overview / Research Evidence / Operational Monitoring /
+Prospective Tracking) and evidence tiers now show three (Research Evidence / Operational
+Prototype / Prospective Tracking). New companion generator:
+`generate_figure_5_6_integration_dashboard.py`. Figures 5.3 (Module 1) and 5.5 (Module 3)
+were checked against their current `MODULE_CONTEXT.md` files and found already accurate —
+not touched.
+
 ## Purpose
 
 This file tracks diagrams, figures, charts, and tables planned for the final report.
@@ -98,7 +122,7 @@ Status: Planned (caption/text ready)
 
 Purpose:
 
-Show epidemic-threshold labelling → Random Forest baseline probability → isotonic calibration → alert flag and risk tier.
+Show epidemic-threshold labelling → tuned Random Forest baseline probability → Platt-scaling calibration → alert flag and risk tier.
 
 Caption: Figure 4.3: Two-stage Module 2 workflow for outbreak risk classification.
 
@@ -177,7 +201,8 @@ Notes:
 
 - Must show shared vs module-specific preprocessing, not one undifferentiated preprocessing block.
 - Modules are largely parallel peers; optional dashed M1→M2 for operational forward only.
-- Correct models: M1 SARIMA→XGBoost; M2 RF→isotonic; M3 KDE/Moran→RF α=0.05.
+- Correct models: M1 SARIMA→XGBoost; M2 tuned RF→Platt scaling (Decision 047 — was isotonic before Stage 1 tuning); M3 KDE/Moran→RF α=0.05.
+- **Verified current (2026-08-07)**: PNG regenerated from `generate_figure_5_1_architecture.py` — Module 2 column now reads "Random Forest (tuned)" → "Platt scaling".
 
 ---
 
@@ -256,20 +281,24 @@ Show Module 2 design flow in the same four-column layout as Figure 5.3 (Inputs |
 Caption:
 
 ```text
-Figure 5.4: High-level architecture of Module 2 — Hybrid Outbreak Risk Classification (Random Forest baseline → isotonic probability compensation → alert / risk-tier outputs)
+Figure 5.4: High-level architecture of Module 2 — Hybrid Outbreak Risk Classification (tuned Random Forest baseline → Platt-scaling probability compensation → alert / risk-tier outputs)
 ```
 
 Source / file:
 
 - **Primary (new 4-column layout):** `research_context/report_drafts/diagrams/figure_5_4_module2_architecture.drawio`
-- **PNG export:** `research_context/report_drafts/diagrams/figure_5_4_module2_architecture.png`
-- Legacy vertical flow: `figure_5_5_module2_architecture.drawio` (superseded layout; keep for reference)
+- **PNG export:** `research_context/report_drafts/diagrams/figure_5_4_module2_architecture.png` — regenerate via the new
+  companion `generate_figure_5_4_module2_architecture.py` after any further drawio text edit.
+- Legacy vertical flow: `figure_5_5_module2_architecture.drawio` (superseded layout; still says "isotonic" — kept for
+  reference only, not corrected, since it predates the 4-column layout and is not the figure actually used)
 - Referenced from: `research_context/report_drafts/chapter5_5.4.2_module2.md`
+- **Corrected 2026-08-07**: was still rendering "Isotonic Regression" despite this plan's 2026-08-06 text update —
+  drawio + PNG now both say "Platt Scaling" / "Random Forest (tuned)".
 
 Key design facts on the figure:
 
-- Stage 1 official model = **Random Forest** (Decision 025)
-- Stage 2 = **isotonic regression** (probability calibration, not case-residual ML)
+- Stage 1 official model = **Random Forest** (Decision 025), tuned (Decision 047)
+- Stage 2 = **Platt scaling** (probability calibration, not case-residual ML) — flipped from isotonic after Decision 047's Stage 1 tuning
 - Climate included in Stage 1
 - Week 53 kept unmerged
 - Evaluation: PR-AUC, ROC-AUC, Brier, BSS
@@ -342,8 +371,13 @@ Figure 5.6: Integration of module outputs into the early-warning dashboard (Stre
 Source / file:
 
 - **Primary:** `research_context/report_drafts/diagrams/figure_5_6_integration_dashboard.drawio`
-- **PNG export:** `research_context/report_drafts/diagrams/figure_5_6_integration_dashboard.png`
+- **PNG export:** `research_context/report_drafts/diagrams/figure_5_6_integration_dashboard.png` — regenerate via the
+  new companion `generate_figure_5_6_integration_dashboard.py` after any further drawio text edit.
 - Referenced from: `research_context/report_drafts/chapter5_5.5_integration.md`
+- **Corrected 2026-08-07**: predated the 2026-08-07 dashboard redesign (4-page multipage app) and the Prospective
+  Tracking evidence tier (Decisions 041/048). Dashboard Views column now lists the actual four pages (Overview /
+  Research Evidence / Operational Monitoring / Prospective Tracking); Evidence Tiers column now shows three tiers
+  (added Prospective Tracking alongside Research Evidence / Operational Prototype).
 
 Key design facts on the figure:
 
@@ -404,7 +438,7 @@ Status: **Created (2026-07-30)** — PNG adapted from Figure 5.4 (`figure_6_3_mo
 
 Purpose:
 
-Show Module 2 implementation: preprocessing → labels → Random Forest → isotonic → alert/risk tier.
+Show Module 2 implementation: preprocessing → labels → tuned Random Forest → Platt scaling → alert/risk tier.
 
 Caption:
 
@@ -504,6 +538,15 @@ Notes:
 
 - Source: `data/processed/module1/final_combined_predictions.csv` (holdout, non-imputed).
 - Do not use `future_forecast_*.png` (operational, no ground truth).
+- **Updated 2026-08-07**: the chart now merges in `is_reporting_anomaly` (from
+  `weekly_modeling_table.csv`) and annotates the week immediately after any flagged week
+  (e.g. Colombo/Gampaha 2026 Wk25, and Colombo's earlier 2026 Wk14 event) with an "X" marker
+  + "flagged reporting-delay catch-up spike (§7.3)" callout. Reason: the 2026 Wk25 spike
+  (Colombo 1,138 / Gampaha 1,294 actual vs. both forecast lines staying flat) is a dramatic,
+  unexplained-looking miss at first glance without this — annotating it turns a scary-looking
+  outlier into a demonstrated, already-investigated limitation (Decision 026/028/043) instead
+  of something to hide. Generator: `generate_figure_7_2_7_3.py` (data-driven, not hardcoded to
+  this one week — will also catch any future flagged week in the holdout window).
 
 ---
 
@@ -536,17 +579,17 @@ Status: Created
 
 Purpose:
 
-Show Stage 1 raw vs isotonic Stage 2 calibration (reliability diagrams) on validation and holdout.
+Show Stage 1 raw vs Platt-scaled Stage 2 calibration (reliability diagrams) on validation and holdout.
 
 File:
 
 - `research_context/report_drafts/diagrams/figure_7_4_module2_reliability.png`
-- Generator: `research_context/report_drafts/diagrams/generate_figure_7_4.py`
+- Generator: `research_context/report_drafts/diagrams/generate_figure_7_4.py` (labels the calibrated curve dynamically from the data's `architecture` column, so it cannot silently go stale like this did after Decision 047)
 
 Notes:
 
-- Source: `data/processed/module2/stage2_compensated_predictions.csv` (`architecture=isotonic`, selected).
-- Do **not** paste older `outputs/figures/module2/reliability_diagram_*.png` (labelled Platt; superseded architecture label).
+- **2026-08-06 update:** regenerated after Decision 047/M2-013 (Random Forest tuning flipped the official Stage 2 architecture from isotonic to Platt). Source: `data/processed/module2/stage2_compensated_predictions.csv` (`architecture=platt`, selected).
+- The old note here previously said "do not paste `reliability_diagram_*.png` labelled Platt" — that guidance is now backwards; Platt is the current official architecture. If in doubt, regenerate via the script above rather than trusting either PNG's filename/date.
 - Holdout panel is sparse (~40 positives); secondary check only.
 
 ---
@@ -711,7 +754,7 @@ Status: Planned
 
 Purpose:
 
-Summarise isotonic BSS selection, alert performance at τ=0.14, and observed outbreak rates by risk tier.
+Summarise Platt-scaling BSS selection (was isotonic pre–Decision 047), alert performance at τ=0.10 (was 0.14), and observed outbreak rates by risk tier.
 
 Suggested columns / panels:
 

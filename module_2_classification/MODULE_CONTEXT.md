@@ -232,6 +232,20 @@ list."
    label_stabilization_spot_check}.csv`; full narrative:
    `EXPERIMENT_LOG.md` M2-005; decision record: `RESEARCH_DECISIONS.md`
    Decision 025.
+
+   **Audited, not yet adopted (2026-08-06, M2-011).** A prevalence-target-driven
+   per-district `k` selection rule was tested: it genuinely narrows the
+   cross-district prevalence spread (std 2.41pp → 1.29pp) without worsening
+   the undefined rate, but does **not** fix the Colombo 2025 Wk15 near-miss
+   cited above — Colombo's own large `historical_sd` means the
+   prevalence-homogenizing rule pushes its `k` UP (would need lower to
+   catch that case, selected higher instead, 3.5), raising its threshold
+   rather than lowering it. Homogenizing cross-district prevalence and
+   lowering one specific high-variance district's threshold turned out to
+   be in tension, not aligned, under this selection rule. No pipeline
+   rerun performed (label-construction audit only, `labels.py` unchanged);
+   full results: `outputs/metrics/module2/m2_011_adaptive_k_audit.csv`;
+   narrative: `EXPERIMENT_LOG.md` M2-011.
 9. **RESOLVED (2026-07-28, Decision 020).** Module 2's own week-53/missing-week/
    `weather_code` policies (flagged as kickoff defaults, not fully deliberated,
    in the original Decision 019 implementation) were reviewed before Stage 1
@@ -245,6 +259,23 @@ list."
     on latest weeks. **Remaining limitation:** forward epi-weeks beyond the
     master calendar edge may lack forecast climate until calendar extension is
     added; daily forecast API horizon is ~16 days.
+11. **Diagnosed, fix tested and rejected (2026-08-07, Decision 049/M2-016).**
+    Why did Colombo/Gampaha's 2026 Wk25 real outbreak (`label=1`, cases
+    1,138/1,294) score "low"/"medium" risk, not "high"? Root cause: the
+    immediately preceding week (Wk24) shares Module 1's documented
+    reporting-delay flag (`is_reporting_anomaly`, Decision 026/028), which
+    masks `case_anomaly_lag_1` — Stage 1's single most important feature
+    (~35% of Random Forest importance) — to `NaN` for the following week.
+    `RandomForestClassifier`'s median-imputer then fills that gap with
+    approximately "no anomaly", the wrong prior during a genuine
+    accelerating outbreak. Tested the obvious fix (substitute
+    `case_anomaly_lag_2`, mirroring Module 1's Decision 030 `cases_lag_1`
+    nowcast substitution): **rejected** — validation median PR-AUC
+    regressed slightly (0.3865 vs. 0.3917); holdout was never examined per
+    the project's own "validation wins first" rule, so whether it would
+    have changed this specific prediction remains genuinely unknown. The
+    mechanism is now documented precisely; the false negative itself is
+    not fixed. See `EXPERIMENT_LOG.md` M2-016.
 
 ---
 
@@ -303,15 +334,31 @@ Full technical detail lives in `research_context/PIPELINE_ARCHITECTURE_PLAN.md`
 
 ---
 
-## Stage 1 Implementation Status (2026-07-28, Decision 021; hyperparameters tuned 2026-07-28, Decision 023/M2-003; label re-estimated 2026-07-28, Decision 025/M2-005 — model selection flipped to Random Forest)
+## Stage 1 Implementation Status (2026-07-28, Decision 021; hyperparameters tuned 2026-07-28, Decision 023/M2-003; label re-estimated 2026-07-28, Decision 025/M2-005 — model selection flipped to Random Forest; Random Forest itself tuned 2026-08-06, Decision 047/M2-013 — current production numbers below)
+
+**Updated 2026-08-06 (Decision 047/M2-013).** Random Forest had never itself been
+hyperparameter-tuned (it inherited hand-picked defaults chosen before Decision 025 even
+selected it) - a 50-trial Optuna search (`class_weight="balanced"` fixed) found a genuine,
+holdout-confirmed improvement: `n_estimators=472, max_depth=16, min_samples_leaf=11,
+min_samples_split=18, max_features="sqrt"`. Holdout PR-AUC **0.4129 → 0.4228**, ROC-AUC
+**0.883 → 0.905**, Brier **0.028 → 0.018**. Two other levers tested alongside this
+(`class_weight="balanced_subsample"`; untuned Gradient Boosting, never previously
+benchmarked) were both negative and not adopted. This is a real cascade, not just a Stage 1
+number: it changed Stage 1's probability distribution enough to flip Stage 2's official
+architecture (isotonic → platt) and re-select both risk thresholds - see the Stage 2 and
+Risk Thresholds sections below for current values. The Stage 1-only figures in the rest of
+this section (PR-AUC 0.429/ROC-AUC 0.885/Brier 0.027 etc.) are the PRE-tuning numbers,
+kept for historical narrative, not current production truth. Full evidence: `EXPERIMENT_LOG.md`
+M2-013; decision record: `RESEARCH_DECISIONS.md` Decision 047.
 
 Implemented and run end to end: `src/module2_classification/evaluate.py`,
 `src/module2_classification/baseline_classifier.py`,
 `src/module2_classification/main.py`. Full narrative in
 `module_2_classification/EXPERIMENT_LOG.md` entries M2-001 (original,
-superseded), M2-003 (post-tuning, superseded), and **M2-005 (current
-production numbers, post-label-re-estimation)**; full decision records in
-`research_context/RESEARCH_DECISIONS.md` Decisions 021, 023, and 025.
+superseded), M2-003 (post-tuning, superseded), M2-005 (post-label-re-estimation,
+superseded numerically by M2-013's tuning), and **M2-013 (current production
+numbers)**; full decision records in `research_context/RESEARCH_DECISIONS.md`
+Decisions 021, 023, 025, and 047.
 
 **Fold design**: `MODULE2_MIN_TRAIN_YEARS = 4` (new, Module-2-specific;
 Module 1's `DEFAULT_MIN_TRAIN_YEARS = 3` left fold 1 with zero trainable
@@ -420,12 +467,23 @@ Full narrative: `module_2_classification/EXPERIMENT_LOG.md` M2-001 addendum.
 
 ---
 
-## Stage 2 Implementation Status (2026-07-28, Decision 022 + M2-002; superseded numerically 2026-07-28 by Decision 023/M2-003; risk thresholds added by Decision 024/M2-004; label re-estimated 2026-07-28 by Decision 025/M2-005 — current production numbers below)
+## Stage 2 Implementation Status (2026-07-28, Decision 022 + M2-002; superseded numerically 2026-07-28 by Decision 023/M2-003; risk thresholds added by Decision 024/M2-004; label re-estimated 2026-07-28 by Decision 025/M2-005; superseded again 2026-08-06 by Decision 047/M2-013 — current production numbers below)
+
+**Updated 2026-08-06 (Decision 047/M2-013).** Tuning Stage 1's Random Forest changed its
+probability distribution enough to flip Stage 2's official architecture: **platt now beats
+isotonic** (median validation BSS 0.2271 vs. 0.2195 — the same upstream-tuning-driven
+architecture-flip mechanism as Decision 023, in the opposite direction). Holdout BSS improved
+too: isotonic's prior 0.2315 → platt's **0.2673**. Holdout PR-AUC/ROC-AUC are unchanged from
+Stage 1 raw (0.4228/0.905) because Platt scaling is a strictly monotonic transform of Stage 1's
+probability — it cannot change ranking metrics, only calibration. The isotonic-specific numbers
+throughout the rest of this section are the PRE-tuning production numbers, kept for historical
+narrative. Full evidence: `EXPERIMENT_LOG.md` M2-013; decision record: `RESEARCH_DECISIONS.md`
+Decision 047.
 
 Full design record in `research_context/RESEARCH_DECISIONS.md` Decision 022;
 original results in `module_2_classification/EXPERIMENT_LOG.md` M2-002
-(superseded), M2-003 (superseded); **current production numbers in M2-005**
-(post-label-re-estimation rerun).
+(superseded), M2-003 (superseded), M2-005 (superseded); **current production
+numbers in M2-013**.
 
 - **Three architectures benchmarked**: isotonic regression, Platt scaling on
   `logit(predicted_probability)`, stacked XGBoost on `[predicted_probability,
@@ -469,7 +527,19 @@ original results in `module_2_classification/EXPERIMENT_LOG.md` M2-002
 - **Module 1 integration** remains deferred as an optional post-Stage-2
   ablation (fold-boundary misalignment between the two modules).
 
-### Risk Thresholds (2026-07-28, Decision 024/M2-004; recalibrated 2026-07-28, Decision 025/M2-005)
+### Risk Thresholds (2026-07-28, Decision 024/M2-004; recalibrated 2026-07-28, Decision 025/M2-005; recalibrated again 2026-08-06, Decision 047/M2-013)
+
+**Updated 2026-08-06 (Decision 047/M2-013).** Re-selected fresh from the new
+(post-RF-tuning, platt-calibrated) probability distribution: **alert threshold = 0.100**
+(was 0.140), **high-confidence boundary = 0.500** (was 0.350). Holdout tier separation
+improved: observed outbreak rate low/medium/high **0.6% / 20.4% / 62.5%** (was
+0.6%/13.3%/48.8%) — medium and high both separated further from low, though the medium
+(n=49) and high (n=24) holdout counts are small, so read the exact percentages with the
+usual small-sample caution. Holdout alert-rule comparison: F2-optimal (τ=0.100) recall
+62.5%/precision 34.2%/F2 0.536, vs. the naive 0.5 cutoff's recall 37.5%/precision
+62.5%/F2 0.408. The values immediately below (τ=0.140/0.350, tier rates 0.6/13.3/48.8) are
+the PRE-tuning production numbers, kept for historical narrative. Full evidence:
+`EXPERIMENT_LOG.md` M2-013; decision record: `RESEARCH_DECISIONS.md` Decision 047.
 
 Completes the deferred item from Decision 022. `src/module2_classification/risk_thresholds.py`
 is a permanent pipeline stage (`stage2_risk_thresholds` in `main.py`), selecting thresholds
@@ -578,6 +648,74 @@ historical lags only (`cases_source=na`). Forward epi-weeks beyond
 Module 1 `future_forecast.csv` is now an **operational input** to Module 2 forward
 risk (Decision 027) — not used in training/evaluation pipelines (Decision 019/022
 deferral unchanged).
+
+**2026-08-07 update — two live/forward scoring bugs found and fixed, M2-015.** Rerunning
+`live_scoring.py` and `forecast_future_risk.py` against the post–Decision-047 production
+model (the first time Platt scaling had ever been live-scored) crashed on two latent bugs:
+`scoring_utils.score_feature_rows()` called `.predict()` on the raw Stage 1 probability for
+every Stage 2 architecture uniformly — correct for isotonic, wrong for Platt (needs the
+log-odds, 2D-reshaped, and `.predict_proba()`, not `.predict()`); and
+`compute_case_anomaly_lags()` crashed on forward weeks because the synthetic row builder
+never set `is_reporting_anomaly`. Both fixed (see M2-015 for full detail) — `live_scoring.py`
+and `forecast_future_risk.py` now run cleanly against the current production model.
+
+## Prospective Forward-Risk Accuracy Tracking (2026-08-07, new, M2-015/Decision 048)
+
+`src/module2_classification/risk_tracking.py` closes the "how would a forward prediction
+ever be checked" gap, mirroring Decision 041/M1-017's nowcast tracker exactly.
+`append_to_risk_log()` (wired into `forecast_future_risk.run_forward_risk()`, default on)
+appends every genuinely-forward (`prediction_type == "forward_week"`) row to a permanent,
+append-only log (`data/processed/module2/risk_prediction_log.csv`) — the already-resolved
+`observed_week` row (horizon_step=0) is deliberately excluded, since it already has ground
+truth at logging time. `reconcile_risk_log()` (wired into `refresh_dashboard_data.py` as a
+new `module2_risk_reconcile` step) recomputes the actual epidemic-threshold label from the
+current `weekly_modeling_table.csv` and joins it against the log wherever a logged target
+week has since resolved, writing `outputs/metrics/module2/risk_prospective_accuracy.csv`.
+
+**Pure infrastructure — accumulates evidence, does not itself demonstrate accuracy.**
+Seeded 2026-08-07 with 200 rows (25 districts x 8 horizon weeks); first reconciliation
+correctly shows 0/200 resolved, since none of those weeks have happened yet. Given the
+label's own ~1.5% holdout prevalence, accumulating enough resolved OUTBREAK weeks
+specifically (not just resolved weeks generally) to say anything statistically meaningful
+will take a long real-calendar time — this is a slow-arriving evidence tier by design, not
+a bug. Must not be conflated with the holdout-validated PR-AUC/recall/BSS numbers in
+Chapter 7 — same evidence-tier distinction already documented for Module 1's nowcast vs.
+its backtest MASE. Check `risk_prospective_accuracy.csv` periodically as real weeks
+resolve; do not assume silence means success.
+
+## Uncertainty Quantification (2026-08-06, new, M2-012)
+
+`src/module2_classification/uncertainty_bands.py` adds a companion output: a
+statistically principled uncertainty interval around Stage 2's calibrated
+probability, using the Inductive Venn-Abers Predictor (IVAP — Vovk & Petej,
+2012), built on `sklearn.isotonic.IsotonicRegression`, the same primitive the
+official isotonic Stage 2 calibrator already uses. For each row, two
+augmented isotonic fits (assuming label 0 / label 1 at that row's own Stage 1
+score) give a valid interval `[p0, p1]`; the merged point estimate is
+`p1 / (1 - p0 + p1)`. Same no-leakage fold structure as Stage 2's own
+calibrator (fold *k* calibrates on folds `1..k-1`'s pooled out-of-sample rows
+only; holdout calibrates on all 13 folds pooled).
+
+**Purely additive — no risk to any existing result.** Does not retrain,
+replace, or gate Stage 1, Stage 2, or `risk_thresholds.py`; nothing was
+selected against a holdout check, so there is no promotion/rejection
+decision the way M2-010/M2-011 required. Point-estimate agreement with the
+official `calibrated_probability` is very close (correlation 0.997, mean
+|difference| 0.004) — confirms correctness and that adopting it changes no
+existing headline number. Interval width scales sensibly with risk tier
+(holdout mean width: low 0.001, medium 0.004, high 0.011 — 4–10× wider where
+the point estimate is least trustworthy), which is the actual payoff: the
+same calibrated probability can now also carry an honest "how much should
+this specific number be trusted" statement (e.g. Colombo 2026 Wk5:
+`calibrated_probability` 6.5%, band `[5.7%, 7.2%]`).
+
+**Standalone, NOT wired into `main.py`'s idempotent `PIPELINE_STAGES`** — same
+precedent as `live_scoring.py`/`forecast_future_risk.py`. Run on demand via
+`python -m src.module2_classification.uncertainty_bands`.
+
+**Output**: `data/processed/module2/stage2_uncertainty_bands.csv`. Full
+narrative and the one initially-misdesigned validity check (corrected, not
+hidden): `EXPERIMENT_LOG.md` M2-012.
 
 ## Documentation Rule
 

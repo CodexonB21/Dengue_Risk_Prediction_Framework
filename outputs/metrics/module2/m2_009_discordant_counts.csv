@@ -1,6 +1,6 @@
 metric,count
-true_outbreaks_caught_by_m2_not_m1_threshold,15
+true_outbreaks_caught_by_m2_not_m1_threshold,16
 true_outbreaks_caught_by_m1_threshold_not_m2,0
 false_m1_epidemic_threshold_alerts,7
-false_m2_alerts,47
+false_m2_alerts,48
 top_decile_m1_pred_not_outbreak,240

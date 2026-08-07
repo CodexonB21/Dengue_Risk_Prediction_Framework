@@ -1,4 +1,4 @@
-"""Dashboard page renderers: validated research evidence vs operational prototype."""
+"""Operational Monitoring page — live/forward decision-support prototype (not accuracy proof)."""
 
 from __future__ import annotations
 
@@ -24,9 +24,11 @@ from src.config import (
     MODULE1_WEEKLY_MODELING_TABLE_PATH,
     MODULE2_FUTURE_RISK_PREDICTIONS_PATH,
     MODULE2_LIVE_RISK_PREDICTIONS_PATH,
-    MODULE3_FEATURE_IMPORTANCE_PLOT_PATH,
+    MODULE3_HYBRID_RISK_MAP_PATH,
     SHARED_CLIMATE_WEEKLY_PATH,
 )
+from src.dashboard.components import column_help, evidence_badge, get_thresholds, module_badge
+from src.dashboard.data_loaders import load_csv, load_district_geometry, load_m1_nowcast
 from src.module3_spatial.kde_baseline import (
     district_centroid_coords,
     load_district_boundaries,
@@ -37,198 +39,345 @@ from src.module3_spatial.risk_surface import (
     grid_lonlat_bounds,
     risk_surface_rgba,
 )
-from src.dashboard.evidence_data import (
-    RELIABILITY_HOLDOUT_FIG,
-    load_m1_district_holdout,
-    load_m2_009_baseline,
-    load_m3_convergence_log,
-    load_m3_feature_importance,
-    load_m3_morans_i,
-    load_m3_stage_comparison,
-    load_production_stack,
-    m1_holdout_summary,
-    m2_holdout_summary,
-    m3_convergence_summary,
-    m3_morans_i_summary,
-)
 
 
-def render_evidence_page() -> None:
-    st.header("Validated research performance")
-    st.success(
-        "**Evidence tier: validation** — metrics below come from walk-forward folds and an "
-        "untouched 2-year holdout block. They are the numbers safe to cite in the thesis or viva."
+def _render_nowcast_panel(nowcast: pd.DataFrame, district: str) -> None:
+    """Module 1's genuine single-week-ahead prediction (Decision 040/M1-016's
+    vintage-ensembled SARIMA + Stage 2) - a distinct, more current headline
+    number than the 8-week `future_forecast.csv` used below, and previously
+    completely absent from the dashboard despite being production output."""
+    module_badge("m1")
+    st.subheader("Module 1 — next-week case nowcast")
+    evidence_badge("operational_live")
+    if nowcast.empty:
+        st.info("Nowcast file not found — run `python -m src.module1_forecasting.forecast_future --nowcast`.")
+        return
+
+    row = nowcast.loc[nowcast["District"] == district]
+    target = f"{int(nowcast['Year'].iloc[0])} Wk{int(nowcast['Week'].iloc[0])}" if not nowcast.empty else "—"
+    st.caption(
+        f"Single-step \"predict next week using all data up to now\" ({target}) — distinct from the "
+        "recursive 8-week forecast further down this page. Uses a 4-vintage SARIMA ensemble "
+        "(Decision 039/M1-016), the first broad accuracy improvement found across Module 1's full "
+        "remediation arc, though still operational-tier (no holdout MASE for this specific path)."
+    )
+    if not row.empty:
+        r = row.iloc[0]
+        c1, c2, c3 = st.columns(3)
+        c1.metric(f"{district}: predicted cases", f"{r['final_prediction']:.0f}")
+        c2.metric("SARIMA component", f"{r['sarima_prediction']:.1f}")
+        c3.metric("Residual correction", f"{r['predicted_residual']:.1f}")
+
+    top5 = nowcast.sort_values("final_prediction", ascending=False).head(5)[["District", "final_prediction"]]
+    st.write("Top 5 districts by predicted next-week cases (national context)")
+    st.dataframe(top5, use_container_width=True, hide_index=True)
+
+
+def render_operational_page(
+    *,
+    live: pd.DataFrame,
+    future_risk: pd.DataFrame,
+    future_cases: pd.DataFrame,
+    nowcast: pd.DataFrame,
+    m1_weekly: pd.DataFrame,
+    climate: pd.DataFrame,
+    manifest: pd.DataFrame,
+    hybrid_risk: pd.DataFrame,
+    district_geometry: "gpd.GeoDataFrame",
+    case_y: int | None,
+    case_w: int | None,
+    clim_y: int | None,
+    clim_w: int | None,
+    refresh_ts: str | None,
+    district: str,
+) -> None:
+    st.header("Operational monitoring prototype")
+    evidence_badge("operational_live")
+    st.caption(
+        "Not holdout-validated. Use for integration demo only. "
+        "Thesis accuracy claims must come from the **Research evidence** page."
     )
 
-    stack = load_production_stack()
-    m1 = m1_holdout_summary(stack)
-    m2 = m2_holdout_summary(stack)
-    m2_009 = load_m2_009_baseline()
-    m1_districts = load_m1_district_holdout()
-
-    st.markdown(
-        """
-        ### Framework (what we proved)
-
-        | Module | Stage 1 | Stage 2 | Research question |
-        |---|---|---|---|
-        | **Module 1** | SARIMA (cases only) | XGBoost residual + climate | How many cases next week? |
-        | **Module 2** | Outbreak classifier | Isotonic calibration | Is this week abnormally high *for this district-week*? |
-
-        Module 1 and Module 2 answer **different questions**. Thresholding Module 1 case forecasts
-        is **not** equivalent to Module 2 outbreak alerting (see M2-009 table below).
-        """
+    st.info(
+        f"**Data freshness:** last case epi-week **{case_y} Wk{case_w}** · "
+        f"last observed climate **{clim_y} Wk{clim_w}** · "
+        f"last refresh **{refresh_ts or 'unknown'}**."
     )
 
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("Module 1 — holdout forecasting")
-        if m1:
-            st.metric("Median MASE (SARIMA only)", f"{m1['median_mase_sarima']:.3f}")
-            st.metric("Median MASE (SARIMA + residual correction)", f"{m1['median_mase_hybrid']:.3f}")
-            st.metric(
-                "Districts improved (MASE)",
-                f"{m1['districts_improved_mase']} / {m1['n_districts']}",
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Last case epi-week", f"{case_y} Wk{case_w}" if case_y else "—")
+    c2.metric("Last climate epi-week", f"{clim_y} Wk{clim_w}" if clim_y else "—")
+    c3.metric(
+        "Output files loaded",
+        sum(
+            1
+            for p in (
+                MODULE2_LIVE_RISK_PREDICTIONS_PATH,
+                MODULE2_FUTURE_RISK_PREDICTIONS_PATH,
+                MODULE1_FUTURE_FORECAST_PATH,
             )
-            st.metric("Median sMAPE (hybrid)", f"{m1['median_smape_hybrid']:.1f}%")
-        else:
-            st.warning("Production stack summary not found — run evaluation pipeline.")
-
-    with col2:
-        st.subheader("Module 2 — holdout outbreak alerting")
-        if m2:
-            st.metric("Holdout PR-AUC (isotonic)", f"{m2['pr_auc']:.3f}")
-            st.metric(
-                f"Alert recall @ τ={m2['alert_threshold']}",
-                f"{100 * float(m2['alert_recall']):.1f}%",
-            )
-            st.metric(
-                f"Alert precision @ τ={m2['alert_threshold']}",
-                f"{100 * float(m2['alert_precision']):.1f}%",
-            )
-            st.caption("F2-optimal alert threshold from validation folds (Decision 024/025).")
-        else:
-            st.warning("Production stack summary not found.")
+            if Path(p).exists()
+        ),
+    )
 
     st.divider()
-    st.subheader("Why Module 2 is not redundant (M2-009 holdout)")
-    st.caption(
-        "Same holdout block and epidemic-threshold label. Compares Module 2 alerts vs "
-        "thresholding Module 1 `final_prediction`."
-    )
-    if not m2_009.empty:
-        display = m2_009.copy()
-        for col in ("pr_auc", "recall", "precision", "f2", "prevalence"):
-            if col in display.columns:
-                display[col] = display[col].map(lambda x: f"{x:.3f}" if pd.notna(x) else "—")
-        st.dataframe(display, use_container_width=True, hide_index=True)
-    else:
-        st.info("Run `python scripts/m2_009_m1_alert_baseline.py` to generate comparison table.")
-
-    if not m1_districts.empty and "post_mase" in m1_districts.columns:
-        st.subheader("Module 1 — per-district holdout MASE")
-        plot_df = m1_districts.sort_values("post_mase").copy()
-        plot_df = plot_df.rename(columns={"pre_mase": "SARIMA only", "post_mase": "Hybrid (SARIMA + correction)"})
-        fig = px.bar(
-            plot_df,
-            x="District",
-            y=["SARIMA only", "Hybrid (SARIMA + correction)"],
-            barmode="group",
-            title="Holdout MASE by district (lower is better)",
-        )
-        fig.update_layout(xaxis_tickangle=-45, yaxis_title="MASE")
-        st.plotly_chart(fig, use_container_width=True)
-
-    if RELIABILITY_HOLDOUT_FIG.exists():
-        st.subheader("Module 2 — calibration (holdout)")
-        st.image(str(RELIABILITY_HOLDOUT_FIG), caption="Stage 1 raw vs isotonic — holdout reliability diagram")
+    _render_nowcast_panel(nowcast, district)
 
     st.divider()
-    st.subheader("Module 3 — spatial hotspot detection (KDE + RF residual compensation)")
+    module_badge("m2")
+    st.subheader("National triage (monitoring signals)")
     st.caption(
-        "Stage 1: Kernel Density Estimation + Global Moran's I spatial baseline. "
-        "Stage 2: Random Forest residual compensation, wrapped in an iterative "
-        "refinement loop (max 4 iterations, dual convergence check)."
+        "Counts below are **early-warning flags**, not validated detections. "
+        "High predicted cases ≠ outbreak in high-baseline districts (Colombo, Gampaha)."
     )
 
-    morans = m3_morans_i_summary(load_m3_morans_i())
-    convergence = m3_convergence_summary(load_m3_convergence_log())
-    m3_comparison = load_m3_stage_comparison()
-    m3_importance = load_m3_feature_importance()
+    forward = future_risk.loc[future_risk["prediction_type"] == "forward_week"].copy() if not future_risk.empty else pd.DataFrame()
+    if not forward.empty:
+        latest_forward = forward.loc[forward["horizon_step"] == 1]
+        next4 = forward.loc[forward["horizon_step"].between(1, 4)]
+        alerts_now = int(latest_forward["alert_flag"].sum()) if not latest_forward.empty else 0
+        alerts_next4 = int(next4.groupby(["District", "Year", "Week"])["alert_flag"].max().sum())
+        m1, m2 = st.columns(2)
+        m1.metric("Districts flagged (horizon 1)", alerts_now, help="Operational alert_flag; not holdout recall")
+        m2.metric("District-week flags (horizons 1–4)", alerts_next4)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("**Stage 1 — spatial clustering validation**")
-        if morans:
-            st.metric("Global Moran's I", f"{morans['I']:.3f}")
-            st.metric("p-value (permutation, 999 runs)", f"{morans['p_sim']:.3f}")
-            st.metric("Clustering significant?", "Yes" if morans["significant"] else "No")
-        else:
-            st.warning("Moran's I validation file not found — run `python -m src.module3_spatial.kde_baseline`.")
-
-    with col2:
-        st.markdown("**Stage 2 — iterative loop convergence**")
-        if convergence:
-            st.metric("Converged after", f"{convergence['n_iterations']} iteration(s)")
-            st.metric(
-                "max|Risk delta| vs. epsilon",
-                f"{convergence['max_delta']:.2f} / {convergence['epsilon']:.2f}",
-            )
-            st.metric("Converged?", "Yes" if convergence["converged"] else "No (hit iteration cap)")
-        else:
-            st.warning("Convergence log not found — run `python -m src.module3_spatial.iterative_loop`.")
-
-    st.markdown("**Does Stage 2 improve fit over Stage 1 alone?**")
-    if not m3_comparison.empty:
-        display = m3_comparison.copy()
-        for col in ("corr", "mae", "rmse"):
-            if col in display.columns:
-                display[col] = display[col].map(lambda x: f"{x:.4f}" if pd.notna(x) else "—")
-        st.dataframe(display, use_container_width=True, hide_index=True)
-        st.info(
-            "**Null result, reported honestly**: Stage 2's residual correction does NOT "
-            "improve aggregate fit to actual case counts (correlation -0.0037, MAE +1.7%, "
-            "RMSE +0.9% vs. Stage 1 alone). This is expected, not a bug — the shrinkage "
-            "term (alpha=0.05) was chosen for stable, immediate convergence, not accuracy. "
-            "Stage 2's real value is diagnostic: the feature importance below reveals "
-            "*which* factors (population density, climate timing) drive district-level "
-            "burden beyond pure spatial proximity — something Stage 1's KDE baseline, "
-            "with zero covariates, structurally cannot provide."
+        top = (
+            forward.groupby("District")["calibrated_probability"].max()
+            .sort_values(ascending=False)
+            .head(5)
+            .reset_index()
         )
+        st.write("Top 5 districts by max **forward** calibrated probability (operational)")
+        st.dataframe(top, use_container_width=True)
     else:
-        st.warning("Stage 1 vs Stage 2 comparison file not found — run `python -m src.module3_spatial.evaluate`.")
+        st.info("Forward risk CSV not found — run `python scripts/refresh_dashboard_data.py`.")
 
-    if not m3_importance.empty:
-        st.markdown("**Stage 2 feature importance**")
-        if MODULE3_FEATURE_IMPORTANCE_PLOT_PATH.exists():
-            st.image(
-                str(MODULE3_FEATURE_IMPORTANCE_PLOT_PATH),
-                caption="Random Forest feature importance (final model, all 25 districts)",
-            )
+    st.divider()
+    st.subheader(f"District drill-down: {district}")
+
+    tab_recent, tab_cases, tab_forward = st.tabs(["Recent risk", "Case forecast", "Forward risk"])
+
+    with tab_recent:
+        module_badge("m2")
+        st.caption("Recent observed weeks — production checkpoint; weeks may overlap training history.")
+        if live.empty:
+            st.warning("No live risk predictions.")
         else:
+            dlive = live.loc[live["District"] == district].sort_values(["Year", "Week"]).copy()
+            # Merge in the reporting-anomaly flag (Decision 026/028) - live_risk_predictions.csv
+            # doesn't carry it itself - so a genuine reporting-delay catch-up week reads as an
+            # explained data-quality event here too, not just an unexplained low-probability
+            # week sitting right next to a real case-count spike (same treatment as the
+            # Case forecast tab below).
+            anomaly_flags = m1_weekly.loc[
+                m1_weekly["District"] == district, ["Year", "Week", "is_reporting_anomaly"]
+            ]
+            dlive = dlive.merge(anomaly_flags, on=["Year", "Week"], how="left")
+            dlive["is_reporting_anomaly"] = dlive["is_reporting_anomaly"].fillna(False)
+            dlive["catch_up_week"] = dlive["is_reporting_anomaly"].shift(1, fill_value=False)
+
+            recent_cols = [
+                "Year", "Week", "Number_of_Cases", "calibrated_probability", "risk_tier",
+                "alert_flag", "feature_completeness_pct", "already_scored_in_pipeline",
+            ]
+            recent_cols = [c for c in recent_cols if c in dlive.columns]
+            st.dataframe(
+                dlive[recent_cols],
+                column_config=column_help(recent_cols),
+                use_container_width=True,
+            )
+            fig = px.line(
+                dlive,
+                x="Week_Start_Date",
+                y="calibrated_probability",
+                markers=True,
+                title=f"{district}: recent calibrated probability (operational)",
+            )
+            alert_threshold, _ = get_thresholds()
+            fig.add_hline(
+                y=alert_threshold, line_dash="dot",
+                annotation_text=f"alert threshold ({alert_threshold:.2f})",
+            )
+            flagged = dlive.loc[dlive["catch_up_week"]]
+            if not flagged.empty:
+                fig.add_scatter(
+                    x=flagged["Week_Start_Date"],
+                    y=flagged["calibrated_probability"],
+                    mode="markers",
+                    marker=dict(symbol="x", size=13, color="#B45309"),
+                    name="Follows a flagged reporting-delay dip",
+                )
+            st.plotly_chart(fig, use_container_width=True)
+            if dlive["catch_up_week"].any():
+                st.caption(
+                    "🟠 marker: this week immediately follows a week flagged as a likely reporting "
+                    "dip/catch-up (Decision 026/028) — case-derived lag features for it were built "
+                    "on an artificially low prior-week count, so the probability here should be read "
+                    "alongside the actual `Number_of_Cases` column above, not on its own."
+                )
+
+    with tab_cases:
+        module_badge("m1")
+        st.caption("Module 1 forward forecast — recursive multi-step; **not** holdout MASE.")
+        hist = m1_weekly.loc[m1_weekly["District"] == district].sort_values(["Year", "Week"]).tail(52)
+        fut = future_cases.loc[future_cases["District"] == district].sort_values("horizon_step")
+        if hist.empty and fut.empty:
+            st.warning("No case forecast data.")
+        else:
+            fig = px.line(title=f"{district}: cases — history + 8-week forward (operational)")
+            if not hist.empty:
+                fig.add_scatter(
+                    x=hist["Week_Start_Date"],
+                    y=hist["Number_of_Cases"],
+                    mode="lines+markers",
+                    name="Actual",
+                )
+                # Reporting-anomaly weeks (Decision 026/028) surfaced directly on
+                # the chart, not just as a hidden data-quality footnote - a
+                # viva panel is likely to ask "why is there a spike/dip here."
+                if "is_reporting_anomaly" in hist.columns:
+                    flagged = hist.loc[hist["is_reporting_anomaly"].fillna(False)]
+                    if not flagged.empty:
+                        fig.add_scatter(
+                            x=flagged["Week_Start_Date"],
+                            y=flagged["Number_of_Cases"],
+                            mode="markers",
+                            marker=dict(symbol="x", size=11, color="#B45309"),
+                            name="Flagged reporting anomaly",
+                        )
+            if not fut.empty:
+                fig.add_scatter(
+                    x=fut["Week_Start_Date"],
+                    y=fut["final_prediction"],
+                    mode="lines+markers",
+                    name="Forecast (M1)",
+                )
+            st.plotly_chart(fig, use_container_width=True)
+            if "is_reporting_anomaly" in hist.columns and hist["is_reporting_anomaly"].fillna(False).any():
+                st.caption(
+                    "🟠 markers are weeks flagged as a likely reporting dip/catch-up spike rather than a "
+                    "genuine case-count change (Decision 026/028) — a documented data-quality signal, "
+                    "not a model error."
+                )
+
+    with tab_forward:
+        module_badge("m2")
+        st.warning(
+            "Horizon ≥ 2 uses Module 1 predicted case lags and forecast climate. "
+            "Uncertainty compounds — treat as scenario view, not validated probability."
+        )
+        dfwd = future_risk.loc[future_risk["District"] == district].sort_values("horizon_step")
+        if dfwd.empty:
+            st.warning("No forward risk predictions.")
+        else:
+            forward_cols = [
+                "horizon_step", "prediction_type", "Year", "Week",
+                "calibrated_probability", "risk_tier", "alert_flag",
+                "cases_source", "climate_source", "feature_completeness_pct",
+                "uses_module1_cases", "evidence_tier",
+            ]
+            st.dataframe(
+                dfwd[forward_cols],
+                column_config=column_help(forward_cols),
+                use_container_width=True,
+            )
             fig = px.bar(
-                m3_importance.sort_values("importance"),
-                x="importance",
-                y="feature",
-                orientation="h",
-                title="Stage 2 feature importance",
+                dfwd,
+                x="horizon_step",
+                y="calibrated_probability",
+                color="risk_tier",
+                title=f"{district}: forward risk by horizon (operational)",
             )
             st.plotly_chart(fig, use_container_width=True)
 
-    with st.expander("Operational vs validation — what not to cite"):
-        st.markdown(
-            """
-            | | **This page (validation)** | **Operational prototype page** |
-            |---|---|---|
-            | Purpose | Thesis / viva evidence | Decision-support sketch |
-            | Case inputs | Real observed lags only | M1 forecasts for forward lags |
-            | Climate | Historical observed | Observed + forecast API |
-            | Safe to cite PR-AUC/MASE | **Yes** | **No** |
+    st.divider()
+    module_badge("m3")
+    st.subheader("Module 3 — spatial hotspot map (Hybrid Risk)")
+    evidence_badge("operational_live")
+    st.caption(
+        "Hybrid Risk is Stage 2's output (KDE spatial baseline + RF residual correction), "
+        "not a validated forecast. See the **Research evidence** page for Stage 1/Stage 2 "
+        "validation numbers (Moran's I, convergence, fit comparison)."
+    )
 
-            See `research_context/QUESTIONS_FOR_DEFENSE.md` and `src/dashboard/DASHBOARD_GUIDE.md`.
-            """
+    if hybrid_risk.empty or district_geometry.empty:
+        st.info(
+            "Hybrid risk map or district geometry not found — run "
+            "`python -m src.module3_spatial.iterative_loop`."
         )
+    else:
+        latest = _latest_hybrid_risk(hybrid_risk)
+        latest_year = int(latest["Year"].iloc[0])
+        latest_week = int(latest["Week"].iloc[0])
+        st.caption(
+            f"Latest available district-week: **{latest_year} Wk{latest_week}** "
+            f"(selected district **{district}** outlined in black)."
+        )
+
+        # A radio switcher, not st.tabs(): Streamlit mounts every st.tabs()
+        # panel's content on every script run and only CSS-hides the
+        # inactive ones - a Leaflet map mounted inside a display:none
+        # container sizes itself to zero and never recovers (this is
+        # exactly what made the Folium map render totally blank earlier,
+        # see MODULE_CONTEXT.md's root-cause note). A radio button instead
+        # means Python only ever constructs the ONE currently-selected
+        # map each run, so the other two are never mounted hidden at all.
+        view = st.radio(
+            "Module 3 map view",
+            [
+                "District boundaries (choropleth)",
+                "Heat cloud (Folium)",
+                "Hotspot markers (precise)",
+                "Heat glow (Uber-style)",
+            ],
+            horizontal=True,
+            label_visibility="collapsed",
+            key="module3_map_view",
+        )
+
+        if view == "District boundaries (choropleth)":
+            st.caption(
+                "Precise district polygons colored by Hybrid Risk (YlOrRd) - each district "
+                "reads as a single flat value, the exact number driving the other two views' "
+                "color/size but without their spatial blending or double-encoding."
+            )
+            fig = _hybrid_risk_choropleth(district_geometry, latest, district, latest_year, latest_week)
+            st.plotly_chart(fig, use_container_width=True)
+        elif view == "Heat cloud (Folium)":
+            st.caption(
+                "Continuous heat-cloud intensity weighted by Hybrid Risk, interpolated via "
+                "nearest-neighbour distance weighting — risk visibly concentrates toward the "
+                "border between two high-risk neighbouring districts rather than blobbing "
+                "solidly around each district's own centroid. Click a pin for that district's "
+                "exact values."
+            )
+            heatmap = _hybrid_risk_folium_heatmap(district_geometry, latest, district)
+            st_folium(heatmap, use_container_width=True, height=600, returned_objects=[])
+        elif view == "Hotspot markers (precise)":
+            st.caption(
+                "One marker per district centroid, both SIZE and COLOR driven by that "
+                "district's Hybrid Risk (bigger and redder = higher risk) - a precise, "
+                "double-encoded complement to the heat-cloud's smoothed, border-blended view. "
+                "Click a marker for that district's exact values."
+            )
+            circle_map = _hybrid_risk_circle_map(district_geometry, latest, district)
+            st_folium(circle_map, use_container_width=True, height=600, returned_objects=[])
+        else:
+            st.caption(
+                "Uber Rider-app style heat glow: dark blue-tinted basemap, each district's "
+                "own real shape glowing green-to-red by Hybrid Risk (blurred edges, not a "
+                "generic circle). A stylistic view, not the fine-grained interpolation the "
+                "Heat cloud tab uses."
+            )
+            uber_map = _hybrid_risk_uber_heatmap(district_geometry, latest, district)
+            st_folium(uber_map, use_container_width=True, height=600, returned_objects=[])
+
+        district_row = latest.loc[latest["District"] == district]
+        if not district_row.empty:
+            row = district_row.iloc[0]
+            m1, m2 = st.columns(2)
+            m1.metric(f"{district}: Hybrid Risk", f"{row['Risk']:.1f}")
+            m2.metric(f"{district}: Actual cases (same week)", int(row["Number_of_Cases"]))
 
 
 def _latest_hybrid_risk(hybrid_risk: pd.DataFrame) -> pd.DataFrame:
@@ -613,245 +762,64 @@ def _hybrid_risk_uber_heatmap(
     return m
 
 
-def render_operational_page(
-    *,
-    live: pd.DataFrame,
-    future_risk: pd.DataFrame,
-    future_cases: pd.DataFrame,
-    m1_weekly: pd.DataFrame,
-    climate: pd.DataFrame,
-    manifest: pd.DataFrame,
-    hybrid_risk: pd.DataFrame,
-    district_geometry: "gpd.GeoDataFrame",
-    case_y: int | None,
-    case_w: int | None,
-    clim_y: int | None,
-    clim_w: int | None,
-    refresh_ts: str | None,
-    district: str,
-) -> None:
-    st.header("Operational monitoring prototype")
-    st.warning(
-        "**Evidence tier: operational** — not holdout-validated. Use for integration demo only. "
-        "Thesis accuracy claims must come from the **Research evidence** page."
-    )
+def _latest_case_week(modeling: pd.DataFrame) -> tuple[int | None, int | None]:
+    if modeling.empty:
+        return None, None
+    row = modeling.sort_values(["Year", "Week"]).iloc[-1]
+    return int(row["Year"]), int(row["Week"])
 
-    st.info(
-        f"**Data freshness:** last case epi-week **{case_y} Wk{case_w}** · "
-        f"last observed climate **{clim_y} Wk{clim_w}** · "
-        f"last refresh **{refresh_ts or 'unknown'}**."
-    )
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Last case epi-week", f"{case_y} Wk{case_w}" if case_y else "—")
-    c2.metric("Last climate epi-week", f"{clim_y} Wk{clim_w}" if clim_y else "—")
-    c3.metric(
-        "Output files loaded",
-        sum(
-            1
-            for p in (
-                MODULE2_LIVE_RISK_PREDICTIONS_PATH,
-                MODULE2_FUTURE_RISK_PREDICTIONS_PATH,
-                MODULE1_FUTURE_FORECAST_PATH,
-            )
-            if Path(p).exists()
-        ),
-    )
+def _latest_climate_week(climate: pd.DataFrame) -> tuple[int | None, int | None]:
+    if climate.empty or "Year" not in climate.columns:
+        return None, None
+    row = climate.sort_values(["Year", "Week"]).iloc[-1]
+    return int(row["Year"]), int(row["Week"])
 
-    st.subheader("National triage (monitoring signals)")
-    st.caption(
-        "Counts below are **early-warning flags**, not validated detections. "
-        "High predicted cases ≠ outbreak in high-baseline districts (Colombo, Gampaha)."
-    )
 
-    forward = future_risk.loc[future_risk["prediction_type"] == "forward_week"].copy() if not future_risk.empty else pd.DataFrame()
-    if not forward.empty:
-        latest_forward = forward.loc[forward["horizon_step"] == 1]
-        next4 = forward.loc[forward["horizon_step"].between(1, 4)]
-        alerts_now = int(latest_forward["alert_flag"].sum()) if not latest_forward.empty else 0
-        alerts_next4 = int(next4.groupby(["District", "Year", "Week"])["alert_flag"].max().sum())
-        m1, m2 = st.columns(2)
-        m1.metric("Districts flagged (horizon 1)", alerts_now, help="Operational alert_flag; not holdout recall")
-        m2.metric("District-week flags (horizons 1–4)", alerts_next4)
+# This file is loaded as a `st.Page` FILE (registered by path in `app.py`),
+# not imported for its function alone - so, matching every other page file
+# in `views/`, it must actually render on load, not just define a function.
+# `district` comes from `st.session_state["district_select"]`, the sidebar
+# selectbox `app.py` always renders before `st.navigation(...).run()`
+# dispatches to whichever page is currently active - by the time this
+# module's top-level code executes, that key is already populated for the
+# current script rerun.
+_district = st.session_state.get("district_select", DISTRICTS[0])
 
-        top = (
-            forward.groupby("District")["calibrated_probability"].max()
-            .sort_values(ascending=False)
-            .head(5)
-            .reset_index()
-        )
-        st.write("Top 5 districts by max **forward** calibrated probability (operational)")
-        st.dataframe(top, use_container_width=True)
-    else:
-        st.info("Forward risk CSV not found — run `python scripts/refresh_dashboard_data.py`.")
+_live = load_csv(MODULE2_LIVE_RISK_PREDICTIONS_PATH)
+_future_risk = load_csv(MODULE2_FUTURE_RISK_PREDICTIONS_PATH)
+_future_cases = load_csv(MODULE1_FUTURE_FORECAST_PATH)
+_nowcast = load_m1_nowcast()
+_m1_weekly = load_csv(MODULE1_WEEKLY_MODELING_TABLE_PATH)
+_climate = load_csv(SHARED_CLIMATE_WEEKLY_PATH)
+_manifest = load_csv(DASHBOARD_REFRESH_MANIFEST_PATH)
+_hybrid_risk = load_csv(MODULE3_HYBRID_RISK_MAP_PATH)
+_district_geometry = load_district_geometry()
 
-    st.divider()
-    st.subheader(f"District drill-down: {district}")
+_case_y, _case_w = _latest_case_week(_m1_weekly)
+_clim_y, _clim_w = _latest_climate_week(_climate)
+_refresh_ts = (
+    _manifest["refreshed_at_utc"].iloc[0]
+    if not _manifest.empty and "refreshed_at_utc" in _manifest.columns
+    else None
+)
+if _refresh_ts:
+    st.sidebar.caption(f"Last refresh (UTC): {_refresh_ts}")
 
-    tab_recent, tab_cases, tab_forward = st.tabs(["Recent risk", "Case forecast", "Forward risk"])
-
-    with tab_recent:
-        st.caption("Recent observed weeks — production checkpoint; weeks may overlap training history.")
-        if live.empty:
-            st.warning("No live risk predictions.")
-        else:
-            dlive = live.loc[live["District"] == district].sort_values(["Year", "Week"])
-            st.dataframe(
-                dlive[
-                    [
-                        "Year", "Week", "calibrated_probability", "risk_tier", "alert_flag",
-                        "feature_completeness_pct", "already_scored_in_pipeline",
-                    ]
-                ],
-                use_container_width=True,
-            )
-            fig = px.line(
-                dlive,
-                x="Week_Start_Date",
-                y="calibrated_probability",
-                markers=True,
-                title=f"{district}: recent calibrated probability (operational)",
-            )
-            fig.add_hline(y=0.14, line_dash="dot", annotation_text="alert threshold")
-            st.plotly_chart(fig, use_container_width=True)
-
-    with tab_cases:
-        st.caption("Module 1 forward forecast — recursive multi-step; **not** holdout MASE.")
-        hist = m1_weekly.loc[m1_weekly["District"] == district].sort_values(["Year", "Week"]).tail(52)
-        fut = future_cases.loc[future_cases["District"] == district].sort_values("horizon_step")
-        if hist.empty and fut.empty:
-            st.warning("No case forecast data.")
-        else:
-            fig = px.line(title=f"{district}: cases — history + 8-week forward (operational)")
-            if not hist.empty:
-                fig.add_scatter(
-                    x=hist["Week_Start_Date"],
-                    y=hist["Number_of_Cases"],
-                    mode="lines+markers",
-                    name="Actual",
-                )
-            if not fut.empty:
-                fig.add_scatter(
-                    x=fut["Week_Start_Date"],
-                    y=fut["final_prediction"],
-                    mode="lines+markers",
-                    name="Forecast (M1)",
-                )
-            st.plotly_chart(fig, use_container_width=True)
-
-    with tab_forward:
-        st.warning(
-            "Horizon ≥ 2 uses Module 1 predicted case lags and forecast climate. "
-            "Uncertainty compounds — treat as scenario view, not validated probability."
-        )
-        dfwd = future_risk.loc[future_risk["District"] == district].sort_values("horizon_step")
-        if dfwd.empty:
-            st.warning("No forward risk predictions.")
-        else:
-            st.dataframe(
-                dfwd[
-                    [
-                        "horizon_step", "prediction_type", "Year", "Week",
-                        "calibrated_probability", "risk_tier", "alert_flag",
-                        "cases_source", "climate_source", "feature_completeness_pct",
-                        "uses_module1_cases", "evidence_tier",
-                    ]
-                ],
-                use_container_width=True,
-            )
-            fig = px.bar(
-                dfwd,
-                x="horizon_step",
-                y="calibrated_probability",
-                color="risk_tier",
-                title=f"{district}: forward risk by horizon (operational)",
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-    st.divider()
-    st.subheader("Module 3 — spatial hotspot map (Hybrid Risk)")
-    st.warning(
-        "**Evidence tier: operational** — Hybrid Risk is Stage 2's output (KDE spatial "
-        "baseline + RF residual correction), not a validated forecast. See the "
-        "**Research evidence** page for Stage 1/Stage 2 validation numbers "
-        "(Moran's I, convergence, fit comparison)."
-    )
-
-    if hybrid_risk.empty or district_geometry.empty:
-        st.info(
-            "Hybrid risk map or district geometry not found — run "
-            "`python -m src.module3_spatial.iterative_loop`."
-        )
-    else:
-        latest = _latest_hybrid_risk(hybrid_risk)
-        latest_year = int(latest["Year"].iloc[0])
-        latest_week = int(latest["Week"].iloc[0])
-        st.caption(
-            f"Latest available district-week: **{latest_year} Wk{latest_week}** "
-            f"(selected district **{district}** outlined in black)."
-        )
-
-        # A radio switcher, not st.tabs(): Streamlit mounts every st.tabs()
-        # panel's content on every script run and only CSS-hides the
-        # inactive ones - a Leaflet map mounted inside a display:none
-        # container sizes itself to zero and never recovers (this is
-        # exactly what made the Folium map render totally blank earlier,
-        # see MODULE_CONTEXT.md's root-cause note). A radio button instead
-        # means Python only ever constructs the ONE currently-selected
-        # map each run, so the other two are never mounted hidden at all.
-        view = st.radio(
-            "Module 3 map view",
-            [
-                "District boundaries (choropleth)",
-                "Heat cloud (Folium)",
-                "Hotspot markers (precise)",
-                "Heat glow (Uber-style)",
-            ],
-            horizontal=True,
-            label_visibility="collapsed",
-            key="module3_map_view",
-        )
-
-        if view == "District boundaries (choropleth)":
-            st.caption(
-                "Precise district polygons colored by Hybrid Risk (YlOrRd) - each district "
-                "reads as a single flat value, the exact number driving the other two views' "
-                "color/size but without their spatial blending or double-encoding."
-            )
-            fig = _hybrid_risk_choropleth(district_geometry, latest, district, latest_year, latest_week)
-            st.plotly_chart(fig, use_container_width=True)
-        elif view == "Heat cloud (Folium)":
-            st.caption(
-                "Continuous heat-cloud intensity weighted by Hybrid Risk, interpolated via "
-                "nearest-neighbour distance weighting — risk visibly concentrates toward the "
-                "border between two high-risk neighbouring districts rather than blobbing "
-                "solidly around each district's own centroid. Click a pin for that district's "
-                "exact values."
-            )
-            heatmap = _hybrid_risk_folium_heatmap(district_geometry, latest, district)
-            st_folium(heatmap, use_container_width=True, height=600, returned_objects=[])
-        elif view == "Hotspot markers (precise)":
-            st.caption(
-                "One marker per district centroid, both SIZE and COLOR driven by that "
-                "district's Hybrid Risk (bigger and redder = higher risk) - a precise, "
-                "double-encoded complement to the heat-cloud's smoothed, border-blended view. "
-                "Click a marker for that district's exact values."
-            )
-            circle_map = _hybrid_risk_circle_map(district_geometry, latest, district)
-            st_folium(circle_map, use_container_width=True, height=600, returned_objects=[])
-        else:
-            st.caption(
-                "Uber Rider-app style heat glow: dark blue-tinted basemap, each district's "
-                "own real shape glowing green-to-red by Hybrid Risk (blurred edges, not a "
-                "generic circle). A stylistic view, not the fine-grained interpolation the "
-                "Heat cloud tab uses."
-            )
-            uber_map = _hybrid_risk_uber_heatmap(district_geometry, latest, district)
-            st_folium(uber_map, use_container_width=True, height=600, returned_objects=[])
-
-        district_row = latest.loc[latest["District"] == district]
-        if not district_row.empty:
-            row = district_row.iloc[0]
-            m1, m2 = st.columns(2)
-            m1.metric(f"{district}: Hybrid Risk", f"{row['Risk']:.1f}")
-            m2.metric(f"{district}: Actual cases (same week)", int(row["Number_of_Cases"]))
+render_operational_page(
+    live=_live,
+    future_risk=_future_risk,
+    future_cases=_future_cases,
+    nowcast=_nowcast,
+    m1_weekly=_m1_weekly,
+    climate=_climate,
+    manifest=_manifest,
+    hybrid_risk=_hybrid_risk,
+    district_geometry=_district_geometry,
+    case_y=_case_y,
+    case_w=_case_w,
+    clim_y=_clim_y,
+    clim_w=_clim_w,
+    refresh_ts=_refresh_ts,
+    district=_district,
+)

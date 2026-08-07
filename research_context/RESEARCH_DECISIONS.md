@@ -1904,3 +1904,192 @@ protection against under-trained per-district models.
 ### Documentation Updated
 `module_1_forecasting/MODULE_CONTEXT.md`, `module_1_forecasting/EXPERIMENT_LOG.md`
 (M1-021), `research_context/CHANGELOG.md`.
+
+---
+
+## Decision 046: Stage 1 Ensembling Rejected — Winning Validation Candidate Failed the Holdout Check (M2-010)
+
+**Module:** Module 2
+**Status:** Rejected (benchmarked, one candidate holdout-checked, and rejected 2026-08-06)
+**Date:** 2026-08-06
+
+### Decision
+Benchmarked three ways of blending Stage 1's existing three models' out-of-fold
+probabilities (Random Forest, XGBoost, Logistic Regression) instead of selecting one
+official model: a simple average of all three, a simple average of RF+XGBoost only, and
+a no-leakage fold-aware logistic stacking blend. No models were refit - this reused
+`baseline_classifier_predictions.csv`'s already-computed OOF probabilities directly. On
+the SAME 13-fold median-PR-AUC protocol `select_official_model` itself uses (Decision
+021), the simple three-way average (`mean_all3`) beat official Random Forest on
+validation (0.4156 vs. 0.3766), triggering the one-time holdout check. **That check
+showed a regression**: holdout PR-AUC 0.3968 vs. Random Forest's 0.4292.
+
+### Reason
+The same validation-improves/holdout-regresses pattern already documented for Module 1's
+XGBoost hyperparameter search (Decision 044) - a clear validation win did not survive the
+one honest, untouched check. Per the pre-registered rule, no other candidate was checked
+against holdout once the first candidate failed.
+
+### Implication
+- Stage 1 remains a single official Random Forest model - no production code or artifact
+  changed.
+- Reusable, read-only infrastructure kept: `scripts/m2_010_stage1_ensemble.py` and
+  `outputs/metrics/module2/m2_010_ensemble_comparison.csv` - no refitting risk if revisited.
+- Secondary, non-decisive observation flagged for future reference: on a folds-2-13-only
+  window (needed to make the logistic-stacking variant comparable), plain XGBoost edges
+  out Random Forest and every ensemble variant - fold 1 alone appears to drive most of
+  RF's advantage in the official all-13-fold comparison. Not acted on this round.
+
+### Documentation Updated
+`module_2_classification/EXPERIMENT_LOG.md` (M2-010), `research_context/CHANGELOG.md`.
+
+---
+
+## Decision 047: Random Forest Hyperparameter Tuning Adopted — Genuine Holdout-Confirmed Improvement (M2-013)
+
+**Module:** Module 2
+**Status:** Adopted (searched, holdout-checked, and adopted 2026-08-06)
+**Date:** 2026-08-06
+
+### Decision
+Ran a 50-trial Optuna search over Random Forest's own hyperparameters (`n_estimators`,
+`max_depth`, `min_samples_leaf`, `min_samples_split`, `max_features`), `class_weight="balanced"`
+held fixed, scored via the exact 13-fold median-PR-AUC protocol Stage 1 selection itself uses
+(Decision 021) - reused unchanged so no metric-recomputation drift could confound the result.
+Random Forest became Stage 1's official model only via Decision 025's label re-estimation and
+had never itself been tuned - only XGBoost had (Decision 023), for an architecture no longer
+selected. The best trial (`n_estimators=472, max_depth=16, min_samples_leaf=11,
+min_samples_split=18, max_features="sqrt"`) beat the prior hand-picked defaults on validation
+(median PR-AUC 0.3948 vs. 0.3896) and, on the one-time holdout check, beat them there too
+(PR-AUC 0.4129 → 0.4228, ROC-AUC 0.883 → 0.905, Brier 0.028 → 0.018). Two other levers tested in
+the same experiment - `class_weight="balanced_subsample"` and untuned Gradient Boosting (never
+previously benchmarked, despite being listed as a candidate in `MODULE_CONTEXT.md`) - were both
+clean negative results and are not promoted.
+
+### Reason
+The first genuine, holdout-confirmed improvement found across four related experiments this
+session (M2-010 ensembling, M2-011 adaptive labeling, this tuning search, M2-014's lagged
+Module 3 feature) - unlike the other three, this is architecture-preserving (same model family,
+same feature set, same label) and improved discrimination AND calibration together, not a
+threshold re-pick or a competing model that happened to win once.
+
+### Implication
+- `RF_PARAMS` in `baseline_classifier.py` updated to the tuned values; prior hand-picked
+  defaults kept in a comment for reference.
+- The full Module 2 pipeline (Stage 1 → Stage 2 → risk thresholds) was rerun under the new
+  hyperparameters, with real cascade effects: **Stage 2's official architecture flipped
+  isotonic → platt** (the tuned RF's changed probability distribution drove this - the same
+  mechanism, in the opposite direction, that flipped Stage 2 after Decision 023's XGBoost
+  tuning); **alert threshold moved 0.140 → 0.100, high-confidence boundary 0.350 → 0.500**;
+  holdout tier separation improved (low/medium/high observed rate 0.6%/13.3%/48.8% →
+  0.6%/20.4%/62.5%, though medium/high holdout counts are small - 49/24 rows).
+- `research_context/report_drafts/chapter7_7.4_module2.md` is now stale (cites the pre-adoption
+  numbers throughout, and its Figure 7.4 note about which architecture the reliability diagram
+  shows is now backwards) - flagged for a full pass before reuse, not yet rewritten.
+- New reusable, additive infrastructure kept regardless: `fit_and_predict`'s `model_params`
+  override (RF/LR path) and `gradient_boosting` model path (fold-fresh `sample_weight`, since
+  `GradientBoostingClassifier` has no `class_weight`) - `gradient_boosting` is NOT in
+  `MODEL_NAMES`, so it does not participate in automatic official-model selection.
+
+### Documentation Updated
+`module_2_classification/MODULE_CONTEXT.md` (Stage 1/Stage 2/Risk Thresholds status sections),
+`module_2_classification/EXPERIMENT_LOG.md` (M2-013), `research_context/CHANGELOG.md`.
+
+---
+
+## Decision 048: Prospective Forward-Risk Accuracy Tracking Added (M2-015)
+
+**Module:** Module 2
+**Status:** Accepted (implemented and run 2026-08-07)
+**Date:** 2026-08-07
+
+### Decision
+Added `src/module2_classification/risk_tracking.py`, mirroring Decision 041/M1-017's
+nowcast tracker exactly: `append_to_risk_log()` (wired into `forecast_future_risk.
+run_forward_risk()`, default on) appends every genuinely-forward
+(`prediction_type == "forward_week"`) row to a permanent, append-only log
+(`risk_prediction_log.csv`) - the already-resolved `observed_week` row is deliberately
+excluded, since it has ground truth at logging time and is not a prospective prediction.
+`reconcile_risk_log()` (wired into `scripts/refresh_dashboard_data.py` as a new
+`module2_risk_reconcile` step) recomputes the actual epidemic-threshold label from the
+current `weekly_modeling_table.csv` and joins it against the log wherever a logged target
+week has since resolved, writing `risk_prospective_accuracy.csv`. Seeded with the current
+200-row (25 districts x 8 horizon weeks) forward risk run; first reconciliation correctly
+shows 0/200 resolved (none of those weeks have happened yet).
+
+### Reason
+User asked directly whether Module 2 can predict next week's outbreak risk. Answering
+required actually running the forward-scoring pipeline, which surfaced two real bugs
+(Platt-scaling scored incorrectly, a forward-week feature-construction crash - both fixed
+same day) and then the same honest gap Module 1 already had before Decision 041: the
+forward prediction itself has no way to be checked against reality yet. The only honest
+fix is to log now and wait for real weeks to resolve, exactly as Module 1 already does.
+
+### Implication
+- Pure infrastructure - does not itself demonstrate whether the forward scoring is
+  accurate. `risk_prospective_accuracy.csv` will grow additively as real weeks resolve
+  and should be checked periodically, not assumed silent. Given the label's own ~1.5%
+  holdout prevalence, accumulating enough resolved OUTBREAK weeks specifically (as opposed
+  to just resolved weeks generally) to say anything statistically meaningful will take a
+  long real-calendar time - flagged explicitly so this is not mistaken for a fast-arriving
+  evidence source.
+- Not a substitute for, and should not be conflated with, the holdout-validated
+  PR-AUC/recall/BSS numbers in Chapter 7 - a different, much slower-arriving, but
+  genuinely prospective evidence tier, same distinction already documented for Module 1's
+  nowcast vs. its backtest MASE.
+- No existing Module 2 pipeline, model, or default artifact affected beyond
+  `run_forward_risk()` gaining a side-effect (the log append) and
+  `refresh_dashboard_data.py` gaining one more step.
+
+### Documentation Updated
+`module_2_classification/MODULE_CONTEXT.md`, `module_2_classification/EXPERIMENT_LOG.md`
+(M2-015), `research_context/CHANGELOG.md`.
+
+---
+
+## Decision 049: Case-Anomaly-Lag-1 Carry-Forward Substitution Rejected — Validation Regressed (M2-016)
+
+**Module:** Module 2
+**Status:** Rejected (tested 2026-08-07, not promoted)
+**Date:** 2026-08-07
+
+### Decision
+Tested substituting `case_anomaly_lag_2` for a masked `case_anomaly_lag_1` (when the prior week
+is `is_reporting_anomaly`) instead of leaving it `NaN` - mirroring Module 1's Decision 030/M1-006B
+`cases_lag_1` nowcast substitution, but scoped to Module 2's own dominant Stage 1 feature.
+Motivated by a user-facing investigation into why Colombo/Gampaha's 2026 Wk25 real outbreak
+(`label=1`, cases 1,138/1,294) was scored "low"/"medium" risk, not "high" - traced to
+`case_anomaly_lag_1` (~35% of Random Forest importance) going missing for that week because the
+immediately preceding week (Wk24) carries the same reporting-delay flag already documented for
+Module 1 (Decision 026/028). Benchmarked via `scripts/m2_016_case_anomaly_lag1_carryforward.py`:
+13-fold walk-forward median PR-AUC, current production Random Forest hyperparameters
+(Decision 047) held fixed as the only controlled variable.
+
+**Result: carry-forward is slightly WORSE on validation** (median PR-AUC 0.3865 vs. baseline
+0.3917) - does not clear the pre-registered "beats baseline" bar. Per the project's own
+"validation wins first, holdout checks once" rule, the holdout block was NOT examined - meaning
+this experiment cannot say whether the substitution would have changed the specific Colombo/
+Gampaha Wk25 prediction that motivated it, since that row lives inside the untouched holdout.
+
+### Reason
+`case_anomaly_lag_2` is already its own feature (~27% importance); copying its value into
+`case_anomaly_lag_1` supplies no genuinely new information to the Random Forest and can dilute
+splits, while on the far more common non-outbreak weeks following a flagged anomaly it risks
+injecting a stale nonzero anomaly reading where the existing median-impute default ("assume
+normal") is usually the safer call, given the label's low overall prevalence (Decision 025,
+~8.6% pooled).
+
+### Implication
+- `feature_engineering.compute_case_anomaly_lags()`/`build_module2_feature_table()` gained a
+  `carry_forward_masked_lag1` parameter, default `False` - production behavior is unchanged.
+  Kept in the codebase (not reverted) as a documented, tested-and-rejected variant for future
+  ablation replay, consistent with this project's treatment of other negative results
+  (e.g. M1-006A).
+- The Colombo/Gampaha Wk25 false negative itself remains unexplained-by-fix, though its
+  MECHANISM is now documented precisely (dominant feature goes missing right when an
+  accelerating outbreak most needs it seen) - a genuine, open limitation, not a solved one.
+- No production artifact, model, or default changed.
+
+### Documentation Updated
+`module_2_classification/MODULE_CONTEXT.md`, `module_2_classification/EXPERIMENT_LOG.md`
+(M2-016), `research_context/CHANGELOG.md`.

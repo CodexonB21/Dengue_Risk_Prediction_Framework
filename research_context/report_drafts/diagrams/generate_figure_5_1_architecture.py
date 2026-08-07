@@ -139,8 +139,8 @@ def main() -> Path:
             "Module 2\nOutbreak Classification",
             [
                 "Module-specific prep\nweek-53 keep · labels",
-                "Stage 1\nRandom Forest",
-                "Stage 2\nIsotonic calibration",
+                "Stage 1\nRandom Forest (tuned)",
+                "Stage 2\nPlatt scaling",
                 "Output\nalert / risk tiers",
             ],
         ),

@@ -34,7 +34,6 @@ from src.config import (  # noqa: E402
 from src.module2_classification import evaluate  # noqa: E402
 from src.module2_classification.labels import compute_epidemic_threshold_labels  # noqa: E402
 
-ALERT_THRESHOLD = 0.14
 FIXED_CASE_THRESHOLD = 100
 
 
@@ -45,7 +44,7 @@ def _load_holdout_table() -> pd.DataFrame:
     m2 = pd.read_csv(MODULE2_RISK_TIER_PREDICTIONS_PATH, low_memory=False)
     m2 = m2[
         (m2["split"] == "holdout") & (m2["is_selected_architecture"] == True)  # noqa: E712
-    ][["District", "Year", "Week", "label", "calibrated_probability", "alert_flag"]]
+    ][["District", "Year", "Week", "label", "calibrated_probability", "alert_flag", "architecture"]]
 
     weekly = pd.read_csv(MODULE2_PROCESSED_DIR / "weekly_modeling_table.csv")
     labeled = compute_epidemic_threshold_labels(weekly)
@@ -82,9 +81,17 @@ def run_m2_009_evaluation() -> tuple[pd.DataFrame, pd.DataFrame]:
     m1_pred = scored["final_prediction"].to_numpy(dtype=float)
     m1_excess = m1_pred - epidemic_threshold
 
+    # Pulled from the data rather than hardcoded, so this label can never go
+    # stale the way "isotonic, tau=0.14" silently did after Decision 047's
+    # RF tuning flipped the official architecture and threshold.
+    architecture = str(scored["architecture"].iloc[0])
+    alerted = scored.loc[scored["alert_flag"].astype(bool), "calibrated_probability"]
+    tau_display = float(alerted.min()) if not alerted.empty else float("nan")
+    m2_label = f"M2 production ({architecture}, tau~={tau_display:.3f})"
+
     rows = [
         _metric_row(
-            "M2 production (isotonic, tau=0.14)",
+            m2_label,
             y,
             scored["calibrated_probability"].to_numpy(dtype=float),
             scored["alert_flag"].to_numpy(dtype=float),

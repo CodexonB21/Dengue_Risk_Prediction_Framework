@@ -257,6 +257,20 @@ MODULE2_LIVE_RISK_PREDICTIONS_PATH = MODULE2_PROCESSED_DIR / "live_risk_predicti
 # lags; src/module2_classification/forecast_future_risk.py) ---
 MODULE2_FUTURE_RISK_PREDICTIONS_PATH = MODULE2_PROCESSED_DIR / "future_risk_predictions.csv"
 
+# Prospective (not backtested) forward-risk accuracy tracking (mirrors
+# Decision 041/M1-017's nowcast tracker exactly, for the same reason: every
+# other Module 2 evaluation - walk-forward validation, the 2-year holdout -
+# scores against data already in the dataset. run_forward_risk()'s genuinely
+# future (`prediction_type == "forward_week"`) rows have no ground truth yet,
+# so none of that machinery can validate them directly. Every
+# run_forward_risk() call appends those rows to this permanent, append-only
+# log; once real case counts for a logged target week later appear in
+# weekly_modeling_table.csv, risk_tracking.reconcile_risk_log() recomputes
+# the actual epidemic-threshold label for that week and joins it in. This
+# accumulates over real calendar time and is never fabricated or estimated.
+MODULE2_RISK_LOG_PATH = MODULE2_PROCESSED_DIR / "risk_prediction_log.csv"
+MODULE2_RISK_PROSPECTIVE_ACCURACY_PATH = MODULE2_METRICS_DIR / "risk_prospective_accuracy.csv"
+
 
 def module2_stage1_paths(feature_variant: str | None = None) -> dict[str, Path]:
     """Return Stage 1 artifact paths; ablations use a ``_<variant>`` suffix."""

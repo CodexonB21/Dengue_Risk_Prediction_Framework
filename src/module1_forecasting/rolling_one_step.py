@@ -527,6 +527,7 @@ def run_rolling_one_step(
     min_train_years: int = DEFAULT_MIN_TRAIN_YEARS,
     residual_mode: str | None = None,
     warm_start: bool = False,
+    ensemble_window: int | None = None,
     output_path: Path | None = None,
     metrics_path: Path | None = None,
     dm_path: Path | None = None,
@@ -558,6 +559,7 @@ def run_rolling_one_step(
                 target_keys=target_keys,
                 residual_mode=mode,
                 warm_start=warm_start,
+                ensemble_window=ensemble_window,
             )
         )
 
@@ -603,6 +605,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--warm-start", action="store_true",
         help="Seed each week's SARIMAX fit with the previous week's converged params (M1-013).",
     )
+    parser.add_argument(
+        "--ensemble-window", type=int, default=None,
+        help=("Average this many independent weekly SARIMA vintages per target week (M1-015/"
+              "Decision 040 - matches MODULE1_NOWCAST_ENSEMBLE_WINDOW=4 in production run_nowcast()). "
+              "Mutually exclusive with --warm-start. Default: unset (plain weekly cold refit, the "
+              "existing committed rolling_one_step_predictions.csv's behavior)."),
+    )
     return parser.parse_args(argv)
 
 
@@ -611,5 +620,5 @@ if __name__ == "__main__":
     args = _parse_args()
     run_rolling_one_step(
         districts=args.districts, scope=args.scope, residual_mode=args.residual_mode,
-        warm_start=args.warm_start,
+        warm_start=args.warm_start, ensemble_window=args.ensemble_window,
     )

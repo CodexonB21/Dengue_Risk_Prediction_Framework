@@ -259,7 +259,9 @@ def build_fold_agnostic_features(df: pd.DataFrame) -> pd.DataFrame:
 # M2-5: case-level seasonal anomaly lags (fold-agnostic - see module docstring)
 # ---------------------------------------------------------------------------
 
-def compute_case_anomaly_lags(df: pd.DataFrame) -> pd.DataFrame:
+def compute_case_anomaly_lags(
+    df: pd.DataFrame, *, carry_forward_masked_lag1: bool = False,
+) -> pd.DataFrame:
     """Return a `(District, Year, Week, case_anomaly_lag_1, case_anomaly_lag_2)`
     DataFrame, safe to merge onto the main feature table.
 
@@ -268,20 +270,46 @@ def compute_case_anomaly_lags(df: pd.DataFrame) -> pd.DataFrame:
     (`zscore > k`). Only the shifted (1-2 weeks prior) values are safe and
     useful features. Rows whose lagged week was itself `is_imputed` get
     `NaN` (a fabricated case count is not a real anomaly observation).
+
+    `carry_forward_masked_lag1` (experimental, default off - mirrors Module
+    1's Decision 030/M1-006B `cases_lag_1` nowcast substitution, but is NOT
+    itself validated/adopted yet): when True, and week *t-1* is itself
+    `is_reporting_anomaly` (so `case_anomaly_lag_1` at row *t* would
+    otherwise be `NaN`), substitute `case_anomaly_lag_2` (the last
+    known-good anomaly reading, from *t-2*) instead of leaving it missing.
+    `case_anomaly_lag_1` is this model's single most important feature
+    (~35% of RF feature importance) - leaving it `NaN` right after a
+    flagged week means the model's preprocessing median-imputes it to
+    approximately "no anomaly", which is the wrong default during a real
+    accelerating outbreak (see the 2026 Wk25 Colombo/Gampaha false-negative
+    investigation). Does NOT touch `is_imputed`-driven masking (a
+    fabricated case count is a different kind of unknown than a merely
+    mis-timed real one) - scoped identically to M1-006B's own precedent.
     """
     stats = compute_historical_stats_harmonic(df)
     stats = stats.sort_values(["District", "Year", "Week"]).reset_index(drop=True)
 
     case_zscore = (stats["Number_of_Cases"] - stats["historical_mean"]) / stats["historical_sd"]
     case_zscore = case_zscore.replace([np.inf, -np.inf], np.nan)
-    case_zscore = case_zscore.where(~stats["is_imputed"])
+    case_zscore = case_zscore.where(~stats["is_imputed"].fillna(False).astype(bool))
     if "is_reporting_anomaly" in stats.columns:
-        case_zscore = case_zscore.where(~stats["is_reporting_anomaly"])
+        # `.fillna(False)` guards against a NaN-contaminated boolean column
+        # (e.g. synthetic forward-week rows lacking this field, which
+        # upcasts the whole column to object/float and breaks `~`) - found
+        # via forecast_future_risk.py's forward scoring (M2-013 follow-up).
+        case_zscore = case_zscore.where(~stats["is_reporting_anomaly"].fillna(False).astype(bool))
 
     stats["case_zscore"] = case_zscore
-    grouped_zscore = stats.groupby("District")["case_zscore"]
+    grouped = stats.groupby("District")
+    grouped_zscore = grouped["case_zscore"]
     stats["case_anomaly_lag_1"] = grouped_zscore.shift(1)
     stats["case_anomaly_lag_2"] = grouped_zscore.shift(2)
+
+    if carry_forward_masked_lag1 and "is_reporting_anomaly" in stats.columns:
+        prior_flagged = grouped["is_reporting_anomaly"].shift(1).fillna(False).astype(bool)
+        stats["case_anomaly_lag_1"] = stats["case_anomaly_lag_1"].where(
+            ~prior_flagged, stats["case_anomaly_lag_2"]
+        )
 
     return stats[["District", "Year", "Week", "case_anomaly_lag_1", "case_anomaly_lag_2"]]
 
@@ -292,11 +320,15 @@ def compute_case_anomaly_lags(df: pd.DataFrame) -> pd.DataFrame:
 
 def build_module2_feature_table(
     input_path: Path = MODULE2_WEEKLY_MODELING_TABLE_PATH,
+    *,
+    carry_forward_masked_lag1: bool = False,
 ) -> pd.DataFrame:
     df = pd.read_csv(input_path, parse_dates=["Week_Start_Date", "Week_End_Date"])
 
     features = build_fold_agnostic_features(df)
-    case_anomaly_lags = compute_case_anomaly_lags(df)
+    case_anomaly_lags = compute_case_anomaly_lags(
+        df, carry_forward_masked_lag1=carry_forward_masked_lag1,
+    )
     features = features.merge(case_anomaly_lags, on=["District", "Year", "Week"], how="left")
 
     return features.drop(columns=[WEATHER_CODE_COLUMN], errors="ignore")

@@ -1,4 +1,9 @@
-"""Generate Chapter 7 Figure 7.4: Module 2 reliability diagrams (isotonic)."""
+"""Generate Chapter 7 Figure 7.4: Module 2 reliability diagrams.
+
+Labels the calibrated curve dynamically from `architecture` (the currently
+`is_selected_architecture` row), rather than hardcoding "isotonic" - Decision
+047/M2-013's Random Forest tuning flipped the official architecture to
+Platt scaling, and this script previously named the wrong one."""
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -25,7 +30,7 @@ def load_selected() -> pd.DataFrame:
     return df
 
 
-def plot_panel(ax, y_true, p_raw, p_cal, title: str) -> None:
+def plot_panel(ax, y_true, p_raw, p_cal, title: str, architecture_label: str) -> None:
     ax.plot([0, 1], [0, 1], ls="--", color="#9ca3af", lw=1.2, label="Perfect calibration")
     if len(np.unique(y_true)) > 1 and len(y_true) >= N_BINS:
         frac_raw, mean_raw = calibration_curve(
@@ -50,7 +55,7 @@ def plot_panel(ax, y_true, p_raw, p_cal, title: str) -> None:
             color="#b45309",
             lw=1.5,
             ms=5,
-            label="Stage 2 isotonic",
+            label=f"Stage 2 {architecture_label}",
         )
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
@@ -68,6 +73,7 @@ def main() -> Path:
     # Validation: folds where Stage 2 was trained (exclude fold-1 passthrough)
     val = df[(df["split"] == "validation") & (df["stage2_trained"])]
     hold = df[df["split"] == "holdout"]
+    architecture_label = str(df["architecture"].iloc[0]).capitalize() if len(df) else "Calibrated"
 
     fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.8))
     plot_panel(
@@ -76,6 +82,7 @@ def main() -> Path:
         val["stage1_predicted_probability"].to_numpy(),
         val["calibrated_probability"].to_numpy(),
         "Validation (Stage 2–trained folds)",
+        architecture_label,
     )
     plot_panel(
         axes[1],
@@ -83,10 +90,11 @@ def main() -> Path:
         hold["stage1_predicted_probability"].to_numpy(),
         hold["calibrated_probability"].to_numpy(),
         "Holdout",
+        architecture_label,
     )
     axes[0].legend(loc="upper left", frameon=False, fontsize=9)
     fig.suptitle(
-        "Module 2 reliability: Stage 1 raw vs isotonic Stage 2",
+        f"Module 2 reliability: Stage 1 raw vs {architecture_label} Stage 2",
         fontsize=12,
         y=1.02,
     )

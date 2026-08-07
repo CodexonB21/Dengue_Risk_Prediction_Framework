@@ -1,0 +1,3 @@
+candidate,median_pr_auc
+without_m3_risk,0.38961116599330775
+with_m3_risk_lag,0.3837809558511817

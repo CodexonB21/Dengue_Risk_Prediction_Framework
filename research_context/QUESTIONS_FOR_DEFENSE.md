@@ -249,3 +249,45 @@ Colombo at 200 cases may be normal; a low-incidence district at 30 may be an out
 **Defense one-liner:** "The core two-stage architecture's backtest accuracy is stable, not broken — we spent this arc stress-testing it from six different angles and it held up. The one real improvement we found applies specifically to the operational next-week nowcast, and we built the infrastructure to keep measuring it honestly rather than declaring victory on a single retroactive check."
 
 **Evidence:** Decisions 039–045, M1-013 through M1-021 (`module_1_forecasting/EXPERIMENT_LOG.md`), "Investigation Summary: Module 1 Remediation Arc" section of `module_1_forecasting/MODULE_CONTEXT.md`.
+
+---
+
+## Why is the actual-vs-predicted gap for Colombo/Gampaha 2026 Wk25 so large, when the surrounding weeks look fine?
+
+**Short answer:** it is a specific, documented reporting-delay artifact in the case data one week earlier, not a general model failure and not primarily a missing-feature (e.g. mobility) problem.
+
+**The mechanism:** Colombo went 507 → **20** → 1,138 cases (Wk23/24/25); Gampaha went 502 → **24** → 1,294. A real epidemic does not crash to near-zero for a single week and then explode — that shape is the signature of delayed reporting: Wk24's real cases were most likely under-reported and folded into Wk25's count on top of genuine continued growth. Both weeks are already flagged `is_reporting_anomaly=True`/the week after in the pipeline (Decision 026/028), independently of this specific question.
+
+**Why it broke the forecast specifically:** both modules' single most important input is "what happened in the last 1-2 weeks" (Module 1's `residual_lag_1` is its top feature by a wide margin; Module 2's `case_anomaly_lag_1/2` account for >60% of its feature importance). Wk24's artificially low count told both models "cases just fell" immediately before the week they needed to predict a multi-fold jump — the models were not wrong to trust that signal in general, they were fed a corrupted version of it once.
+
+**Why the previous weeks looked fine:** Wk18-23 was a genuine, smooth ramp-up, so "trust last week's number" was good advice there, and both modules tracked it reasonably well (~13% sMAPE under the deployment-realistic rolling evaluation). The model did not get worse — its most-trusted input broke for one week.
+
+**Is it a missing-data issue (e.g. human mobility)?** Not the direct cause here — we can point to the exact corrupted data point and mechanism, not just infer a gap. But it is fair to separately volunteer a genuine, broader limitation: the framework has no independent leading indicator (mobility, healthcare-seeking behaviour, vector surveillance) that could signal an accelerating outbreak *before* it shows up in reported case counts. Even with a perfectly clean Wk24, a 2-8x single-week jump is inherently hard for a trend-following model to anticipate a week ahead, since by construction it reacts to what already happened rather than what is about to.
+
+**What was tried and ruled out, so this isn't presented as unexplored:** a real-time detector that would adjust the forecast whenever a dip looks like a reporting delay was tested and rejected (Decision 043/M1-019) — only 42.9% precision overall, worse for Colombo/Gampaha specifically (46.2%/30.0%) — more than half of live flags would be false alarms on a genuine decline, so "fixing" this in real time would do more harm than good.
+
+**Defense one-liner:** "This isn't a case we can't explain — we can point to the exact corrupted data point, the exact mechanism, and the specific dominant feature it poisoned. We also tested the obvious real-time fix and can show why it was rejected, rather than leaving the question unexplored."
+
+**Evidence:** Decisions 026/028/043, M1-019 (`module_1_forecasting/MODULE_CONTEXT.md` Open Question #16, `EXPERIMENT_LOG.md`); `data/processed/module1/weekly_modeling_table.csv` (`is_reporting_anomaly` column); Figure 7.2 (now annotated with this event directly on the chart).
+
+---
+
+## In simple terms, why did BOTH the forecast (Module 1) and the outbreak classification (Module 2) go badly wrong for Wk25 2026, when the models had been doing fine before?
+
+**Short answer:** one bad data point one week earlier confused both models at once, because they both rely most heavily on the exact same kind of clue — "how many cases were there last week."
+
+**The simple story:** Colombo's reported cases went 507 → **20** → 1,138 across three weeks (Gampaha: 502 → 24 → 1,294). A real outbreak doesn't crash to almost nothing for one week and then jump to record levels — that pattern looks like a **reporting delay**: the health system likely didn't finish counting Wk24's real cases on time, and those uncounted cases got added into Wk25's number instead, on top of real continued growth. We can point to this exact data point — it's automatically flagged in our data as unusual (`is_reporting_anomaly`), independently of this specific week.
+
+**Why it fooled both models the same way:** think of each model as asking "what just happened, and how is it changing?" before it guesses what happens next. For Module 1 (the forecast), the single most trusted clue is last week's error trend. For Module 2 (the classifier), the single most trusted clue is how unusual last week's case count was compared to normal. Both of those clues pointed the same wrong direction right before Wk25 — one said "the trend just dropped," the other said "this looks like a big data gap, best guess is nothing unusual." Both models did what they were designed to do; the input they trusted most was itself wrong that one time.
+
+**Why the weeks before and after looked fine:** during the real, gradual build-up (roughly Wk18-23), "trust last week's number" was genuinely good advice, and both models tracked the rising case counts reasonably well. The models did not get worse at their job — the one signal they lean on hardest broke for a single week, right when accuracy mattered most.
+
+**Is this a sign the models are broken, or missing something big like mobility data?** No — we can name the exact cause (one corrupted data point) rather than shrug and say "the model just isn't good enough." It's fair to also mention, separately, that the framework has no independent early-warning signal (like mobility or healthcare-seeking behaviour) that could hint at a surge before it shows up in case counts — but that's a general, honest limitation of the whole approach, not the specific reason this one week failed.
+
+**We didn't just find the cause and stop there — we tried to fix it, honestly:**
+- For Module 1, a real-time "catch this kind of dip and correct the forecast" detector was built and tested. It was **rejected**: it would have been wrong more than half the time for these exact two districts (Decision 043).
+- For Module 2, we specifically tested replacing the missing "how unusual was last week" signal with the next best available reading, mirroring a fix that DID work for Module 1 elsewhere. It was also **rejected** — it made the model's overall accuracy slightly worse, not better, on the validation data used to decide such things (Decision 049/M2-016). We deliberately did not peek at the exact week in question to see if it "would have worked," because that would break the same evaluation rule that makes every other number in this project trustworthy.
+
+**Defense one-liner:** "One bad data point, one week before, fooled both modules the same way — because both lean hardest on 'what just happened.' We can name the exact cause, we tried the obvious fixes for both modules, and we can show honestly why each fix was rejected rather than quietly assumed to work."
+
+**Evidence:** Decisions 026/028/043/049, M1-019, M2-016 (`module_1_forecasting/MODULE_CONTEXT.md` Open Question #16; `module_2_classification/MODULE_CONTEXT.md` Open Question #11; both modules' `EXPERIMENT_LOG.md`); the previous question above for the Module 1-specific technical detail.
