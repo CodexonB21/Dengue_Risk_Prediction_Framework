@@ -16,6 +16,7 @@ from src.dashboard.data_loaders import (
     load_m3_convergence_log,
     load_m3_feature_importance,
     load_m3_morans_i,
+    load_m3_persistence_baseline,
     load_m3_stage_comparison,
     load_production_stack,
     m1_holdout_summary,
@@ -186,8 +187,10 @@ def render_evidence_page() -> None:
     st.subheader("Module 3 — spatial hotspot detection (KDE + RF residual compensation)")
     st.caption(
         "Stage 1: Kernel Density Estimation + Global Moran's I spatial baseline. "
-        "Stage 2: Random Forest residual compensation, wrapped in an iterative "
-        "refinement loop (max 4 iterations, dual convergence check)."
+        "Stage 2: Random Forest residual compensation (own-district residual lag "
+        "features, M3-008), capped at 1 iteration by design — the lag features are "
+        "fixed relative to Risk_0, so retraining past iteration 1 is not well-founded "
+        "for this feature set (see MODULE_CONTEXT.md)."
     )
 
     morans_df = load_m3_morans_i()
@@ -195,6 +198,7 @@ def render_evidence_page() -> None:
     convergence = m3_convergence_summary(load_m3_convergence_log())
     m3_comparison = load_m3_stage_comparison()
     m3_importance = load_m3_feature_importance()
+    m3_persistence = load_m3_persistence_baseline()
 
     col1, col2 = st.columns(2)
     with col1:
@@ -236,17 +240,40 @@ def render_evidence_page() -> None:
                 display[col] = display[col].map(lambda x: f"{x:.4f}" if pd.notna(x) else "—")
         st.dataframe(display, use_container_width=True, hide_index=True)
         st.info(
-            "**Null result, reported honestly**: Stage 2's residual correction does NOT "
-            "improve aggregate fit to actual case counts (correlation -0.0037, MAE +1.7%, "
-            "RMSE +0.9% vs. Stage 1 alone). This is expected, not a bug — the shrinkage "
-            "term (alpha=0.05) was chosen for stable, immediate convergence, not accuracy. "
-            "Stage 2's real value is diagnostic: the feature importance below reveals "
-            "*which* factors (population density, climate timing) drive district-level "
-            "burden beyond pure spatial proximity — something Stage 1's KDE baseline, "
-            "with zero covariates, structurally cannot provide."
+            "**Substantially improves fit (M3-008, supersedes the earlier M3-005 null "
+            "result)**: adding own-district residual lag features cut MAE from 20.54 to "
+            "9.96 (~51% reduction) and raised correlation from 0.824 to 0.955 vs. Stage 1 "
+            "alone. The original 16-feature model (M3-005) genuinely showed no "
+            "improvement — every one of those features was either static per-district or "
+            "current-week climate, giving the RF no memory of a district's own recent "
+            "trend. See the naive-persistence check directly below, though: most of this "
+            "51% figure is achievable with no model at all."
         )
     else:
         st.warning("Stage 1 vs Stage 2 comparison file not found — run `python -m src.module3_spatial.evaluate`.")
+
+    st.markdown("**Is Stage 2 actually beating a trivial baseline?**")
+    if not m3_persistence.empty:
+        display = m3_persistence.copy()
+        for col in ("corr", "mae", "rmse"):
+            if col in display.columns:
+                display[col] = display[col].map(lambda x: f"{x:.4f}" if pd.notna(x) else "—")
+        st.dataframe(display, use_container_width=True, hide_index=True)
+        st.warning(
+            "**Honest caveat (M3-010/M3-011)**: with `residual_rescaled_lag_1`+`lag_2` at "
+            "89.8% of feature importance, the obvious question is whether the RF beats "
+            "simply carrying last week's own residual forward with no model at all. It "
+            "does NOT beat that naive baseline on MAE (9.44 vs. 9.96) — only on "
+            "correlation and RMSE, by damping the naive predictor's more frequent, more "
+            "severe overshoots (it clips about half as many rows to zero: 4.8% vs. 9.1%). "
+            "A follow-up attempt to combine both (have the RF predict only the correction "
+            "beyond persistence) was tried and was worse than both on every metric "
+            "(M3-011) — not pursued further. Stage 2's real, defensible value is "
+            "controlling the severity of large errors, not beating a trivial baseline on "
+            "typical-case accuracy."
+        )
+    else:
+        st.warning("Persistence baseline file not found — run `python -m src.module3_spatial.persistence_baseline`.")
 
     if not m3_importance.empty:
         st.markdown("**Stage 2 feature importance**")

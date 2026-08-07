@@ -28,6 +28,7 @@ from src.config import (
     MODULE2_STAGE2_METRICS_PATH,
     MODULE3_CONVERGENCE_LOG_PATH,
     MODULE3_MORANS_I_METRICS_PATH,
+    MODULE3_PERSISTENCE_BASELINE_PATH,
     MODULE3_RF_FEATURE_IMPORTANCE_PATH,
     MODULE3_STAGE_COMPARISON_PATH,
     GADM_LEVEL1_SHAPEFILE_PATH,
@@ -167,6 +168,10 @@ def load_m3_feature_importance() -> pd.DataFrame:
 
 def load_m3_stage_comparison() -> pd.DataFrame:
     return load_csv(MODULE3_STAGE_COMPARISON_PATH)
+
+
+def load_m3_persistence_baseline() -> pd.DataFrame:
+    return load_csv(MODULE3_PERSISTENCE_BASELINE_PATH)
 
 
 def m3_morans_i_summary(morans_df: pd.DataFrame) -> dict[str, float | bool]:
