@@ -6,6 +6,76 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-08-07 - Dashboard redesigned into a 4-page multipage app for evaluator self-explanatoriness
+
+### Module
+Dashboard / Integration Layer
+
+### Change
+Full restructure of `src/dashboard/` from a single `app.py` + `pages.py` (two radio-button
+"pages") + `evidence_data.py` into a real Streamlit multipage app: `app.py` (sidebar +
+`st.navigation`) dispatching to four file-based pages under `views/`
+(`overview.py`, `research_evidence.py`, `operational_monitoring.py`,
+`prospective_tracking.py`), plus three new supporting modules - `data_loaders.py` (single
+cached CSV/shapefile loading surface, replacing three separately-cached/uncached copies),
+`components.py` (`evidence_badge`/`module_badge` pills, a `GLOSSARY` feeding both a sidebar
+expander and inline column tooltips, `get_thresholds()` as the one permitted place to read
+alert/high thresholds, `prospective_tracker_panel()`), and `theme.py` (module identity
+colors copied from the Figure 5.1 diagram generator, kept strictly separate from the
+existing YlOrRd risk-magnitude colorscale). Six previously-computed-but-unwired files are
+now shown: `nowcast_next_week.csv`/`nowcast_prediction_log.csv`/
+`nowcast_prospective_accuracy.csv` (Module 1) and `stage2_uncertainty_bands.csv`/
+`risk_prediction_log.csv`/`risk_prospective_accuracy.csv` (Module 2). Honest per-district/
+per-week caveats already documented in research files but previously invisible in-app are
+now surfaced directly (M1 Kilinochchi/Mannar/Vavuniya holdout regressions, M3's NE-monsoon
+non-significant Moran's I week, `is_reporting_anomaly` markers on the case-forecast chart).
+`pages.py`/`evidence_data.py` retired; `DASHBOARD_GUIDE.md` trimmed to a developer/run
+reference now that the narrative content (evidence-tier meanings, column glossary,
+walkthrough order, "what not to say") lives in the app itself.
+
+### Reason
+User feedback: "the current dashboard is not self-explanatory or user-friendly" and needed
+to be shown usefully to evaluators. Auditing the existing dashboard while planning the fix
+surfaced a real, independent bug worth fixing in the same pass: the Research Evidence
+page's Module 2 metrics (PR-AUC, architecture name, alert threshold) were read from a
+frozen `production_stack_evaluation_summary.csv` snapshot dated 2026-07-29 that predates
+Decision 047/M2-013 (Random Forest retuning flipped Stage 2 isotonic -> Platt and moved
+thresholds 0.14/0.35 -> 0.10/0.50) - the dashboard was silently showing stale
+pre-promotion numbers as if current. Separately, `streamlit-folium` (imported by the
+Module 3 map tab) was missing from the project's actual `.venv`.
+
+### Impact
+- `evidence_data.py::m2_holdout_summary()` (now `data_loaders.py`) rewritten to read live
+  from the same sources the production scoring pipeline itself uses
+  (`scoring_utils.official_stage2_architecture()`/`load_production_thresholds()`,
+  `stage2_compensation_metrics.csv`, `risk_threshold_holdout_comparison.csv`) instead of
+  the frozen snapshot - verified: now correctly reports `architecture='platt'`,
+  `alert_threshold=0.1`, `pr_auc=0.4228`.
+- `streamlit-folium` installed into `.venv`.
+- Verified end-to-end via `streamlit.testing.v1.AppTest` (not just import checks) across
+  all four pages, including a real navigation switch between them - zero exceptions.
+- A real bug found and fixed mid-implementation: initial `st.Page(callable, ...)`
+  registration (with an anonymous `lambda` for the Operational Monitoring page) could not
+  be verified by `AppTest.switch_page()` at all and carried a real risk of unstable page
+  identity across reruns (a fresh lambda object every script run); switched to file-based
+  `st.Page(path, ...)` registration, which is independently testable and matches
+  Streamlit's more conventional multipage pattern.
+- No production model, threshold-selection logic, or evaluation pipeline changed - this is
+  entirely dashboard/presentation-layer work plus the one live-data-source correctness fix
+  above.
+
+### Status
+Complete; verified via `AppTest` smoke checks. Delivered in reviewed phases (bug/env fix →
+components/theming → data consolidation → multipage + Overview → wiring in the 6 files →
+honest-caveats polish) per user request.
+
+### Documentation Updated
+- `research_context/CURRENT_ARCHITECTURE.md` (Integration Layer section, Last Updated).
+- `research_context/CHANGELOG.md` (this entry).
+- `src/dashboard/DASHBOARD_GUIDE.md` (trimmed to developer/run reference).
+
+---
+
 ## 2026-08-07 - Module 2: prospective forward-risk accuracy tracker added (M2-015/Decision 048)
 
 ### Module
