@@ -4,7 +4,7 @@
 Living document. Update this file whenever the accepted architecture changes.
 
 ## Last Updated
-2026-08-04 (Module 3 forward operational hotspot forecast — Decision 031)
+2026-08-07 (Dashboard redesigned into a 4-page multipage app for evaluator self-explanatoriness)
 
 ## Architecture Version
 v1.0-initial-living-context
@@ -135,18 +135,29 @@ Correct baseline spatial risk using environmental and demographic context such a
 # Integration Layer
 
 The three modules feed into an **operational early-warning dashboard** (implemented
-2026-07-29, Decision 027; Module 3 forward hotspot added 2026-08-04, Decision 031):
+2026-07-29, Decision 027; redesigned into a 4-page multipage app 2026-08-07):
 
 ```text
 scripts/fetch_open_meteo_weather.py     → raw daily weather (observed + forecast)
 scripts/refresh_dashboard_data.py     → full refresh orchestrator
-src/module1_forecasting/forecast_future.py → future_forecast.csv
+src/module1_forecasting/forecast_future.py → future_forecast.csv, nowcast_next_week.csv
 src/module2_classification/live_scoring.py   → live_risk_predictions.csv (recent weeks)
 src/module2_classification/forecast_future_risk.py → future_risk_predictions.csv (M1-fed)
-src/module3_spatial/forecast_future.py  → future_hotspot_forecast.csv (M1-fed case counts,
-                                            real observed climate - see Decision 031)
-src/dashboard/app.py                    → Streamlit dashboard (read-only CSV consumer)
+src/dashboard/app.py                    → Streamlit multipage entrypoint (sidebar + st.navigation)
+src/dashboard/views/{overview,research_evidence,
+  operational_monitoring,prospective_tracking}.py → the four pages, file-based st.Page entries
+src/dashboard/data_loaders.py           → single cached CSV/shapefile loading surface
+src/dashboard/components.py             → evidence/module badges, glossary, get_thresholds()
+src/dashboard/theme.py                  → module identity colors (matches Figure 5.1) + risk colorscale
 ```
+
+Read-only CSV consumer throughout - the dashboard never retrains models. Four pages in a
+fixed order mirroring the evidence-tier hierarchy: **Overview** (cold-open story) →
+**Research Evidence** (holdout-validated) → **Operational Monitoring** (live/forward) →
+**Prospective Tracking** (self-checking accuracy trackers for forward predictions,
+`nowcast_prospective_accuracy.csv`/`risk_prospective_accuracy.csv`). `pages.py` and
+`evidence_data.py` (the pre-redesign single-file, radio-button-paged structure) are
+retired.
 
 Integrated outputs include:
 

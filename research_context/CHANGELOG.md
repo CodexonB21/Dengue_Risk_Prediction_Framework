@@ -6,199 +6,1573 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
-## 2026-08-04 - Module 3 Full Pipeline Reproducibility Verified
+## 2026-08-07 - Module 2 case-anomaly-lag carry-forward substitution tested and rejected (M2-016/Decision 049)
 
 ### Module
-Module 3
+Module 2
 
 ### Change
-No code or model change. Reran the entire Module 3 pipeline from scratch (preprocessing
-through Stage 1, feature engineering, Stage 2 RF + spatial CV, iterative loop, evaluate)
-and diffed every regenerated, git-tracked output against the already-committed files.
+Following the Wk25 annotation work, investigated the mechanism behind Colombo/Gampaha's 2026
+Wk25 false negative (real outbreak, `label=1`, but scored "low"/"medium" risk): traced to
+`case_anomaly_lag_1` (Stage 1's dominant feature, ~35% importance) going `NaN` because the
+preceding week shares Module 1's `is_reporting_anomaly` flag. Tested substituting
+`case_anomaly_lag_2` for the masked value (mirroring Module 1's Decision 030 `cases_lag_1`
+substitution) via a new `carry_forward_masked_lag1` parameter on
+`feature_engineering.compute_case_anomaly_lags()`/`build_module2_feature_table()`, benchmarked
+in `scripts/m2_016_case_anomaly_lag1_carryforward.py` against the current production Random
+Forest hyperparameters (Decision 047) on the same 13 walk-forward folds.
 
 ### Reason
-The M3-008 promotion's headline numbers (MAE 20.54 -> 9.96) had never been independently
-re-derived after being committed - this closes that gap before the result is written into
-the report as a confirmed finding.
+User asked to build and holdout-test the fix rather than speculate about whether it would help.
 
 ### Impact
-All reported metrics (Moran's I, spatial-CV MAE/RMSE, feature importance, Stage 1 vs.
-Stage 2 comparison, `results_summary.txt`) reproduced exactly. Two raw per-row files
-(`hybrid_risk_map.csv`, `iterative_convergence_log.csv`) showed float64 last-digit noise
-from `RandomForestRegressor(n_jobs=-1)`'s parallel prediction aggregation - confirmed
-inconsequential (no reported figure changed) and reverted. Full detail:
-`module_3_spatial/EXPERIMENT_LOG.md` M3-009.
+- **Rejected**: validation median PR-AUC regressed slightly (0.3865 vs. baseline 0.3917).
+  Holdout was NOT examined, per the project's pre-registered "validation wins first, holdout
+  checks once" rule — the specific Wk25 row that motivated this experiment sits inside that
+  untouched block, so whether the fix would have helped THAT prediction remains genuinely
+  unknown, by design (no result was allowed to leak from peeking).
+- New `carry_forward_masked_lag1` parameter defaults to `False` (production behavior
+  unchanged) but is kept in the codebase as a documented, tested-and-rejected variant.
+- No production model, feature table, or default artifact changed.
+
+### Documentation Updated
+`research_context/RESEARCH_DECISIONS.md` (new Decision 049), `module_2_classification/
+MODULE_CONTEXT.md` (Open Question #11), `module_2_classification/EXPERIMENT_LOG.md` (M2-016),
+`research_context/CHANGELOG.md` (this entry).
 
 ---
 
-## 2026-08-04 - Module 3 Stage 2 Checked Against a Naive Persistence Baseline; Stacking Fix Rejected
+## 2026-08-07 - Reporting-anomaly weeks annotated in Figure 7.2 and the dashboard's Recent Risk tab
 
 ### Module
-Module 3
+Module 1 / Module 2 / Report / Dashboard
 
 ### Change
-Added a naive-persistence baseline check (`src/module3_spatial/persistence_baseline.py`,
-M3-010): does the official Stage 2 RF beat simply carrying a district's own last-week
-residual forward with no model, given `residual_rescaled_lag_1/lag_2` = 89.8% of its
-feature importance? It does not, on MAE (naive 9.44 vs. RF 9.96) - naive persistence alone
-recovers ~93% of the total MAE reduction over Stage 1. The RF does win on corr (0.9554 vs.
-0.9493) and RMSE (25.06 vs. 26.63), and clips about half as many rows to zero (4.8% vs.
-9.1%), i.e. its real value is damping severe overshoots, not average-case accuracy.
+User flagged that the 2026 Wk25 Colombo/Gampaha spike (real cases 1,138/1,294 vs. both
+Module 1 forecast lines staying flat, and Module 2's live-scoring probability sitting where
+it does) would look like an unexplained model failure to an evaluator seeing it cold, in
+both the academic report and the dashboard, and asked whether to suppress it. Decided
+against suppression (would look worse if discovered, and contradicts the dashboard's own
+established 2026-08-07 redesign philosophy of surfacing `is_reporting_anomaly` rather than
+hiding it) - instead extended the existing annotation pattern to the two places that were
+still missing it:
 
-A follow-up fix was tried and rejected (`src/module3_spatial/stacked_persistence_experiment.py`,
-M3-011): having the RF predict only the correction beyond persistence, instead of the raw
-residual, was worse than both naive persistence and the official RF on every metric. The
-official Stage 2 RF (predicts the raw residual directly) remains Module 3's sole reported
-model - unchanged, no code in the official pipeline was modified.
+1. **`generate_figure_7_2_7_3.py`** (`make_figure_7_2`): merges in `is_reporting_anomaly`
+   from `weekly_modeling_table.csv` (not present in `final_combined_predictions.csv` itself)
+   and marks the week immediately AFTER any flagged week with an "X" + callout. Data-driven,
+   not hardcoded to Wk25 - it also caught a second, earlier Colombo event (~2026 Wk14) that a
+   hardcoded fix would have missed.
+2. **`src/dashboard/views/operational_monitoring.py`** (`tab_recent`, "Recent risk" tab):
+   `live_risk_predictions.csv` didn't carry the case counts in its displayed table or the
+   `is_reporting_anomaly` flag at all. Added `Number_of_Cases` to the displayed columns,
+   merged in the flag from `m1_weekly` (already loaded in this view), and added the same
+   marker + caption pattern already used on the neighboring "Case forecast" tab.
 
 ### Reason
-M3-008's headline "51% MAE reduction" had never been checked against the obvious
-zero-modeling baseline implied by its own feature-importance numbers - closing that gap
-before it becomes an unqualified claim in the report.
+See above - an evaluator-facing artifact showing a large, unexplained-looking miss is a
+worse outcome than showing the same miss WITH the already-documented explanation attached.
+This is the same treatment the 2026-08-07 dashboard redesign already gave the "Case
+forecast" tab; it had just not been extended to Figure 7.2 or the "Recent risk" tab yet.
 
 ### Impact
-- `results_summary.txt` (`evaluate.py`) now permanently includes the naive-persistence
-  comparison table alongside the Stage 1 vs. Stage 2 comparison, so the MAE-reduction
-  figure is never reported without this context.
-- `module_3_spatial/MODULE_CONTEXT.md`: new "Stage 2 vs. Naive Persistence Baseline"
-  section; reframes Stage 2's real contribution as outlier/RMSE control, not average-case
-  MAE improvement.
-- `research_context/QUESTIONS_FOR_DEFENSE.md`: new entry.
-- `src/config.py`: added `MODULE3_PERSISTENCE_BASELINE_PATH`, `MODULE3_STACKED_PERSISTENCE_PATH`.
-- Added `outputs/metrics/module3/persistence_baseline_comparison.csv`,
-  `outputs/metrics/module3/stacked_persistence_experiment.csv`.
-- Full detail: `module_3_spatial/EXPERIMENT_LOG.md` M3-010, M3-011.
+- `figure_7_2_module1_holdout_forecasts.png` regenerated with the new annotations.
+- `operational_monitoring.py` edit verified via a `streamlit.testing.v1.AppTest` run
+  (Overview → Operational Monitoring, district=Colombo and Gampaha) - zero exceptions.
+- No model, threshold, or evaluation metric changed - this is presentation-layer only.
+- Separately, confirmed (not yet acted on) that `live_scoring.py`'s calibrated probability
+  for Colombo/Gampaha Wk25 (~0.50/0.58) differs substantially from the walk-forward/holdout
+  evaluation's calibrated probability for the same week (~0.05) - expected per the documented
+  evidence-tier distinction (different feature/model vintage), but flagged here in case it's
+  worth a closer look later.
+
+### Documentation Updated
+`research_context/REPORT_DIAGRAM_PLAN.md` (Figure 7.2 entry), `research_context/CHANGELOG.md`
+(this entry).
 
 ---
 
-## 2026-08-05 - Module 3 Stage 2 Promoted to Own-District Residual Lag Features
+## 2026-08-07 - Report diagrams (Figures 5.1, 5.4, 5.6) corrected ahead of poster redesign
 
 ### Module
-Module 3
+Report / Diagrams
 
 ### Change
-Added own-district residual lag features (`residual_rescaled_lag_1/2/3/4`) to Stage 2's
-Random Forest, tested first via a standalone ablation (`src/module3_spatial/
-stage2_experiments.py`) before promoting. This single change drops out-of-fold residual
-MAE from ~34.7 to ~10.1 and lets `alpha=1.0` (no shrinkage) become the best-performing
-choice - a ~51% MAE reduction over Stage 1 alone (corr 0.8241 -> 0.9554, MAE 20.54 ->
-9.96, RMSE 48.20 -> 25.06), reversing M3-005's null/negative result. Two winsorizing/
-leave-one-out-CV variants were tested in the same ablation and changed almost nothing on
-their own - the entire improvement is the residual lag features.
+Auditing the report's architecture diagrams before redesigning them for the final-evaluation
+poster surfaced two staleness issues the 2026-08-06 text-only correction had missed. Fixed both:
 
-Promoting `alpha=1.0` into the existing multi-iteration loop unchanged was checked, not
-assumed to work: it does not converge (the fixed lag features and the loop's evolving
-target become inconsistent past iteration 1), so `iterative_loop.py`'s `MAX_ITERATIONS`
-was capped at 1 by design, after independently verifying iteration 1 alone exactly
-reproduces the ablation's validated result. `Risk`/`Risk_forecast` are now clipped at 0
-in both `iterative_loop.py` and `forecast_future.py` (case counts cannot be negative;
-alpha=1.0 widened the negative-Risk tail from a minor -2.32 overshoot to a genuine
--112.87 one; clipping is a verified strict improvement, not a trade-off).
+1. **Figure 5.1** (top-level architecture) and **Figure 5.4** (Module 2 architecture) still
+   rendered "Isotonic Regression" for Module 2 Stage 2 and plain "Random Forest" for Stage 1 —
+   `REPORT_DIAGRAM_PLAN.md`'s prose had already been corrected for Decision 047/M2-013 on
+   2026-08-06, but the actual diagram files were never regenerated to match. Both now read
+   "Random Forest (tuned)" → "Platt scaling".
+2. **Figure 5.6** (integration/dashboard) predated the same day's dashboard redesign (4-page
+   multipage app) and the Prospective Tracking evidence tier (Decisions 041/048) — it showed a
+   generic single dashboard box and only two evidence tiers. Corrected to list the actual four
+   pages (Overview / Research Evidence / Operational Monitoring / Prospective Tracking) and
+   three evidence tiers (added Prospective Tracking).
+
+Figures 5.3 (Module 1) and 5.5 (Module 3) were checked against their current `MODULE_CONTEXT.md`
+files and found already accurate — not modified.
 
 ### Reason
-User requested Module 3 improvement theories be implemented and tested. Root cause: none
-of the original 16 features gave the RF any information about a district's own recent
-case trajectory - every feature was either static per-district or current-week climate,
-despite dengue outbreaks having real week-to-week persistence.
+User requested a poster-presentation redesign of the architecture diagrams; per the Diagram and
+Figure Rules, the latest architecture documentation must be checked before proposing/redrawing
+any diagram. That check found the report's own source-of-truth figures had drifted from the
+decisions they were supposed to reflect.
 
 ### Impact
-- `src/module3_spatial/compensation_model.py`: added `STAGE2_FEATURE_COLUMNS`
-  (=`FEATURE_COLUMNS` + 4 residual lags), `add_residual_lag_features`,
-  `drop_residual_lag_nan`, `prepare_training_table`. `FEATURE_COLUMNS` itself is left
-  UNCHANGED (16 columns) so `alpha_sweep.py` (M3-006) and `stage2_experiments.py` (this
-  ablation) stay byte-for-byte reproducible if ever rerun.
-- `src/module3_spatial/iterative_loop.py`: `SHRINKAGE_ALPHA` 0.05 -> 1.0,
-  `MAX_ITERATIONS` 4 -> 1 (deliberate design cap, not a safety limit that happens to
-  bind), 0-clipping added, `out_of_fold_predict` parametrized with a `feature_cols`
-  default preserving `alpha_sweep.py`'s old behavior.
-- `src/module3_spatial/evaluate.py`, `src/module3_spatial/forecast_future.py`: updated
-  to the new feature set/alpha; `forecast_future.py` computes the forecast week's
-  residual lags from real historical case counts, never a forecast value.
-- Regenerated: all committed Stage 2 training/evaluation artifacts and the forward
-  hotspot forecast (re-verified after promotion: zero NaN, zero negative Risk, sensible
-  district ranking).
-- Verified NOT a leakage artifact before trusting the result:
-  `kde_baseline_rescaled[t]` only ever uses week *t*'s own case counts, never *t-1*'s.
-- Reframes Stage 2's conceptual scope from "environmental/demographic residual
-  correction" to one dominated by short-term epidemic persistence - a deliberate,
-  disclosed reframing, not silent scope creep.
-- `module_3_spatial/MODULE_CONTEXT.md` (Stage 2 spec updated; new "Stage 2 Promotion"
-  section), `research_context/RESEARCH_DECISIONS.md` (Decision 032),
-  `module_3_spatial/EXPERIMENT_LOG.md` (M3-008), `research_context/
-  QUESTIONS_FOR_DEFENSE.md` (Stage 2 null-result answer revised).
+- `figure_5_1_system_architecture.png`/`figure_high_level_system_architecture.png` regenerated
+  via (edited) `generate_figure_5_1_architecture.py`.
+- `figure_5_4_module2_architecture.drawio` text corrected; new companion
+  `generate_figure_5_4_module2_architecture.py` added so the PNG renders directly from the
+  drawio's content and cannot drift out of sync again (no draw.io CLI available in this
+  environment to export the edited XML directly).
+- `figure_5_6_integration_dashboard.drawio` text corrected (dashboard pages + evidence tiers);
+  new companion `generate_figure_5_6_integration_dashboard.py` added, same rationale.
+- `figure_5_5_module2_architecture.drawio` (explicitly superseded legacy layout, kept for
+  reference only) was left unchanged — it is not the figure referenced by the report.
+- `research_context/REPORT_DIAGRAM_PLAN.md` updated with the correction notes above.
 
 ### Status
-Accepted
+Complete. Poster-specific diagrams (separate from these report figures) follow in the same
+session.
+
+### Documentation Updated
+`research_context/REPORT_DIAGRAM_PLAN.md`, `research_context/CHANGELOG.md` (this entry).
 
 ---
 
-## 2026-08-04 - Module 3 Forward Operational Hotspot Forecast + Critique Remediation
+## 2026-08-07 - Dashboard redesigned into a 4-page multipage app for evaluator self-explanatoriness
 
 ### Module
-Module 3 (cross-module with Module 1, Integration layer)
+Dashboard / Integration Layer
 
 ### Change
-Added `src/module3_spatial/forecast_future.py`: a genuine next-week hotspot forecast,
-reversing the 2026-07-30 "deliberately out of scope" note in `MODULE_CONTEXT.md` (see
-`RESEARCH_DECISIONS.md` Decision 031 for the full reasoning). Uses Module 1's
-`future_forecast.csv` as the forecast week's case-count proxy for Stage 1's KDE
-reweighting, and the already-trained frozen Stage 2 RF model for scoring - no
-retraining/reconvergence. A verified, non-obvious finding: the forecast week's climate
-is real OBSERVED data, not a meteorological forecast, since Module 3's case-reporting
-lag means the forecast week's calendar dates have typically already passed by the time
-this runs. Outputs `data/processed/module3/future_hotspot_forecast.csv`, a static figure
-(`risk_surface_forecast_{year}_wk{week}.png`, reusing `risk_surface.py` unchanged), and a
-new dashboard panel. Wired into `scripts/refresh_dashboard_data.py`.
-
-Also addressed 3 outstanding critique points from the last Module 3 review: (1) added
-`src/module3_spatial/alpha_sweep.py`, an exploratory alpha sweep for FIT QUALITY (not
-convergence) - logged as `EXPERIMENT_LOG.md` M3-006, does not replace `alpha=0.05` as
-the official reported result; (2) added a partial-dependence plot
-(`population_density_pdp.png`) checking whether the RF's dominant feature is a genuine
-nuanced relationship or a naive population-size scaling; (3) added a negative-Risk
-footnote to `results_summary.txt` (previously only in `MODULE_CONTEXT.md`, not the
-report-facing summary file). `QUESTIONS_FOR_DEFENSE.md` gained 4 new entries (temporal
-holdout, Stage 2 null result, the new forward forecast).
+Full restructure of `src/dashboard/` from a single `app.py` + `pages.py` (two radio-button
+"pages") + `evidence_data.py` into a real Streamlit multipage app: `app.py` (sidebar +
+`st.navigation`) dispatching to four file-based pages under `views/`
+(`overview.py`, `research_evidence.py`, `operational_monitoring.py`,
+`prospective_tracking.py`), plus three new supporting modules - `data_loaders.py` (single
+cached CSV/shapefile loading surface, replacing three separately-cached/uncached copies),
+`components.py` (`evidence_badge`/`module_badge` pills, a `GLOSSARY` feeding both a sidebar
+expander and inline column tooltips, `get_thresholds()` as the one permitted place to read
+alert/high thresholds, `prospective_tracker_panel()`), and `theme.py` (module identity
+colors copied from the Figure 5.1 diagram generator, kept strictly separate from the
+existing YlOrRd risk-magnitude colorscale). Six previously-computed-but-unwired files are
+now shown: `nowcast_next_week.csv`/`nowcast_prediction_log.csv`/
+`nowcast_prospective_accuracy.csv` (Module 1) and `stage2_uncertainty_bands.csv`/
+`risk_prediction_log.csv`/`risk_prospective_accuracy.csv` (Module 2). Honest per-district/
+per-week caveats already documented in research files but previously invisible in-app are
+now surfaced directly (M1 Kilinochchi/Mannar/Vavuniya holdout regressions, M3's NE-monsoon
+non-significant Moran's I week, `is_reporting_anomaly` markers on the case-forecast chart).
+`pages.py`/`evidence_data.py` retired; `DASHBOARD_GUIDE.md` trimmed to a developer/run
+reference now that the narrative content (evidence-tier meanings, column glossary,
+walkthrough order, "what not to say") lives in the app itself.
 
 ### Reason
-User requested a next-week hotspot prediction and remediation of prior critique points.
-The forward forecast required a documented decision reversal (Module 3's own
-`MODULE_CONTEXT.md` had explicitly rejected this as cross-module work) - handled as a
-new numbered decision (031), not a silent contradiction.
+User feedback: "the current dashboard is not self-explanatory or user-friendly" and needed
+to be shown usefully to evaluators. Auditing the existing dashboard while planning the fix
+surfaced a real, independent bug worth fixing in the same pass: the Research Evidence
+page's Module 2 metrics (PR-AUC, architecture name, alert threshold) were read from a
+frozen `production_stack_evaluation_summary.csv` snapshot dated 2026-07-29 that predates
+Decision 047/M2-013 (Random Forest retuning flipped Stage 2 isotonic -> Platt and moved
+thresholds 0.14/0.35 -> 0.10/0.50) - the dashboard was silently showing stale
+pre-promotion numbers as if current. Separately, `streamlit-folium` (imported by the
+Module 3 map tab) was missing from the project's actual `.venv`.
 
 ### Impact
-- Two pre-existing, unrelated bugs found and fixed while refreshing the shared climate
-  pipeline (a prerequisite for the forecast's climate-lag features):
-  (1) `src/module1_forecasting/forecast_future.py` was missing Decision 030's 3
-  reporting-delay feature columns in its recursive feature row - fixed with explicit
-  user permission, since this file is outside Module 3's scope
-  (`module_1_forecasting`/`src/module1_forecasting` belong to a different team member);
-  (2) Module 3's own `module3_preprocessing.py::extract_elevation` globbed `*.csv`
-  instead of `open-meteo-*.csv`, incorrectly counting `climate_fetch_manifest.csv` as a
-  26th district weather file - fixed (within Module 3's own scope).
-- Two further pre-existing, unrelated bugs were found in
-  `module2_classification/live_scoring.py` (sklearn calibration reshape error) and
-  `forecast_future_risk.py` (reporting-anomaly boolean-mask error) - NOT fixed
-  (Module 2's owned files, out of scope) - flagged in `CURRENT_ARCHITECTURE.md` and to
-  the user for the Module 2 owner's attention.
-- `src/module3_spatial/feature_engineering.py` now persists the Mahalanobis
-  mean/covariance fitted at training time (`models/module3/mahalanobis_stats.joblib`),
-  reused by the forecast script instead of refitting on a historical-plus-one-new-row
-  sample.
-- Stage 1/Stage 2 committed artifacts (`baseline_risk.csv`, `stage2_feature_table.csv`,
-  `rf_final_model.joblib`, `hybrid_risk_map.csv`, `results_summary.txt`, all
-  `outputs/metrics/module3/*.csv`) regenerated on the refreshed data (Moran's I=0.7024,
-  Stage 2 null result, and all other M3-001-M3-005 findings reproduce essentially
-  unchanged - confirms nothing was previously miscalibrated by the climate gap).
-- `module_3_spatial/MODULE_CONTEXT.md` (new "Forward Operational Hotspot Forecast"
-  section, softened "novel contribution" framing on the iterative loop, Open Question
-  #6 updated), `research_context/CURRENT_ARCHITECTURE.md`, `research_context/
-  RESEARCH_DECISIONS.md` (Decision 031), `research_context/QUESTIONS_FOR_DEFENSE.md`,
-  `module_3_spatial/EXPERIMENT_LOG.md` (M3-006, M3-007), `research_context/
-  CHAPTER_STATUS.md`.
+- `evidence_data.py::m2_holdout_summary()` (now `data_loaders.py`) rewritten to read live
+  from the same sources the production scoring pipeline itself uses
+  (`scoring_utils.official_stage2_architecture()`/`load_production_thresholds()`,
+  `stage2_compensation_metrics.csv`, `risk_threshold_holdout_comparison.csv`) instead of
+  the frozen snapshot - verified: now correctly reports `architecture='platt'`,
+  `alert_threshold=0.1`, `pr_auc=0.4228`.
+- `streamlit-folium` installed into `.venv`.
+- Verified end-to-end via `streamlit.testing.v1.AppTest` (not just import checks) across
+  all four pages, including a real navigation switch between them - zero exceptions.
+- A real bug found and fixed mid-implementation: initial `st.Page(callable, ...)`
+  registration (with an anonymous `lambda` for the Operational Monitoring page) could not
+  be verified by `AppTest.switch_page()` at all and carried a real risk of unstable page
+  identity across reruns (a fresh lambda object every script run); switched to file-based
+  `st.Page(path, ...)` registration, which is independently testable and matches
+  Streamlit's more conventional multipage pattern.
+- No production model, threshold-selection logic, or evaluation pipeline changed - this is
+  entirely dashboard/presentation-layer work plus the one live-data-source correctness fix
+  above.
 
 ### Status
-Accepted
+Complete; verified via `AppTest` smoke checks. Delivered in reviewed phases (bug/env fix →
+components/theming → data consolidation → multipage + Overview → wiring in the 6 files →
+honest-caveats polish) per user request.
+
+### Documentation Updated
+- `research_context/CURRENT_ARCHITECTURE.md` (Integration Layer section, Last Updated).
+- `research_context/CHANGELOG.md` (this entry).
+- `src/dashboard/DASHBOARD_GUIDE.md` (trimmed to developer/run reference).
+
+---
+
+## 2026-08-07 - Module 2: prospective forward-risk accuracy tracker added (M2-015/Decision 048)
+
+### Module
+Module 2
+
+### Change
+Added `src/module2_classification/risk_tracking.py`, mirroring Decision 041/M1-017's
+nowcast tracker exactly: `append_to_risk_log()` (wired into `forecast_future_risk.
+run_forward_risk()`, default on) permanently logs every genuinely-forward prediction row;
+`reconcile_risk_log()` (wired into `refresh_dashboard_data.py` as a new
+`module2_risk_reconcile` step) joins the log against real outcomes once a logged target
+week resolves, recomputing the actual epidemic-threshold label fresh each time. New config
+paths `MODULE2_RISK_LOG_PATH` / `MODULE2_RISK_PROSPECTIVE_ACCURACY_PATH`.
+
+### Reason
+User asked whether Module 2 can predict next week's outbreak risk. Confirming this
+required actually running the forward-scoring scripts, which crashed - two real,
+previously-latent bugs, both only surfaced because Decision 047 made Platt scaling the
+official Stage 2 architecture for the first time ever:
+1. `scoring_utils.score_feature_rows()` scored Platt exactly like isotonic - calling
+   `.predict()` on the raw 1D probability instead of `.predict_proba()` on its log-odds,
+   2D-reshaped. Fixed with an explicit `platt` branch mirroring
+   `compensation_model.fit_and_calibrate`'s own logic, plus type assertions.
+2. `compute_case_anomaly_lags()` crashed scoring forward weeks - `forecast_future_risk.py`'s
+   synthetic row never set `is_reporting_anomaly`, upcasting the whole column to float once
+   NaN-filled and breaking a boolean negation. Fixed at the root (field added to the
+   synthetic row) and defensively (`.fillna(False).astype(bool)`).
+
+Once both scripts ran clean, the same evidence-tier gap Module 1 already had before
+Decision 041 was still open: a forward prediction has no ground truth to check against
+until the target week actually passes. The tracker closes that gap the only honest way -
+by logging now and waiting.
+
+### Impact
+- Both live/forward scoring bugs fixed; `live_scoring.py` and `forecast_future_risk.py`
+  now run correctly against the current (tuned-RF/Platt) production model.
+- New permanent artifacts: `data/processed/module2/risk_prediction_log.csv` (seeded with
+  200 rows), `outputs/metrics/module2/risk_prospective_accuracy.csv` (0/200 resolved so
+  far, correctly - none of those weeks have happened yet).
+- Concrete finding while verifying the fix: next week's (2026 Wk26) forward scoring shows
+  7/25 districts "high" tier and 20/25 crossing the alert threshold, closely matching the
+  most recent real observed week's split (9 high/8 medium/8 low) - driven by genuinely
+  large case counts (Colombo 1,138; Gampaha 1,294), not a scoring artifact. Flagged for the
+  team to verify against source data, not investigated further here.
+- `module_2_classification/MODULE_CONTEXT.md` (new "Prospective Forward-Risk Accuracy
+  Tracking" section + bug-fix note), `module_2_classification/EXPERIMENT_LOG.md` (new
+  entry M2-015), `research_context/RESEARCH_DECISIONS.md` (new Decision 048).
+
+### Status
+Bugs fixed and verified by rerun. Tracker adopted as new operational infrastructure.
+
+---
+
+## 2026-08-06 - Chapter 7 (Module 2 sections) updated to v2 drafts after Decision 047 - v1 kept
+
+### Module
+Module 2 / Report
+
+### Change
+Created `research_context/report_drafts/chapter7_7.4_module2_v2.md` and
+`chapter7_7.6_7.8_comparative_discussion_summary_v2.md` reflecting Decision
+047/M2-013's numbers (tuned Random Forest, Platt-scaled Stage 2, τ=0.10/0.50,
+updated Table 7.7 from a rerun of `scripts/m2_009_m1_alert_baseline.py`). The
+v1 files are UNCHANGED, per explicit instruction, so both versions exist
+side by side - same precedent as the existing `chapter7_evaluation.md` /
+`chapter7_m1_m2_evaluation.md` (legacy) pair.
+
+### Reason
+Decision 047 made the existing v1 chapter text and Table 7.7 numbers stale
+(wrong architecture name, wrong thresholds, wrong tier rates); user asked
+for the report to be brought current without losing the old version.
+
+### Impact
+- `scripts/m2_009_m1_alert_baseline.py`'s hardcoded "isotonic, tau=0.14" row
+  label replaced with one read dynamically from the data, so it cannot
+  silently go stale the same way again.
+- `research_context/CHAPTER_STATUS.md` updated with a dated note pointing at
+  the v2 files and the still-outstanding stale artifacts: the combined
+  `chapter7_evaluation.md`, `PRESENTATION_MODULE2_{SLIDES,COPY_PASTE}.md`,
+  and the report's manually-composed Figure 7.4 asset
+  (`report_drafts/diagrams/figure_7_4_module2_reliability.png`, dated
+  2026-07-30, predating this update) - none of these were edited this pass.
+
+### Status
+v2 drafted; v1 retained; adoption (replacing v1, or merging into the
+combined chapter file) left for the team to decide.
+
+---
+
+## 2026-08-06 - Module 2: two live/forward scoring bugs found and fixed - Platt scaling and forward-week feature construction were both silently broken
+
+### Module
+Module 2
+
+### Change
+Rerunning `live_scoring.py` and `forecast_future_risk.py` after Decision 047 (the first
+time Platt scaling has ever been the official Stage 2 architecture) surfaced two real,
+previously-latent bugs, neither triggered while isotonic was the only architecture ever
+run through these scripts:
+1. `scoring_utils.score_feature_rows()`'s generic Stage 2 branch called
+   `stage2_model.predict(predicted_probability)` on a bare 1D array. Isotonic accepts
+   that directly; Platt's `LogisticRegression` needs the LOG-ODDS of the probability
+   (2D-reshaped), and `.predict()` on a classifier returns a discrete class label, not a
+   probability - both errors were latent because Platt was never live-scored before.
+   Fixed with an explicit `platt` branch mirroring `compensation_model.fit_and_calibrate`'s
+   own Platt logic exactly, plus a type assertion on both branches so a future architecture
+   change fails loudly instead of silently miscomputing.
+2. `feature_engineering.compute_case_anomaly_lags()`'s `~stats["is_reporting_anomaly"]`
+   raised `TypeError: bad operand type for unary ~: 'float'` when scoring forward
+   (synthetic) weeks - `forecast_future_risk.py`'s synthetic row dict never set
+   `is_reporting_anomaly`, so concatenating it with real rows upcast the whole column to
+   float wherever NaN appeared, breaking the boolean negation. Fixed at the root
+   (`is_reporting_anomaly: False` added to the synthetic row) and defensively
+   (`.fillna(False).astype(bool)` before negating, protecting any future caller from the
+   same class of bug).
+
+### Reason
+User asked directly whether Module 2 can currently predict next week's outbreak risk.
+Checking required actually rerunning the forward-scoring scripts against today's
+retrained models rather than trusting stale output files (dated 2026-07-29, before
+Decision 047) - both scripts crashed on the first attempt.
+
+### Impact
+- `data/processed/module2/{live_risk_predictions,future_risk_predictions}.csv`
+  regenerated under the current tuned-RF/Platt production stack.
+- Both scripts now run cleanly. Next-week (2026 Week 26) forward scoring: 7/25 districts
+  "high" tier, 13 "medium", 5 "low" - broadly consistent with the most recent REAL
+  observed week's tier split (9 high/8 medium/8 low from `live_scoring.py`'s own log),
+  suggesting a genuine current elevated-risk signal in the underlying case data rather
+  than a forward-extrapolation artifact - flagged for the team to look at, not
+  investigated further here.
+- This is "operational" evidence-tier output (per `evidence_tier` column /
+  `QUESTIONS_FOR_DEFENSE.md`'s existing holdout-vs-operational distinction) - it must not
+  be cited as a holdout-validated skill claim, only as what the frozen production model
+  currently says about the coming week.
+
+### Status
+Fixed and verified by rerun. Not yet added as a formal EXPERIMENT_LOG entry (this is a
+bug fix in operational infrastructure, not a research ablation) - noted here for the
+Living Documentation trail.
+
+---
+
+## 2026-08-06 - Module 2 documentation/report completion pass - all remaining stale isotonic/threshold references fixed
+
+### Module
+Module 2 / Report
+
+### Change
+Follow-up to the same-day Chapter 7 v2 update: fixed every remaining Module-2-specific
+report, presentation, and planning artefact still asserting the pre–Decision-047 facts
+(isotonic as official Stage 2, τ=0.14/high=0.35, pre-tuning holdout numbers). Created,
+v1 retained unchanged in every case:
+- `chapter7_evaluation_v2.md` (full combined Chapter 7)
+- `chapter5_5.4.2_module2_v2.md`, `chapter6_6.5_module2_v2.md` (standalone Analysis/Design
+  and Implementation sections)
+- `PRESENTATION_MODULE2_SLIDES_v2.md`, `PRESENTATION_MODULE2_COPY_PASTE_v2.md`
+
+Edited in place (planning/reference docs, not graded chapters, with dated notes rather
+than full duplication):
+- `REPORT_DIAGRAM_PLAN.md` (multiple Module 2 diagram-plan entries)
+- `PRESENTATION_DIAGRAM_DESCRIPTIONS_M1_M2.md`
+- `research_context/report_drafts/diagrams/generate_figure_7_4.py` — the underlying bug
+  fixed at the source: it hardcoded "isotonic" in the plot legend/title/docstring instead
+  of reading the actual selected architecture from the data. Now labels dynamically from
+  the `architecture` column, so this cannot silently go stale again the way it just did.
+  Rerun to regenerate `figure_7_4_module2_reliability.png` (now correctly shows Platt).
+
+### Reason
+User asked to complete the Module 2 documentation refresh rather than leave it partially
+done - the isotonic/τ=0.14 staleness turned out to be more widespread than the three items
+originally flagged (Chapter 5 and 6's standalone Module 2 sections and the presentation
+decks all made the same now-false claims).
+
+### Impact
+- No production code changed in this pass (all changes are documentation, presentation
+  content, and one plotting-script label fix).
+- `CHAPTER_STATUS.md` updated throughout (Chapter 5, 6, 7 sections) with dated notes
+  pointing at every new v2 file and confirming the figure fix.
+- **Deliberately not done:** the combined `chapter5_analysis_and_design.md` and
+  `chapter6_implementation.md` mega-files still have v1 text inline for their Module 2
+  subsections - re-splicing a full multi-section combined file for a one-section change
+  was judged disproportionate; the standalone `_v2` files are the current source until the
+  team merges them in.
+
+### Status
+Complete for all explicitly-requested and discovered items; combined-file re-splicing
+explicitly deferred.
+
+---
+
+## 2026-08-06 - Module 2: Random Forest hyperparameter tuning adopted - genuine holdout-confirmed improvement, cascades into Stage 2 architecture flip and new thresholds (M2-013/Decision 047)
+
+### Module
+Module 2
+
+### Change
+`RF_PARAMS` in `src/module2_classification/baseline_classifier.py` updated to Optuna-tuned
+values (`n_estimators=472, max_depth=16, min_samples_leaf=11, min_samples_split=18,
+max_features="sqrt"`, `class_weight="balanced"` unchanged) after a 50-trial search
+(`scripts/m2_013_stage1_rf_refresh.py`) beat the prior hand-picked defaults on validation AND
+the one-time holdout check. Two other levers tested alongside (`class_weight=
+"balanced_subsample"`; untuned Gradient Boosting) were negative and not adopted. The full
+Module 2 pipeline (Stage 1 -> Stage 2 -> risk thresholds) was rerun under the new
+hyperparameters to keep every artifact consistent.
+
+### Reason
+Random Forest became Stage 1's official model via Decision 025's label re-estimation but had
+never itself been hyperparameter-tuned - it inherited defaults chosen before it was even
+selected. Only XGBoost had gone through this treatment (Decision 023), for an architecture no
+longer in production. User asked for this to actually be tested, alongside two other untried
+levers, rather than left as an assumption.
+
+### Impact
+- Stage 1 holdout: PR-AUC 0.4129 -> 0.4228, ROC-AUC 0.883 -> 0.905, Brier 0.028 -> 0.018.
+- **Stage 2's official architecture flipped isotonic -> platt** (median validation BSS 0.2271
+  vs. 0.2195) - the tuned RF's changed probability distribution drove this, the same mechanism
+  (opposite direction) as Decision 023's earlier XGBoost-tuning-driven flip. Holdout BSS
+  improved 0.2315 -> 0.2673.
+- **Alert threshold moved 0.140 -> 0.100; high-confidence boundary moved 0.350 -> 0.500**
+  (re-selected fresh from the new probability distribution).
+- Holdout alert-rule recall improved 60.0% -> 62.5% at similar precision (33.8% -> 34.2%);
+  tier separation improved (low/medium/high observed rate 0.6%/13.3%/48.8% ->
+  0.6%/20.4%/62.5%, medium/high holdout counts small - 49/24 rows).
+- `research_context/report_drafts/chapter7_7.4_module2.md` is now STALE - cites pre-adoption
+  numbers throughout, and its Figure 7.4 note about which calibration method the reliability
+  diagram shows is now backwards (says isotonic, current production is platt). Flagged, not
+  yet rewritten.
+- New reusable, additive infrastructure: `fit_and_predict`'s `model_params` override (RF/LR
+  path, default `None` reproduces prior behaviour exactly) and a `gradient_boosting` model path
+  (not in `MODEL_NAMES`, so it never affects automatic model selection).
+- `research_context/RESEARCH_DECISIONS.md` (new Decision 047), `module_2_classification/
+  MODULE_CONTEXT.md` (Stage 1/Stage 2/Risk Thresholds sections), `module_2_classification/
+  EXPERIMENT_LOG.md` (new entry M2-013).
+
+### Status
+Adopted
+
+---
+
+## 2026-08-06 - Module 2: leakage-safe lagged Module 3 risk feature tested and rejected (M2-014)
+
+### Module
+Module 2
+
+### Change
+Added `src/module2_classification/m3_risk_join.py` (new, inert - not imported
+by any production stage): builds `m3_risk_lag_1/2` from Module 3's
+`hybrid_risk_map.csv` `Risk` column, lagged 1-2 weeks per district
+(gap-safe, same construction as `m1_forecast_join.py`). Benchmarked the
+official Random Forest with vs. without these features added
+(`scripts/m2_014_m3_risk_feature.py`).
+
+### Reason
+A same-week version of this idea was proposed earlier and found, before any
+code was written, to have a real leakage bug (Module 3's `Risk` is
+mass-conserved to that week's own actual case total). User asked for the
+corrected, lagged version to actually be built and tested, not just
+designed.
+
+### Impact
+- Validation median PR-AUC got WORSE with the feature added (0.3838 vs.
+  0.3896 without) - holdout not checked (pre-registered rule: only spent on
+  a validation winner). Rejected.
+- Plausible reason: `case_anomaly_lag_1/2` already dominate Stage 1 feature
+  importance, and Module 3's `Risk` is itself largely a spatially-smoothed
+  transform of the same underlying case-count signal - likely redundant
+  information plus one extra week of staleness, not new signal.
+- No production feature set or model changed.
+- `module_2_classification/EXPERIMENT_LOG.md` (new entry M2-014).
+
+### Status
+Rejected
+
+---
+
+## 2026-08-06 - Module 2: Venn-Abers uncertainty bands added as a companion output (M2-012)
+
+### Module
+Module 2
+
+### Change
+Added `src/module2_classification/uncertainty_bands.py`: a new, purely
+additive companion output that wraps Stage 2's calibrated probability with a
+statistically principled uncertainty interval, using the Inductive
+Venn-Abers Predictor (IVAP) built on `sklearn.isotonic.IsotonicRegression` -
+the same primitive the official isotonic Stage 2 calibrator already uses.
+Same no-leakage fold structure as Stage 2's own calibrator. Standalone, not
+wired into `main.py`'s `PIPELINE_STAGES` (same precedent as
+`live_scoring.py`/`forecast_future_risk.py`).
+
+### Reason
+User asked to build and evaluate an uncertainty-quantification companion
+output after two other proposed improvements (Stage 1 ensembling, M2-010;
+district-adaptive label `k`, M2-011) failed to clear the holdout bar or
+resolve their motivating problem - this one was specifically chosen because
+it does not touch any existing point prediction or spend the holdout as a
+selection check, so it carries no equivalent failure risk.
+
+### Impact
+- New output: `data/processed/module2/stage2_uncertainty_bands.csv`
+  (18,200 rows: validation folds 2-13 + holdout).
+- Point-estimate agreement with the official `calibrated_probability` is
+  very close (correlation 0.997, mean |difference| 0.004) - confirms
+  correctness and that no existing headline number changes.
+- Interval width scales sensibly with risk tier (holdout mean width: low
+  0.001, medium 0.004, high 0.011) - the real payoff, giving each calibrated
+  probability an honest "how much should this be trusted" companion
+  statement.
+- An initial per-bin validity check was designed wrong (conflated a narrow
+  per-point interval with a binned group's own sampling noise) - caught,
+  corrected, and documented transparently in the eval script rather than
+  silently dropped or misreported as a validity failure.
+- `module_2_classification/MODULE_CONTEXT.md` (new "Uncertainty
+  Quantification" section), `module_2_classification/EXPERIMENT_LOG.md`
+  (new entry M2-012).
+
+### Status
+Adopted (companion output, standalone script)
+
+---
+
+## 2026-08-06 - Module 2: adaptive-k label audit run - homogenizes prevalence, does not fix the Colombo near-miss (M2-011)
+
+### Module
+Module 2
+
+### Change
+Read-only audit (`scripts/m2_011_adaptive_k_label.py`) testing a per-district
+`k` in the epidemic-threshold label instead of Decision 025's single global
+`k=3.0` - the harmonic mean/SD estimator itself was reused unchanged;
+`labels.py` was not modified. Per-district `k` was chosen as the smallest
+grid value bringing that district's own pooled prevalence at or below a 10%
+target.
+
+### Reason
+Decision 025 flagged district-specific/variance-adaptive `k` as a candidate
+future refinement (the global `k=3.0` fixes an aggregate-prevalence problem
+but not every individual district, e.g. the documented Colombo 2025 Wk15
+near-miss). User asked to actually test this idea and evaluate the result.
+
+### Impact
+- Cross-district prevalence spread narrowed (std 2.41pp -> 1.29pp) without
+  worsening the pooled undefined rate (10.72% -> 10.72%) - a genuine partial
+  win on the homogenization goal.
+- Did **not** fix the Colombo 2025 Wk15 case: Colombo's own large
+  `historical_sd` (209.0) means the prevalence-target rule assigns it a
+  HIGHER `k` (3.5, vs. global 3.0), raising its threshold rather than
+  lowering it - homogenizing cross-district prevalence and lowering one
+  high-variance district's specific threshold are in tension under this
+  selection rule, not aligned.
+- 2017 Wk29 Colombo/Gampaha (the worst recorded epidemic year) remained
+  correctly flagged under both the global and adaptive label - no regression
+  on the one hard "must never miss this" sanity check.
+- No pipeline rerun performed - `labels.py`, Stage 1, Stage 2, and thresholds
+  are all unchanged. Adopting this would require a `feature_variant`-suffixed
+  full rerun (mirrors M2-007/M2-008's pattern); left as an open decision given
+  the mixed result, not committed to unilaterally.
+- `module_2_classification/MODULE_CONTEXT.md` (Open Question #8 status note),
+  `module_2_classification/EXPERIMENT_LOG.md` (new entry M2-011).
+
+### Status
+Audited - adoption decision pending team input.
+
+---
+
+## 2026-08-06 - Module 2: Stage 1 ensembling tested and rejected - holdout regression (M2-010/Decision 046)
+
+### Module
+Module 2
+
+### Change
+Benchmarked three ways of blending Stage 1's three existing models' (Random
+Forest, XGBoost, Logistic Regression) out-of-fold probabilities instead of
+selecting one official model (`scripts/m2_010_stage1_ensemble.py`, read-only
+- reused already-computed OOF probabilities, no refitting): a simple average
+of all three, a simple average of RF+XGBoost, and a no-leakage fold-aware
+logistic stacking blend.
+
+### Reason
+User asked whether ensembling could improve on Decision 025's single-model
+selection (Random Forest), given the three benchmarked models' validation
+PR-AUCs were already close (0.358-0.377).
+
+### Impact
+- On the exact 13-fold median-PR-AUC protocol Stage 1 selection itself uses,
+  the simple three-model average won on validation (0.4156 vs. Random
+  Forest's 0.3766) - triggering the pre-registered one-time holdout check.
+- **Holdout check showed a regression**: 0.3968 vs. Random Forest's 0.4292 -
+  the same validation-improves/holdout-regresses pattern already documented
+  for Module 1 (Decision 044). Not promoted.
+- Production Stage 1 unchanged - still a single official Random Forest
+  model.
+- Secondary, non-decisive observation: on a folds-2-13-only window (needed to
+  make the logistic-stacking variant comparable), plain XGBoost outscores
+  both Random Forest and every ensemble variant - flagged for future
+  reference, not acted on.
+- `research_context/RESEARCH_DECISIONS.md` (new Decision 046),
+  `module_2_classification/EXPERIMENT_LOG.md` (new entry M2-010).
+
+### Status
+Rejected
+
+---
+
+## 2026-08-06 - Module 1: defense entries drafted for the remediation arc
+
+### Module
+Module 1
+
+### Change
+Added five Q&A-style entries to `research_context/QUESTIONS_FOR_DEFENSE.md`: (1) why
+Stage 2 stays pooled rather than per-district, backed by the M1-021/Decision 045 ablation
+numbers; (2) the reporting-anomaly leakage pathway found and verified not to have
+inflated Decision 030 (M1-019/Decision 043); (3) why the winning hyperparameter-search
+candidate was rejected after failing the holdout check (M1-020/Decision 044); (4) the
+vintage-ensembled SARIMA nowcast improvement and why it is evidence-backed
+(M1-015/016/Decision 039/040); (5) a synthesis entry answering "is accuracy actually
+better now?" that distinguishes the unchanged holdout MASE (0.374) from the accepted
+nowcast improvement, so the two evidence tiers are not conflated under questioning.
+
+### Reason
+User asked to draft defense material from the just-consolidated remediation arc summary,
+per the Living Documentation Rule's "Defense explanation improved" mapping.
+
+### Impact
+Documentation only - no code, model, or default changed.
+
+### Status
+Reference material - extend if new findings from this arc surface during further review
+or if a supervisor/evaluator raises a related question not yet covered.
+
+---
+
+## 2026-08-06 - Module 1: remediation arc consolidated (M1-007–M1-021 summary)
+
+### Module
+Module 1
+
+### Change
+Added a consolidated "Investigation Summary" section to `module_1_forecasting/
+MODULE_CONTEXT.md` (placed after the Supervisor Flag/Open Questions section) covering
+the full M1-007–M1-021 arc: what was accepted (Decisions 040/041, and 034 from the
+earlier phase), what was rejected (Decisions 033/036/037/038/042/043/044/045, plus one
+ad hoc null check), what was learned diagnostically without being a fix (Decisions
+035/043, the Colombo Wk14/Wk24-25 data-quality ceiling), and what remains open but not
+built (Option B uncertainty flagging, targeted per-district Stage 2 for 3 districts).
+
+### Reason
+User asked to stop and consolidate findings after a run of 15 experiments across three
+sessions - this is a documentation task (per the Living Documentation Rule), not a new
+finding, so it belongs here rather than as another experiment entry.
+
+### Impact
+Documentation only - no code, model, or default changed. The bottom line recorded:
+production holdout median MASE is unchanged at 0.374; the one deployed improvement is
+the nowcast (Decision 040), not the backtested pipeline itself.
+
+### Status
+Reference summary - update it if a future session reopens or extends this arc.
+
+---
+
+## 2026-08-06 - Module 1: per-district Stage 2 rejected - pooling confirmed by direct ablation (M1-021)
+
+### Module
+Module 1
+
+### Change
+Tested training 25 separate per-district Stage 2 models instead of the current pooled
+model (Decision 002/014), holding hyperparameters, feature set (minus the now-redundant
+`District` categorical), fold structure, and evaluation method fixed. A three-tier data-
+sufficiency rule (no-op below 104 trainable rows, fixed tree count 104-207, early
+stopping at 208+) protected against fitting on token amounts of per-district data.
+**Decisively worse**: validation-aggregate median MASE 0.7473 vs. pooled's 0.5821
+(+28.4%), only 1/13 folds and 4/25 districts improved - no holdout check performed
+(safeguard not cleared). The 4 districts that improved (`Monaragala`, `Mannar`,
+`Vavuniya`, `Matale`) are already-flagged cases where pooled Stage 2 underperforms.
+
+### Reason
+Following up on the user's request to try a genuinely structural change (not another
+tuning pass) after every recent tuning ablation returned null - this directly tests, for
+the first time with real evidence, the pooling decision itself.
+
+### Impact
+New, additive functions `train_and_predict_fold_per_district()`/
+`train_and_predict_holdout_per_district()` in `compensation_model.py` (existing pooled
+functions untouched). Fixed a latent bug in `_prepare_xy()` (only categorical-encodes
+`District` when present in `feature_columns` - harmless until this experiment needed a
+feature set without it). New `scripts/evaluate_per_district_stage2.py`. No production
+default changed.
+
+### Status
+Rejected. Stage 2 remains pooled - directly confirms Decision 002/014's original
+reasoning with ablation evidence.
+
+---
+
+## 2026-08-06 - Module 1: XGBoost hyperparameter search rejected - winner failed the holdout check (M1-020)
+
+### Module
+Module 1
+
+### Change
+Ran a 40-candidate randomized search over Stage 2's XGBoost hyperparameters
+(`max_depth, learning_rate, subsample, colsample_bytree, reg_lambda, min_child_weight`,
+fixed and never tuned since the earliest implementation), scored via
+`combine.compute_district_fold_metrics()` on walk-forward folds 2-14 only - the exact
+function/metric production already publishes (verified: candidate 0, the production
+defaults, reproduced the published 0.5821 validation-aggregate median MASE exactly).
+5/39 candidates cleared a pre-registered overfitting safeguard (beat baseline AND a
+majority of folds AND a majority of districts); the best reached 0.5659 (-2.8%). **The
+one-time holdout check on that single candidate showed a regression**: 0.3874 vs.
+production's 0.3741 (+3.6%) - rejected. No other qualifying candidate was checked against
+holdout, per the pre-registered rule.
+
+### Reason
+Following up on the user's request to scope and then run a proper walk-forward-validated
+hyperparameter search - the genuinely untried lever after every other Stage 1/2 tuning
+attempt this session returned null.
+
+### Impact
+New `scripts/search_stage2_hyperparameters.py`. Additive, backward-compatible `xgb_params`
+override on `train_and_predict_fold()`/`train_and_predict_holdout()`/
+`_fit_with_early_stopping()` (`compensation_model.py`) - default `None` reproduces
+production behavior exactly. No production default changed.
+
+### Status
+Rejected. Production `XGB_BASE_PARAMS` unchanged.
+
+---
+
+## 2026-08-06 - Module 1: reporting-guard leakage pathway audited (not material); real-time catch-up adjustment ruled out (M1-019)
+
+### Module
+Module 1
+
+### Change
+While scoping the reporting catch-up spike problem (Colombo/Gampaha 2026 Wk24-25),
+found that the retrospective reporting-anomaly detector (`flag_reporting_anomalies()`,
+Decision 026/028) needs the rebound week's own case count to confirm a dip, so features/
+masks derived from it are subtly informed by the very week they help predict - a real
+leakage pathway. Two follow-up checks:
+
+1. **Materiality check**: built a leakage-closed variant (new
+   `reporting_anomalies.flag_reporting_dip_causal()`, no rebound confirmation) and
+   re-ran the full Stage 2 + combine pipeline (`scripts/evaluate_reporting_leakage_fix.py`,
+   new `assemble_stage2_table()`/`run_stage2_pipeline()` path overrides). Result: median
+   holdout MASE 0.3655 (leakage-closed) vs. 0.3741 (production) - **not worse, if
+   anything slightly better**. Decision 030's promotion stands; no retraction needed.
+2. **Real-time usability check**: characterized the causal detector's precision/recall
+   against the retrospective flag (`scripts/evaluate_causal_dip_detector.py`) - 100%
+   recall, only 42.9% precision (worse for `Colombo`/`Gampaha`: 46.2%/30.0%). **Rules
+   out** building any real-time point-forecast adjustment for catch-up spikes - more
+   than half of live flags would be false alarms on a genuine decline.
+
+### Reason
+Following up on the reporting-catch-up-spike scoping plan's own recommendation: verify
+research integrity (the leakage pathway) and get real numbers on real-time detector
+viability before building anything.
+
+### Impact
+New `flag_reporting_dip_causal()`, `scripts/evaluate_causal_dip_detector.py`,
+`scripts/evaluate_reporting_leakage_fix.py`. Additive path-override params on
+`compensation_model.assemble_stage2_table()`/`run_stage2_pipeline()` (production
+defaults unchanged). No production artifact or default path changed - all new outputs
+use isolated `_causal_safe` suffixes.
+
+### Status
+Leakage documented, verified not material (no action needed). Real-time point-forecast
+adjustment (Option A) rejected. Uncertainty-flagging alternative (Option B) remains open,
+not built.
+
+---
+
+## 2026-08-05 - Module 1: retroactive nowcast spot-check scaled up; robust aggregation tested, not promoted (M1-018)
+
+### Module
+Module 1
+
+### Change
+Scaled the retroactive nowcast spot-check from 175 to 600 (district, week) pairs (25
+districts x last 24 known weeks) and added selectable Stage 1 ensemble aggregation rules
+(`aggregation="mean"|"median"|"trimmed_mean"`) to test whether a robust-to-outliers
+combination reduces the individual-week noise seen in the smaller sample.
+`forecast_future._ensembled_next_week_sarima()` was split into
+`_collect_vintage_forecasts()` (fitting) and `_aggregate_vintage_forecasts()`
+(aggregation) so comparing rules doesn't require refitting per rule;
+`forecast_district()` gained a `precomputed_sarima_forecast` override for the same
+reason.
+
+**Results**: the bigger sample confirms a real but more modest improvement (median
+absolute error -10%, mean -10%, individual-week win rate 56.8% - not near-universal, and
+lower than the smaller sample's noisier 59%, consistent with that being sample noise, not
+a weakening effect). Median and trimmed-mean do NOT meaningfully beat plain mean (a ~1%
+difference, and mathematically identical to each other at `ensemble_window=4`) - the
+remaining per-week noise looks like genuine forecast uncertainty, not an artifact of
+vintage combination. `Mannar` is a clean, complete loser regardless of aggregation
+(0/24 weeks) - a distinct, already-diagnosed Stage 1 issue (Decision 017).
+
+### Reason
+User asked whether the noisier-than-expected first spot-check could be reduced by (a) a
+bigger sample and (b) a more robust ensemble aggregation.
+
+### Impact
+Modified `forecast_future.py` (new aggregation infrastructure, `aggregation="mean"`
+remains the only production default), `scripts/backtest_nowcast_ensemble.py` (rewritten
+to compare 3 aggregation rules efficiently). No production default changed.
+
+### Status
+Accepted as evidence; robust aggregation not promoted (no clear benefit found).
+
+---
+
+## 2026-08-05 - Module 1: prospective nowcast accuracy tracking added (M1-017)
+
+### Module
+Module 1
+
+### Change
+New `src/module1_forecasting/nowcast_tracking.py`: `append_to_nowcast_log()` (wired into
+`run_nowcast()`, on by default) permanently logs every nowcast prediction
+(`data/processed/module1/nowcast_prediction_log.csv`); `reconcile_nowcast_log()` (new
+`module1_nowcast_reconcile` step in `scripts/refresh_dashboard_data.py`) joins the log
+against real case counts as they arrive, writing
+`outputs/metrics/module1/nowcast_prospective_accuracy.csv`. Seeded with the already-
+generated 2026 Wk26 nowcast (25 rows); first reconciliation correctly shows 0/25 resolved.
+
+### Reason
+M1-016's production change (vintage-ensembled SARIMA) has no existing evidence source that
+can check its real-world accuracy - every other Module 1 metric scores against data
+already in the dataset. This builds the only honest way to get that evidence: log now,
+resolve as real weeks pass.
+
+### Impact
+New file `nowcast_tracking.py`; modified `forecast_future.py` (`run_nowcast()` now logs by
+default, new `--no-log` CLI flag), `scripts/refresh_dashboard_data.py` (new step), `src/config.py`
+(two new path constants). Pure infrastructure - no existing model or evaluation changed.
+
+### Status
+Accepted. `nowcast_prospective_accuracy.csv` will grow additively as real weeks resolve;
+check it periodically rather than assuming silence means nothing to report.
+
+---
+
+## 2026-08-05 - Module 1: vintage-ensembled SARIMA promoted to the production nowcast (M1-016)
+
+### Module
+Module 1
+
+### Change
+`forecast_future.run_nowcast()` (the production "predict next week using all data up to
+now" pathway) now defaults to the vintage-ensembled Stage 1 prediction validated at full
+25-district scale in M1-015/Decision 039: instead of one SARIMA fit, it averages, in
+transformed space, `MODULE1_NOWCAST_ENSEMBLE_WINDOW` (4) independent fits on the history
+trimmed back by 0-3 additional weeks, each extended forward to the same next-week target
+(new `forecast_future._ensembled_next_week_sarima()`). Each vintage is refit fresh (a
+one-off nowcast call has no persisted state to reuse, unlike the rolling evaluator) -
+`ensemble_window` fits instead of 1, still cheap. `forecast_district()`/
+`run_future_forecast()` gained an `ensemble_window` parameter defaulting to `None`
+(unaffected 8-week recursive path); only `run_nowcast()` defaults it on. New
+`n_sarima_vintages` output column for transparency. Verified backward-compatible
+(`ensemble_window=None` reproduces the old single-fit numbers exactly). Production
+`nowcast_next_week.csv` regenerated for all 25 districts.
+
+### Reason
+User asked to bring the M1-015 rolling-evaluation improvement into the actual production
+nowcast, after confirming it does not change the core Stage 1 -> Stage 2 architecture.
+
+### Impact
+Modified `forecast_future.py`, `src/config.py` (new `MODULE1_NOWCAST_ENSEMBLE_WINDOW`
+constant). Does NOT touch Stage 2, the additive combination formula, `run_future_forecast()`'s
+default 8-week path, or the validated walk-forward/holdout pipeline (`main.py`,
+`combine.py`) - the headline holdout MASE numbers are unaffected. CLI: `--nowcast
+[--ensemble-window N]`.
+
+### Status
+Accepted.
+
+---
+
+## 2026-08-04 - Module 1: vintage-ensembled SARIMA accepted (M1-015); less-frequent refit rejected (M1-014)
+
+### Module
+Module 1
+
+### Change
+Two more candidate fixes for the weekly-SARIMA-refit instability found in M1-011/Decision
+035, tested after warm-starting (M1-013) was rejected:
+
+1. **M1-014 (Decision 038, rejected):** refitting every 4 weeks instead of weekly, using
+   `SARIMAXResults.append(refit=False)` to incorporate new data between refits without
+   re-optimizing. ~4x cheaper but no meaningful stability improvement on a cheap sample -
+   not run at full scale.
+2. **M1-015 (Decision 039, ACCEPTED):** averaging each week's fresh SARIMA forecast with
+   the last 3 weeks' own independently-fitted models' forecasts for the same target week
+   (`rolling_one_step._vintage_ensemble_step()`, cheap `.forecast()` extension, no extra
+   refitting cost). Full 25-district test: districts with Stage 2 helping in rolling mode
+   rose from 10/25 to **24/25**; rolling sMAPE improved for 22/25 districts (median 58.8%
+   → 56.8%, several districts improving 10-15%). **This is the first broad accuracy
+   improvement found across the entire M1-007 through M1-015 investigation arc.**
+
+### Reason
+User asked to try the two remaining candidates flagged after M1-013's rejection.
+
+### Impact
+New: `rolling_one_step._low_freq_refit_step()`, `_vintage_ensemble_step()` (both additive,
+off by default). New scripts: `scripts/run_rolling_one_step_ensemble_parallel.py`. No
+production Stage 1/2 default path changed - both evaluated via `_ensemble`/isolated
+artifact paths. **Recommended follow-up** (not implemented this session): extend
+`forecast_future.run_nowcast()` to use the same vintage-ensemble approach, since the
+production nowcast currently uses a single SARIMA refit and does not yet benefit from
+this finding.
+
+### Status
+M1-014: Rejected. M1-015: **Accepted** - the strongest positive result across this whole
+remediation effort, pending a decision on rolling it into the production nowcast path.
+
+---
+
+## 2026-08-04 - Module 1: SARIMA warm-starting tested and rejected (M1-013)
+
+### Module
+Module 1
+
+### Change
+Tested whether seeding each week's rolling SARIMAX refit with the previous week's
+converged parameters (`start_params`) stabilizes weekly-refit predictions - the leading
+untried candidate flagged after M1-011 root-caused the rolling-mode DM gap to weekly
+SARIMA refit instability. Added backward-compatible `start_params`/`return_params`
+parameters to `baseline_sarima.fit_and_forecast()` and a `warm_start` parameter to
+`rolling_one_step.rolling_one_step_district()` (both off/unset by default - no existing
+caller's behavior changes). A cheap 60-week/2-district check, run before any full-scale
+evaluation, found warm-started and cold-started predictions are virtually identical while
+warm-started fits take 5-10x longer per fit - fully falsifying the hypothesis without
+needing the originally-planned full 25-district run (which was therefore skipped, a
+disclosed scope decision, not a silent gap).
+
+### Reason
+User asked to build and test the warm-start idea proposed as the most evidence-backed
+lever for improving next-week prediction accuracy, after being told upfront it was
+untested and not guaranteed to work.
+
+### Impact
+Modified `baseline_sarima.py`, `rolling_one_step.py` (both additive/backward-compatible).
+No production code path, model, or default artifact changed - `warm_start=False` remains
+the only path used anywhere by default.
+
+### Status
+Rejected. Open Question #17 (weekly SARIMA refit instability) remains open; untried
+candidates are a less frequent refit cadence or cross-refit smoothing/ensembling.
+
+---
+
+## 2026-08-04 - Module 1 follow-up: rolling-DM gap root-caused; STL+ARIMA pilot rejected
+
+### Module
+Module 1
+
+### Change
+Two follow-up investigations from the prior remediation pass (Decisions 035-036,
+`EXPERIMENT_LOG.md` M1-011/M1-012):
+
+1. **M1-011 (Decision 035):** root-caused Open Question #17 (why rolling-mode Stage 2
+   benefit is far weaker than the holdout backtest's). New `scripts/
+   diagnose_rolling_dm_gap.py` re-scored every rolling-evaluated week with the walk-
+   forward fold model that actually owned that week (via `compensation_model.
+   compute_fold_boundaries()`), using new `sarima_prediction_overrides`/`model_resolver`
+   parameters added to `rolling_one_step.rolling_one_step_district()` (pure
+   recombination, no retraining). **Result: this made things worse, not better**
+   (Stage-2-helps districts 10/25 → 8/25; DM-significant 2/25 → 0/25) - ruling out "the
+   frozen model generalizes poorly" as the cause. Instead, weekly-refit and fold-refit
+   SARIMA predictions for the same historical weeks are barely correlated (mean r=0.13),
+   and this drift correlates with rolling-mode error (mean r=0.26). **Conclusion: weekly
+   SARIMA refit instability itself is the dominant driver**, not Stage 2. A more stable
+   refit cadence is flagged as future work, not implemented this session.
+2. **M1-012 (Decision 036):** piloted STL + ARIMA (`src/module1_forecasting/
+   stl_arima.py`, using `statsmodels.tsa.forecasting.stl.STLForecast`) on 3 non-seasonal
+   districts (`Colombo`, `Gampaha`, `Kurunegala`), targeting the 18/25-non-seasonal-
+   SARIMA finding. **Rejected**: 0/3 districts beat their existing SARIMA on validation
+   MASE; a visual decomposition check confirmed this is a genuine result, not an
+   implementation artifact. No wider rollout planned.
+
+Per the user's explicit framing before this work began, neither investigation was
+expected or promised to improve accuracy - both are reported honestly regardless of
+outcome, consistent with the project's established practice.
+
+### Reason
+User asked to run the remaining candidate investigations flagged at the end of the prior
+session and see whether they produced improvements.
+
+### Impact
+New: `scripts/diagnose_rolling_dm_gap.py`, `scripts/pilot_stl_arima.py`,
+`src/module1_forecasting/stl_arima.py`. Modified: `rolling_one_step.py` (new reusable
+`sarima_prediction_overrides`/`model_resolver` parameters, default behavior unchanged).
+No production Stage 1/2 config, model, or default artifact changed.
+
+### Status
+M1-011: accepted as a documented root cause (not a fix). M1-012: rejected.
+
+---
+
+## 2026-08-04 - Module 1 remediation pass: next-week nowcast + three Stage 2 ablations + an important rolling-DM caveat
+
+### Module
+Module 1
+
+### Change
+Four related pieces of work addressing a prior review's critique of Module 1, executed as
+a phased plan (`Decisions 031-034`, `EXPERIMENT_LOG.md` M1-007 through M1-010):
+
+1. **M1-010 (Decision 031):** `forecast_future.run_nowcast()` - genuine `horizon=1`
+   "predict next week using all data up to now" production output
+   (`nowcast_next_week.csv`), wired into `refresh_dashboard_data.py`. Both this and
+   `future_forecast.csv` now carry an `evidence_tier` column. Found and fixed a latent bug:
+   `forecast_district()` had never been updated for the M1-006B reporting-delay features
+   added to production `FEATURE_COLUMNS` (Decision 030), so `run_future_forecast()` had
+   been raising `KeyError` since that 2026-07-29 promotion - `future_forecast.csv` was
+   stale and regenerated with the fix.
+2. **M1-008 (Decision 032):** first full 25-district rolling one-step `--scope all`
+   backtest (new `scripts/run_rolling_one_step_parallel.py`, ~43 min parallelized vs. a
+   projected ~3.6h serial) plus a new higher-sample Diebold-Mariano test
+   (`rolling_one_step.compute_dm_results_rolling()`). **Important finding, flagged not
+   spun**: only 2/25 districts reach significance (both showing Stage 2 significantly
+   worse), and only 10/25 show Stage 2 helping at all in this deployment-faithful mode -
+   markedly weaker than the holdout backtest's 23/25-improve headline. Identified a real
+   methodological reason this is NOT a simple bigger-n replication (fold-refit vs.
+   weekly-refit SARIMA input-distribution mismatch against the frozen final model) -
+   flagged as new Open Question #17, the module's current highest priority.
+3. **M1-007 (Decision 033):** `residual_lag_3/4` + causal EWMA Stage 2 feature extension,
+   targeting the 23/25-districts-fail-Ljung-Box gap. **Rejected**: validation MASE
+   improved but holdout MASE regressed (0.374 → 0.395) - kept as an ablation switch only.
+4. **M1-009 (Decision 034):** per-district Stage 2 shrinkage weight
+   (`residual_transform.combine_stage2_forecast(weight=...)`, `shrinkage.py`), targeting
+   `Kilinochchi`/`Mannar`'s holdout regression. **Correctly declined to "fix" either
+   target district** (their problem is fold-specific, not validation-visible); instead
+   found a small, holdout-confirmed win for two different districts (`Monaragala`,
+   `Vavuniya`, ~1.6% each). Available via `apply_shrinkage=True`, not promoted to
+   default production given the small magnitude.
+
+STL+SARIMA (targeting the 18/25-non-seasonal-districts finding) remains explicitly
+deferred a third time - flagged as the largest remaining lift, not attempted this session.
+
+### Reason
+User requested the critique points from a prior review be addressed, plus a genuine
+production "predict next week" capability.
+
+### Impact
+New files: `scripts/run_rolling_one_step_parallel.py`, `scripts/m1_007_residual_lag_extension.py`,
+`src/module1_forecasting/shrinkage.py`. Modified: `forecast_future.py`, `rolling_one_step.py`,
+`compensation_model.py`, `combine.py`, `residual_transform.py`, `config.py`,
+`refresh_dashboard_data.py`. Regenerated: `future_forecast.csv` (bugfix), new
+`nowcast_next_week.csv`, `rolling_one_step_predictions.csv`/`_metrics.csv`, new
+`rolling_one_step_dm_test.csv`. Production Stage 1/2 defaults **unchanged** - every
+ablation writes to isolated `feature_variant`-suffixed paths.
+
+### Status
+Accepted (M1-010, M1-008 as evidence/capability), Rejected (M1-007), Partial adopt (M1-009,
+not wired into default production path).
+
+---
+
+## 2026-07-31 - Presentation outlines: presentation-safe revision (all modules)
+
+### Module
+Presentation / Modules 1–3
+
+### Change
+Revised `PRESENTATION_MODULE{1,2,3}_SLIDES.md` to exclude negative results and questionable material from slide content. Each file now has a presentation-safe policy, trimmed slide decks (6–7 slides), and an *Excluded from slides (report/viva only)* reference table. Report chapters retain full honest evaluation.
+
+### Reason
+User requested presentation decks that do not surface failures, null results, or caveats that weaken the viva narrative.
+
+### Impact
+Slides lead with strengths (MASE gains, calibration BSS, Moran’s I, risk map); limitations stay in report/viva prep only.
+
+### Status
+Accepted.
+
+---
+
+## 2026-07-31 - Presentation outline: Module 3 slides
+
+### Module
+Presentation / Module 3
+
+### Change
+Added slide-ready Module 3 pack outline: `research_context/PRESENTATION_MODULE3_SLIDES.md` (8 core slides + optional related-works and extra risk surfaces). Maps to Figs 6.4/7.5, Tables 7.5–7.6, plus `feature_importance.png` and `convergence_plot.png`. Emphasises Moran’s I nuance and M3-005 null aggregate-fit honesty.
+
+### Reason
+Complete the three-module FYP presentation outlines.
+
+### Impact
+All module slide packs now available under `research_context/PRESENTATION_MODULE{1,2,3}_SLIDES.md`.
+
+### Status
+Accepted.
+
+---
+
+## 2026-07-31 - Presentation outline: Module 2 slides
+
+### Module
+Presentation / Module 2
+
+### Change
+Added slide-ready Module 2 pack outline: `research_context/PRESENTATION_MODULE2_SLIDES.md` (8 core slides + optional related-works and live-scoring). Uses Decision 025 production numbers (Random Forest → isotonic; τ = 0.14 / high = 0.35). Maps to Figs 6.3/7.4 and Tables 7.3/7.4/7.7.
+
+### Reason
+Continue FYP presentation module packs after Module 1 outline.
+
+### Impact
+Module 2 presentation content and asset checklist ready for PowerPoint/Google Slides; guards against superseded XGBoost / τ = 0.17 claims.
+
+### Status
+Accepted.
+
+---
+
+## 2026-07-31 - Presentation outline: Module 1 slides
+
+### Module
+Presentation / Module 1
+
+### Change
+Added slide-ready Module 1 pack outline: `research_context/PRESENTATION_MODULE1_SLIDES.md` (8 core slides + optional related-works and operational-check). Maps content to existing Figs 6.2, 7.2, 7.3 and Tables 7.1–7.2; flags missing feature-importance chart.
+
+### Reason
+Team is building FYP presentation module packs using the sample deck structure as a guide.
+
+### Impact
+Module 1 presentation content and asset checklist are ready to convert into PowerPoint/Google Slides.
+
+### Status
+Accepted.
+
+---
+
+## 2026-07-30 - Report figure: Figure 5.1 high-level system architecture
+
+### Module
+Report writing (Chapter 5 / system overview)
+
+### Change
+Created whole-system architecture diagram:
+- `figure_5_1_system_architecture.png` (+ alias `figure_high_level_system_architecture.png`)
+- `figure_5_1_system_architecture.drawio`
+- Generator: `generate_figure_5_1_architecture.py`
+Shows data acquisition → Decision 013 shared preprocessing → three parallel residual-compensation modules → evaluation → Streamlit dashboard.
+
+### Reason
+Figure 5.1 was planned but missing; needed for Chapter 5 and viva/system overview.
+
+### Impact
+High-level architecture figure ready for Word paste.
+
+### Status
+Accepted.
+
+---
+
+## 2026-07-30 - Report draft: Appendix A Individual Contributions
+
+### Module
+Report writing (Appendix A)
+
+### Change
+Rewrote Appendix A from interim progress narratives to completed-project contributions. Module leads retained (Bandara M1, Nethma M2, Karunarathna M3). Shared workloads split: WER scrape (Bandara), Open-Meteo climate (Nethma), spatial/demographic layers (Karunarathna), plus shared Decision 013 cleaning, dashboard views, and report sections. File: `research_context/report_drafts/appendix_a_individual_contributions.md`.
+
+### Reason
+Interim appendix wording was outdated (“upcoming phases”, SARIMAX/NASA-era claims) and did not reflect equal shared preprocessing ownership.
+
+### Impact
+Appendix A paste-ready for Word; team should confirm name/coordinator details.
+
+### Status
+Accepted for drafting.
+
+---
+
+## 2026-07-30 - Report structure + draft: Chapters 8 and 9
+
+### Module
+Report writing (Chapters 8–9)
+
+### Change
+Accepted Chapter 8 structure (**8.1 Conclusion**, **8.2 Further Work**) and Chapter 9 structure (**9.1–9.5**). Drafted paste-ready `chapter8_conclusion_further_work.md` (~1,180 words) and `chapter9_challenges_limitations.md` (~1,530 words). Updated `REPORT_STRUCTURE.md` and `CHAPTER_STATUS.md`.
+
+### Reason
+Evaluation chapter complete; closing chapters needed before Word freeze.
+
+### Impact
+Chapters 8–9 ready for paste; References / Appendices still pending.
+
+### Status
+Accepted; drafts complete.
+
+---
+
+## 2026-07-30 - Report draft: Chapter 7.6–7.8 (comparative, discussion, summary)
+
+### Module
+Report writing (Chapter 7)
+
+### Change
+Polished paste-ready **7.6 Cross-Module Comparative Analysis** (incl. Table 7.7 / M2-009), **7.7 Discussion**, and **7.8 Summary**. Chapter 7 topic-by-topic set (7.1–7.8) complete (~4,475 words). Updated `REPORT_DIAGRAM_PLAN.md` with Table 7.7.
+
+### Reason
+Final topics in the Chapter 7 drafting sequence after Modules 1–3 evaluation sections.
+
+### Impact
+Full Chapter 7 ready for Word paste; remaining visual gap is Figure 7.1 protocol schematic.
+
+### Status
+Accepted for drafting (Word paste pending).
+
+---
+
+## 2026-07-30 - Report figures: Chapter 7 Figure 7.5 (Module 3 risk surface)
+
+### Module
+Report writing (Chapter 7)
+
+### Change
+Copied peak-week IDW risk surface to `figure_7_5_module3_risk_surface.png` (from `outputs/figures/module3/risk_surface_peak_week.png`, 2017 Week 29). Polished section 7.5 with Tables 7.5–7.6 and honest M3-005 null aggregate-fit wording.
+
+### Reason
+Section 7.5 needed the canonical Module 3 visualisation figure for Word paste.
+
+### Impact
+Section 7.5 paste-ready; Figures 7.2–7.5 now created (Figure 7.1 protocol schematic still pending).
+
+### Status
+Accepted.
+
+---
+
+## 2026-07-30 - Report figures: Chapter 7 Figure 7.4 (Module 2 isotonic reliability)
+
+### Module
+Report writing (Chapter 7)
+
+### Change
+Generated `figure_7_4_module2_reliability.png` from `stage2_compensated_predictions.csv` (selected isotonic architecture). Polished section 7.4 with Tables 7.3–7.4. Explicitly rejected older Platt-labelled reliability PNGs under `outputs/figures/module2/`.
+
+### Reason
+Figure 7.4 must match Decision 025 / production Stage 2 = isotonic, not superseded Platt diagrams.
+
+### Impact
+Section 7.4 paste-ready with correct calibration figure.
+
+### Status
+Accepted.
+
+---
+
+## 2026-07-30 - Report figures: Chapter 7 Figures 7.2 and 7.3 (Module 1)
+
+### Module
+Report writing (Chapter 7)
+
+### Change
+Generated paste-ready PNGs:
+- `figure_7_2_module1_holdout_forecasts.png` from `final_combined_predictions.csv` (Colombo/Gampaha holdout)
+- `figure_7_3_module1_holdout_mase.png` from `combined_vs_baseline_metrics.csv` (holdout MASE Stage 1 vs Stage 1+2)
+Script: `research_context/report_drafts/diagrams/generate_figure_7_2_7_3.py`. Updated `REPORT_DIAGRAM_PLAN.md` and Chapter 7 drafts.
+
+### Reason
+Section 7.3 needed evidence figures matching Table 7.1; existing `future_forecast_*.png` files are operational and unsuitable.
+
+### Impact
+Figures 7.2–7.3 ready for Word paste; medians match documented 0.622 → 0.374 holdout MASE; Kilinochchi/Mannar exceptions marked.
+
+### Status
+Accepted.
+
+---
+
+## 2026-07-30 - Report structure: Accepted Chapter 7 Evaluation (full 7.1–7.8)
+
+### Module
+Report writing (Chapter 7)
+
+### Change
+Accepted full three-module Chapter 7 structure (7.1 Introduction → 7.2 Strategy → 7.3 Module 1 → 7.4 Module 2 → 7.5 Module 3 → 7.6 Comparative → 7.7 Discussion → 7.8 Summary). Updated `REPORT_STRUCTURE.md`, `CHAPTER_STATUS.md`, and `REPORT_DIAGRAM_PLAN.md` (Figures 7.1–7.5; Tables 7.1–7.6). Full paste-ready draft written to `research_context/report_drafts/chapter7_evaluation.md`, superseding the M1/M2-only numbering in `chapter7_m1_m2_evaluation.md`.
+
+### Reason
+Module 3 results are available; Chapter 6 implementation is complete; Evaluation needed a locked outline matching Modules 1–3 with honest M3 null aggregate-fit reporting.
+
+### Impact
+Chapter 7 ready for topic paste / Word assembly; figure PNGs still to be exported from `outputs/`.
+
+### Status
+Accepted; draft complete (figures pending).
+
+---
+
+## 2026-07-30 - Report draft: Full Chapter 6 Implementation (hybrid 6.1–6.8)
+
+### Module
+Report writing (Chapter 6)
+
+### Change
+Accepted hybrid Chapter 6 structure and wrote full paste-ready draft in `research_context/report_drafts/chapter6_implementation.md` (~4,840 words): corrected datasets (Open-Meteo; GADM L1; census/elevation; no NASA POWER/CHIRPS production stack), Decision 013 shared pipeline, Module 1 SARIMA→XGBoost, Module 2 RF→isotonic, Module 3 KDE/Moran→RF iterative α=0.05 (IDW viz-only), Streamlit research/operational dashboard. Updated `REPORT_STRUCTURE.md`, `CHAPTER_STATUS.md`, `REPORT_DIAGRAM_PLAN.md`. Created Figures 6.1–6.5 under `report_drafts/diagrams/`.
+
+### Reason
+Interim Chapter 6 was obsolete; Module 3 is now complete and Chapter 5 design is finalized — Implementation needed a full corrected rewrite.
+
+### Impact
+Chapter 6 ready for Word paste; evaluation numbers remain in Chapter 7.
+
+### Status
+Accepted for drafting (Word paste pending).
+
+---
+
+## 2026-07-30 - Report draft: Chapter 5.6 Summary (Chapter 5 topic drafts complete)
+
+### Module
+Report writing (Chapter 5)
+
+### Change
+Drafted paste-ready **5.6 Summary** (~175 words) in `research_context/report_drafts/chapter5_5.6_summary.md`, synced into `chapter5_analysis_and_design.md`. Names official Stage 1/2 models per module and closes Chapter 5 with transition to Implementation.
+
+### Reason
+Final topic in the Chapter 5 topic-by-topic drafting sequence.
+
+### Impact
+Chapter 5 sections 5.1–5.6 paste-ready; Figures 5.3–5.6 created. Remaining: Word paste; optional Figures 5.1–5.2 export.
+
+### Status
+Accepted for drafting (awaiting Word paste).
+
+---
+
+## 2026-07-30 - Report draft + Figure 5.6: Chapter 5.5 Integration design
+
+### Module
+Report writing (Chapter 5)
+
+### Change
+Drafted paste-ready **5.5 Integration and Output Design** (~520 words) in `research_context/report_drafts/chapter5_5.5_integration.md`, synced into `chapter5_analysis_and_design.md`, and created **Figure 5.6** (`figure_5_6_integration_dashboard.drawio` + PNG). Shows M1/M2/M3 outputs → Streamlit → dashboard views → research vs operational evidence tiers.
+
+### Reason
+Topic-by-topic Chapter 5 drafting after 5.4.3; integration needed matching section + diagram depth aligned with the research/operational dashboard split.
+
+### Impact
+Figures 5.3–5.6 and sections 5.4.1–5.5 ready for Word paste; remaining Chapter 5 topic is 5.6 Summary (short).
+
+### Status
+Accepted for drafting (awaiting Word paste).
+
+---
+
+## 2026-07-30 - Report draft + Figure 5.5: Chapter 5.4.3 Module 3 design
+
+### Module
+Report writing (Chapter 5)
+
+### Change
+Drafted paste-ready **5.4.3 Module 3** (~610 words) in `research_context/report_drafts/chapter5_5.4.3_module3.md`, synced into `chapter5_analysis_and_design.md`, and created **Figure 5.5** (`figure_5_5_module3_architecture.drawio` + PNG). Architecture shown: KDE + Moran’s I → RF residual compensation → iterative update (`α = 0.05`) → hybrid risk map; IDW marked visualization-only.
+
+### Reason
+Topic-by-topic Chapter 5 drafting after 5.4.2 / Figure 5.4; Module 3 needed matching section + diagram depth aligned with verified implementation.
+
+### Impact
+All three module design subsections (5.4.1–5.4.3) and Figures 5.3–5.5 are ready for Word paste; next topic is 5.5 Integration (+ Figure 5.6).
+
+### Status
+Accepted for drafting (awaiting Word paste).
+
+---
+
+## 2026-07-30 - Report draft + Figure 5.4: Chapter 5.4.2 Module 2 design
+
+### Module
+Report writing (Chapter 5)
+
+### Change
+Drafted paste-ready **5.4.2 Module 2** (~620 words) with Table 5.2 in `research_context/report_drafts/chapter5_5.4.2_module2.md`, synced into `chapter5_analysis_and_design.md`, and created corrected **Figure 5.4** (`figure_5_4_module2_architecture.drawio` + PNG) in the same four-column style as Figure 5.3. Architecture shown: Random Forest Stage 1 → isotonic Stage 2 → alert/risk-tier outputs.
+
+### Reason
+Topic-by-topic Chapter 5 drafting after 5.4.1 / Figure 5.3; Module 2 needed matching section + diagram depth.
+
+### Impact
+Chapter 5 Module 2 design + figure ready for Word paste; next topic is 5.4.3 Module 3 (+ Figure 5.5).
+
+### Status
+Accepted for drafting (awaiting Word paste).
+
+---
+
+## 2026-07-30 - Figure 5.3 Module 1 architecture created (from interim diagram)
+
+### Module
+Report writing (Chapter 5 / diagrams)
+
+### Change
+Created corrected **Figure 5.3** Module 1 high-level architecture from the interim four-column diagram: `research_context/report_drafts/diagrams/figure_5_3_module1_architecture.drawio` (+ PNG). Key fixes: Stage 2 = **XGBoost only** (not RF/XGBoost); climate source = **Open-Meteo**; metrics = **RMSE/MAE/sMAPE/MASE**; climate excluded from Stage 1; residual equations retained.
+
+### Reason
+User requested the Module 1 architecture figure before drafting 5.4.2, using the old interim figure as the visual template.
+
+### Impact
+Figure ready for Word paste under section 5.4.1; next topic remains 5.4.2 Module 2 (+ Figure 5.4).
+
+### Status
+Accepted for drafting (Word paste pending).
+
+---
+
+## 2026-07-30 - Report draft: Chapter 5.4.1 Module 1 design (+ Figure 5.3)
+
+### Module
+Report writing (Chapter 5)
+
+### Change
+Expanded paste-ready section **5.4.1 Module 1: Hybrid Time-Series Case Forecasting** in `research_context/report_drafts/chapter5_5.4.1_module1.md` (~580 words), synced into `chapter5_analysis_and_design.md`, and aligned Figure 5.3 caption/notes in `REPORT_DIAGRAM_PLAN.md` / `CHAPTER_STATUS.md`.
+
+### Reason
+Topic-by-topic Chapter 5 drafting after 5.3; Module 1 design needed fuller narrative (shared vs module-specific preprocessing, SARIMA-only Stage 1, residual interface, XGBoost Stage 2) with explicit Figure 5.3 placement.
+
+### Impact
+Chapter 5 Module 1 design subsection ready for Word paste; next topic is 5.4.2 Module 2 (+ Figure 5.4).
+
+### Status
+Accepted for drafting (awaiting Word paste / figure export).
+
+---
+
+## 2026-07-30 - Module 3 verified complete (Stage 1 + Stage 2 + evaluation + risk surface)
+
+### Module
+Module 3 / Report writing
+
+### Change
+Verified against living docs and `outputs/metrics/module3/results_summary.txt` that Module 3 is implementation-complete: Stage 1 KDE+Moran's I, Stage 2 RF residual compensation with iterative loop (`alpha=0.05`), evaluation, continuous risk-surface rendering. Updated `CHAPTER_STATUS.md` so Module 3 is no longer treated as deferred for architecture/approach chapters; Chapter 6/7 Module 3 subsections remain to be drafted from these artifacts.
+
+### Key results (do not oversell Stage 2 fit)
+- Stage 1 aggregated Moran’s I = **0.70**, p_sim = **0.001** (significant clustering); NE-monsoon representative week not significant (nuance to report).
+- Stage 2 spatial CV residual MAE ≈ **33.1**, RMSE ≈ **54.8**.
+- Iterative loop converges at **iteration 1** with `alpha=0.05`.
+- Stage 1 vs Stage 2 fit to cases: corr **0.824 → 0.821**, MAE/RMSE marginally **worse** after Stage 2 — verified null/negative aggregate-fit result (M3-005); Stage 2 value is mainly explanatory (population/climate feature importance), not aggregate error reduction at chosen alpha.
+- Top features: `population_density` (~0.41), `Estimated_Population` (~0.18).
+
+### Status
+Module 3 research pipeline: complete. Report chapters 6.x/7.x Module 3 text: pending.
+
+---
+
+## 2026-07-30 - Report draft: Expanded Chapter 5 Analysis and Design
+
+### Module
+Report writing (Chapter 5)
+
+### Change
+Accepted expanded Chapter 5 structure (5.1–5.6) and drafted full design content in `research_context/report_drafts/chapter5_analysis_and_design.md`. Updated `REPORT_STRUCTURE.md`, `CHAPTER_STATUS.md`, and `REPORT_DIAGRAM_PLAN.md` (Figures 5.1–5.6; Tables 5.1–5.2; Module 1/2 figure captions renumbered 5.3/5.4).
+
+### Reason
+Interim Chapter 5 was figure-heavy and outdated (undifferentiated preprocessing, fine-scale wording, Module 3/figure-only gaps). Needed major-chapter design depth with Decision 013 shared vs module-specific architecture.
+
+### Impact
+Team can paste Analysis and Design text into Word. Earlier 5.3.1/5.3.2 numbering superseded by 5.4.x.
+
+### Status
+Drafting
+
+---
+
+## 2026-07-30 - Report draft: Expanded Chapter 4 Our Approach
+
+### Module
+Report writing (Chapter 4)
+
+### Change
+Accepted expanded Chapter 4 structure (4.1–4.9) and drafted full conceptual content for sections 4.2–4.9 in `research_context/report_drafts/chapter4_our_approach.md`. Updated `REPORT_STRUCTURE.md`, `CHAPTER_STATUS.md`, and `REPORT_DIAGRAM_PLAN.md` (Figures 4.1–4.5; Tables 4.1–4.2).
+
+### Reason
+Interim Chapter 4 was too short and technically outdated (fine-scale, SARIMAX, undecided Stage-2 models, Module 2 climate residual Stage 2, Command Centre / scenario simulation). Chapter 4 needed major-chapter depth while staying conceptual (design/implementation/metrics remain in Chapters 5–7).
+
+### Impact
+Team can paste expanded Our Approach text into Word. Module 3 included at conceptual approach depth. Earlier nested 4.2.1/4.2.2 draft numbering superseded.
+
+### Status
+Drafting
+
+---
+
+## 2026-07-29 - Report draft: Chapter 7 Module 1/2 Evaluation
+
+### Module
+Report writing (Chapter 7)
+
+### Change
+Created evaluation-and-results draft for Modules 1 and 2 (strategy, forecasting metrics, classification/calibration, M2-009 redundancy test, limitations). Saved at `research_context/report_drafts/chapter7_m1_m2_evaluation.md`. Updated Chapters 4–6 drafts + Module 2 draw.io so Stage 1 official model is Random Forest (M2-005). Updated `CHAPTER_STATUS.md`.
+
+### Reason
+Interim Chapter 7 was a progress narrative written before M1/M2 experiments were complete; final report needs evidence-based evaluation sections.
+
+### Impact
+Team can replace interim Ch 7 M1/M2 content in Word. Module 3 remains a placeholder. Research vs operational evidence tiers stated explicitly.
+
+### Status
+Drafting
+
+---
+
+## 2026-07-29 - Report draft: Chapter 5.3.1 / 5.3.2 (Modules 1–2 design)
+
+### Module
+Report writing (Chapter 5)
+
+### Change
+Created corrected design-architecture draft text for sections 5.3.1 (Module 1) and 5.3.2 (Module 2), replacing interim figure-only placeholders. Saved at `research_context/report_drafts/chapter5_5.3.1_5.3.2.md`. Added planned Figures 5.4/5.5 to `REPORT_DIAGRAM_PLAN.md`. Updated `CHAPTER_STATUS.md`.
+
+### Reason
+Interim Chapter 5 left Module 1/2 architecture as caption-only figures; final report needs structural design text aligned to SARIMA→XGBoost and XGBoost→isotonic architectures.
+
+### Impact
+Team can paste Module 1/2 design sections and redraw figures without waiting for Module 3. Section 5.3.3 remains deferred.
+
+### Status
+Drafting
+
+---
+
+## 2026-07-29 - Report draft: Chapter 6.2.1 / 6.2.2 / 6.3.1 / 6.3.2 (Modules 1–2)
+
+### Module
+Report writing (Chapter 6)
+
+### Change
+Created corrected final-report draft text for epidemiological and Open-Meteo datasets plus Module 1/2 implementation (preprocessing through Stage 1/2 modelling). Saved at `research_context/report_drafts/chapter6_6.2_6.3_m1_m2.md`. Updated `CHAPTER_STATUS.md`.
+
+### Reason
+Interim Chapter 6 used NASA POWER, incomplete preprocessing stories, and pre-decision Module 2 labelling/feature assumptions; M1/M2 training stages were largely missing.
+
+### Impact
+Team can paste updated M1/M2 dataset and implementation sections into Word without waiting for Module 3. Sections 6.2.3 / 6.3.3 remain deferred.
+
+### Status
+Drafting
+
+---
+
+## 2026-07-29 - Report draft: Chapter 4.2.1 and 4.2.2 (Modules 1–2)
+
+### Module
+Report writing (Chapter 4)
+
+### Change
+Created corrected final-report draft text for sections 4.2.1 (Module 1 forecasting approach) and 4.2.2 (Module 2 classification approach) from the interim report baseline, aligned to current living documentation. Saved at `research_context/report_drafts/chapter4_4.2.1_4.2.2.md`. Updated `CHAPTER_STATUS.md`.
+
+### Reason
+Interim report architecture wording was outdated (fine-scale claims, SARIMAX, undecided RF/XGBoost, Module 2 Stage 2 described as climate residual ML).
+
+### Impact
+Team can paste updated Module 1/2 approach sections into Word without waiting for Module 3. Module 3 (4.2.3) remains deferred.
+
+### Status
+Drafting
 
 ---
 

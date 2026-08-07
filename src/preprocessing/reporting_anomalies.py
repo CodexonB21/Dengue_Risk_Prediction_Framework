@@ -86,6 +86,59 @@ def flag_reporting_anomalies(
     return out
 
 
+def flag_reporting_dip_causal(
+    df: pd.DataFrame,
+    *,
+    drop_ratio: float = DEFAULT_DROP_RATIO,
+    min_prior_cases: float = DEFAULT_MIN_PRIOR_CASES,
+) -> pd.DataFrame:
+    """Causal (real-time-usable) counterpart to `flag_reporting_anomalies()`.
+
+    `flag_reporting_anomalies()` needs `cases[i+1]` (the rebound) to confirm
+    week *i* was a reporting delay rather than a genuine decline - correct
+    for retrospectively cleaning training/validation features (Decision
+    026), but structurally unusable for a genuine forward forecast: at the
+    time of predicting week *i+1*, `cases[i+1]` doesn't exist yet. This
+    function drops the rebound confirmation entirely, flagging week *i* as
+    a SUSPECTED (not confirmed) dip using only `cases[i-1]` and `cases[i]` -
+    the half of the test that's actually available in real time.
+
+    Precision will be materially worse than `flag_reporting_anomalies()`'s -
+    a genuine decline also produces a sharp drop - see `scripts/
+    evaluate_causal_dip_detector.py` for a characterization against the
+    existing (retrospective) flag as ground truth before using this for
+    anything beyond that characterization.
+
+    Returns a copy of `df` with a new boolean column `is_reporting_dip_causal`.
+    """
+    out = df.sort_values(["District", "Year", "Week"]).reset_index(drop=True).copy()
+    out["is_reporting_dip_causal"] = False
+
+    for district, group in out.groupby("District", sort=False):
+        idx = group.index.to_numpy()
+        cases = group["Number_of_Cases"].to_numpy(dtype=float)
+        flags = np.zeros(len(cases), dtype=bool)
+
+        for i in range(1, len(cases)):
+            prior, current = cases[i - 1], cases[i]
+            if np.isnan(prior) or np.isnan(current):
+                continue
+            if prior < min_prior_cases or prior <= 0:
+                continue
+            if current / prior > drop_ratio:
+                continue
+            flags[i] = True
+
+        out.loc[idx, "is_reporting_dip_causal"] = flags
+
+    n_flagged = int(out["is_reporting_dip_causal"].sum())
+    logger.info(
+        "Flagged %d suspected (causal, unconfirmed) reporting-dip weeks (drop>=%.0f%%, min_prior=%.0f).",
+        n_flagged, (1.0 - drop_ratio) * 100, min_prior_cases,
+    )
+    return out
+
+
 def mask_untrusted_cases(df: pd.DataFrame) -> pd.Series:
     """Case counts nulled for feature derivation (imputed + reporting anomaly)."""
     cases = df["Number_of_Cases"]

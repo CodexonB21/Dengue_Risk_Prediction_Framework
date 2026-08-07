@@ -1,0 +1,1 @@
+District,Year,Week,sarima_prediction,predicted_residual,final_prediction,feature_completeness_pct,n_sarima_vintages,evidence_tier,logged_at_utc,Number_of_Cases,is_imputed,is_reporting_anomaly,abs_error,smape_pct

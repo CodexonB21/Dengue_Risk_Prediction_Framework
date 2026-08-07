@@ -190,52 +190,104 @@ Colombo at 200 cases may be normal; a low-incidence district at 30 may be an out
 
 ---
 
-## Why doesn't Module 3 use a temporal holdout like Module 1/2?
+## Why does Stage 2 use one pooled model across all 25 districts instead of one model per district?
 
-**Short answer:** Module 3's residual target and validation question are spatial, not sequential — a temporal split would not test the thing Module 3 actually claims.
+**Short answer:** We tested this directly rather than relying on the original design reasoning. A per-district Stage 2 — 25 separate XGBoost models instead of one pooled model, everything else (hyperparameters, features minus the now-redundant `District` column, fold structure, evaluation) held fixed — was **decisively worse**: validation-aggregate median MASE 0.7473 vs. the pooled baseline's 0.5821 (+28.4%), with only 1 of 13 folds and 4 of 25 districts improving. The pre-registered overfitting safeguard (must beat baseline on the aggregate **and** a majority of folds **and** a majority of districts) was not cleared, so no holdout check was even performed.
 
-Module 1/2 forecast or classify a specific FUTURE week from past weeks — a temporal holdout (weeks the model never saw during training) is the correct test of that claim. Module 3's claim is different: does a spatial baseline (KDE) capture genuine geographic clustering, and does a residual model correct district-level burden using spatially-held-out districts? Its only validation axis is 5-fold spatial K-means CV (whole districts held out, never split — `compensation_model.py::build_spatial_folds`) — every row of `hybrid_risk_map.csv`, for every (Year, Week), already comes from a model that never saw that district during training, which is Module 3's own form of held-out evaluation, applied uniformly to every week rather than one held-out block.
+**Why pooling wins for most districts:** Per-district training data is roughly 25× thinner than pooled at the same fold — the first fold with any residual history at all gives a single district only 52 rows, versus ~1,300 pooled. An explicit three-tier data-sufficiency rule (no-op below 104 trainable rows, fixed tree count 104–207 rows, early stopping only at 208+ rows) protected against fitting models to token amounts of data, but most districts (21/25) still depend on the cross-district information-sharing that pooling provides.
 
-A temporal holdout is not currently implemented for Module 3 and would test a different question (does the model generalize to unseen TIME, not unseen SPACE) — a legitimate future extension, not a gap being hidden.
+**What the 4 exceptions tell us:** The districts that *did* improve without pooling — `Monaragala`, `Mannar`, `Vavuniya`, `Matale` — are not random; they are exactly the districts already flagged in earlier diagnostics (Decisions 017/034/037) as ones where the pooled correction underperforms. This sharpens the earlier shrinkage work: it suggests a **narrow, targeted** per-district remedy for those specific districts, not a wholesale architecture change, is the more promising follow-up (not built — deliberately scoped as future work).
 
-**Evidence:** `module_3_spatial/MODULE_CONTEXT.md`'s "Is the map test-set-safe" note, `EXPERIMENT_LOG.md` M3-003/M3-004.
+**Defense one-liner:** "We didn't just assume pooling was right — we ablated it. Pooling wins for 21/25 districts by a wide margin, and the 4 exceptions are the same districts already flagged as structurally different, which is itself useful diagnostic information, not noise."
 
----
-
-## Did Module 3's Stage 2 ever show a null result, and what changed?
-
-**Short answer:** Yes, initially (M3-005, 2026-07-29) — with the original 16 features, `alpha=0.05` (chosen for strict loop convergence, not accuracy) produced a marginally WORSE fit than Stage 1 alone on every metric. This was later resolved (M3-008, 2026-08-05) by adding own-district residual lag features — Stage 2 now IMPROVES substantially (MAE 20.54 → 9.96, ~51% reduction), not marginally worsens.
-
-**Original finding (M3-005), correct at the time:** Stage 2 final (`Risk`) was marginally worse than Stage 1 alone (`Risk_0`) on every metric against actual case counts — corr −0.0037, MAE +1.74%, RMSE +0.87%. Reported honestly rather than reframed around a friendlier metric. A follow-up exploratory sweep (M3-006) then confirmed no alpha in {1.0, 0.3, 0.15, 0.05} improved on Stage 1 alone with that feature set — the problem was not alpha tuning.
-
-**What actually fixed it (M3-008):** every one of the original 16 features was either static per-district (population/elevation) or current-week climate — none gave the RF any memory of a district's own recent case trajectory, despite dengue outbreaks having real week-to-week persistence. Adding `residual_rescaled_lag_1/2/3/4` (own-district lags of the rescaled residual) dropped out-of-fold residual MAE from ~34.7 to ~10.1 and let `alpha=1.0` (full correction, no shrinkage) become optimal — verified NOT a leakage artifact, since `kde_baseline_rescaled[t]` only ever uses week *t*'s own case counts, never *t-1*'s (raw `corr(residual_rescaled, its own lag-1) = 0.84` reflects genuine epidemic persistence). Promoting this into the existing multi-iteration loop unchanged was checked, not assumed to work: the loop no longer converges past iteration 1 with the new features (a real, verified instability — fixed by capping `MAX_ITERATIONS=1` by design, since iteration 1 alone already reproduces the validated result).
-
-This progression is itself worth stating plainly in a defense: the null result was real and honestly reported, the fix was a genuine feature-engineering gap (not a mistuned hyperparameter), and every step — the original null finding, the alpha sweep, the leakage check, the loop-instability discovery, the clipping decision — was verified directly before being written into the permanent record, not assumed.
-
-**Evidence:** `outputs/metrics/module3/results_summary.txt`, `outputs/metrics/module3/stage2_experiments.csv`, `EXPERIMENT_LOG.md` M3-004/M3-005/M3-006/M3-008.
+**Evidence:** Decision 045, M1-021 (`module_1_forecasting/EXPERIMENT_LOG.md`), `scripts/evaluate_per_district_stage2.py`, `outputs/metrics/module1/stage2_per_district_vs_pooled.csv`.
 
 ---
 
-## If lag_1/lag_2 are 89.8% of feature importance, is Stage 2's RF actually doing anything beyond copying last week's value?
+## Was there a data leakage risk in the reporting-anomaly features? How did you catch and handle it?
 
-**Short answer:** Partially, yes — but not on the metric usually led with. The RF does NOT beat a zero-modeling "naive persistence" baseline (just carry last week's own residual forward) on MAE; it only wins on correlation and RMSE, via better control of large overshoots/undershoots.
+**Short answer:** Yes — a subtle one, found by us during unrelated scoping work, and then **empirically verified not to have inflated any previously published result** before deciding no retraction was needed.
 
-This was checked directly (M3-010), not left as an assumption once the feature-importance number made it look suspicious: naive persistence (`predicted_residual_t = residual_rescaled_lag_1`, combined with `Risk_0` via the exact same formula/alpha the official model uses) achieves MAE 9.44 — slightly BETTER than the official RF's 9.96. Naive persistence alone recovers about 93% of the total MAE reduction over Stage 1 (20.54 → 9.44 vs. the RF's 20.54 → 9.96). The RF does win on correlation (0.9554 vs. 0.9493) and RMSE (25.06 vs. 26.63), and clips roughly half as many rows to zero for negative Risk (4.8% vs. 9.1%) — evidence it dampens the naive predictor's more frequent, more severe overshoots using climate/demographic/monsoon context persistence has no access to.
+**The leakage pathway:** `flag_reporting_anomalies()` (Decision 026/028) needs `cases[i+1]` — the *following* week's case count — to decide whether week *i* looks like a reporting dip. Every downstream consumer of that flag (the nowcast correction and Feature Group 6 in `feature_engineering.py`, and the residual-lag masking in `compensation_model.build_residual_lags()`) used week *T−1*'s flag as an input feature for predicting row *T*. Because week *T−1*'s flag is itself computed from `cases[T]`, the feature was — subtly, and unintentionally — informed by the very value being predicted.
 
-A follow-up attempt to get the best of both — have the RF predict only the correction beyond persistence, rather than the raw residual — was tried and rejected (M3-011): it was worse than BOTH naive persistence and the official RF on every metric (corr 0.9487, MAE 11.0088, RMSE 26.9565), ruling out that specific "easy win" rather than leaving it untested.
+**How we checked whether it mattered (rather than assuming):** We built a causal-only replacement (`flag_reporting_dip_causal()` — drop-only, no rebound confirmation, uses only `cases[i-1]` and `cases[i]`) and re-ran the full Stage 2 + combine pipeline with it substituted everywhere the leaky flag had been used. **Result: median holdout MASE 0.3655 (causal-safe) vs. 0.3741 (production) — the leakage-closed variant is not worse, and if anything ~2.3% better.** This means the leakage existed in the code but did not meaningfully inflate Decision 030's reported improvement.
 
-**Honest framing for the report:** state the naive-persistence comparison alongside the "51% MAE reduction" headline, not instead of it. The RF's real, defensible value is controlling the severity of large prediction errors (RMSE, clipping rate) — arguably more operationally relevant for an outbreak-hotspot alerting use case than shaving typical-case MAE — not beating a trivial baseline on average accuracy outright.
+**Why we didn't then build a real-time correction on top of the causal detector:** We also measured the causal detector's real-time precision against the retrospective flag as ground truth — 100% recall but only 42.9% precision overall, and worse in exactly the two highest-volume districts (`Colombo` 46.2%, `Gampaha` 30.0%). More than half of real-time alerts in those districts would be false alarms, so a point-forecast adjustment built on it was rejected before being built, rather than shipped and found wanting later.
 
-**Evidence:** `outputs/metrics/module3/persistence_baseline_comparison.csv`, `outputs/metrics/module3/stacked_persistence_experiment.csv`, `outputs/metrics/module3/results_summary.txt`, `EXPERIMENT_LOG.md` M3-010/M3-011.
+**Defense one-liner:** "We found and disclosed our own leakage pathway, quantified its actual impact instead of assuming the worst, and confirmed the published result stands — that's the level of scrutiny we applied to our own pipeline, not just to baselines."
+
+**Evidence:** Decision 043, M1-019 (`module_1_forecasting/EXPERIMENT_LOG.md`), `scripts/evaluate_reporting_leakage_fix.py`, `scripts/evaluate_causal_dip_detector.py`, `src/preprocessing/reporting_anomalies.py`.
 
 ---
 
-## Does Module 3 predict a genuine future hotspot map?
+## If a hyperparameter search found a better validation score, why wasn't the new configuration adopted?
 
-**Short answer:** Yes, as of Decision 031 (2026-08-04) — but only the CASE COUNT is a forecast; the CLIMATE is real observed data, and the output is explicitly `evidence_tier=operational`, not a holdout-validated result.
+**Short answer:** Because it failed the one check that actually matters — the untouched holdout block — after passing every validation-fold check we threw at it. This is presented as a demonstration of *why* the holdout discipline exists, not as a wasted exercise.
 
-Module 3's Stage 1 KDE weighting and Stage 2 residual target both require a known `Number_of_Cases`, which does not exist for a week that has not been reported yet. `src/module3_spatial/forecast_future.py` resolves this the same way Decision 027 already resolved it for Module 2: it reads Module 1's `future_forecast.csv` for the forecast week's per-district case-count proxy. A non-obvious, verified finding: because Module 3's case-count reporting lags real calendar time by several weeks, the forecast week's actual calendar DATES have typically already passed by the time this script runs — so its weather is real `observed` data, not a meteorological forecast (checked directly against the raw Open-Meteo `climate_data_source` column). Only the case count is genuinely uncertain.
+**What happened:** A 40-candidate randomized search over Stage 2's XGBoost hyperparameters (max depth, learning rate, subsample, column subsample, L2 regularization, min child weight) was scored on walk-forward folds 2–14 using the exact metric function production already publishes. 5 of 39 candidates cleared a pre-registered safeguard — beating baseline's aggregate **and** a majority of the 13 folds **and** a majority of the 25 districts, not just a lower single number. The best candidate reached a validation-aggregate median MASE of 0.5659, a 2.8% improvement over the published 0.5821.
 
-No model is retrained; the already-trained frozen final Stage 2 RF model and the already-decided `alpha=1.0` formula (M3-008; was 0.05 before the residual-lag promotion) are applied once, then clipped at 0 (case counts cannot be negative). Every output row is tagged `evidence_tier=operational` and must never be cited alongside Stage 1's Moran's I=0.70 or Stage 2's spatial-CV MAE/RMSE as if it were additional validation evidence.
+**Then the one-time holdout check:** median holdout MASE **0.3874 vs. production's 0.3741 — a 3.6% regression.** Per the pre-registered rule ("holdout touched once, only after a candidate already wins on validation, never for further selection"), no other qualifying candidate was checked afterward.
 
-**Evidence:** `RESEARCH_DECISIONS.md` Decision 031, `module_3_spatial/MODULE_CONTEXT.md`'s "Forward Operational Hotspot Forecast" section, `EXPERIMENT_LOG.md` M3-007.
+**Why this matters for the thesis, not just as a null result:** A hyperparameter set that broadly beat production across all 13 validation folds — clearing a safeguard specifically designed to filter out fold-count noise — still did not generalize to genuinely unseen data. That is direct, first-hand evidence for why the project's holdout-integrity rule (Decision 009/010) is not a bureaucratic formality: a naive "pick whatever wins on validation" process would have shipped a regression here.
+
+**Defense one-liner:** "Our holdout protocol isn't just a rule we cite — this experiment is the proof it catches real overfitting-to-validation that a 13-fold majority vote alone did not."
+
+**Evidence:** Decision 044, M1-020 (`module_1_forecasting/EXPERIMENT_LOG.md`), `scripts/search_stage2_hyperparameters.py`.
+
+---
+
+## After all this investigation, is Module 1's forecasting accuracy actually better than before?
+
+**Short answer:** For the validated, historical-holdout accuracy number examiners will look at first (median holdout MASE), **no — it is unchanged at 0.374.** The one genuine, evidence-backed improvement found across this entire investigation arc (M1-007 through M1-021) applies to a different capability — the forward-looking, real-time "predict next week" nowcast — not to the headline backtest metric.
+
+**What was tried and rejected (six ablations):** warm-started SARIMA refitting (M1-013), a lower-frequency refit cadence (M1-014), robust ensemble aggregation via median/trimmed-mean (M1-018/Decision 042), a real-time reporting-dip point adjustment (M1-019/Decision 043, Option A), a 40-candidate XGBoost hyperparameter search (M1-020/Decision 044), and per-district Stage 2 models (M1-021/Decision 045). Each held everything else fixed and tested one structural or tuning change against the same walk-forward folds and the same untouched holdout block; each was reported and documented as a negative result rather than discarded quietly.
+
+**What was accepted:** vintage-ensembled SARIMA — averaging, in transformed space, the current week's fresh SARIMA fit with the last 3 weeks' own independently-fitted models' forecasts for the same target week. In the rolling one-step-ahead evaluator, this raised the number of districts where Stage 2 helps from 10/25 to 24/25 and improved rolling sMAPE for 22/25 districts (median 58.8% → 56.8%) at effectively zero extra cost (Decision 039/M1-015). It is now the production nowcast's default (Decision 040/M1-016), with a permanent prospective-accuracy log (Decision 041/M1-017) seeded to check its real-world performance as future weeks resolve.
+
+**Why the two evidence tiers must not be conflated:** the rolling-evaluator improvement is measured on a deployment-faithful, one-step-ahead re-simulation of history, not on the 104-week flat holdout forecast that produces the headline MASE — they answer different questions ("does this help predict the very next week, repeatedly, as data accumulates" vs. "how accurate is a single long-horizon forecast fit once"). Reporting the nowcast win as if it moved the holdout MASE would overstate the result.
+
+**Defense one-liner:** "The core two-stage architecture's backtest accuracy is stable, not broken — we spent this arc stress-testing it from six different angles and it held up. The one real improvement we found applies specifically to the operational next-week nowcast, and we built the infrastructure to keep measuring it honestly rather than declaring victory on a single retroactive check."
+
+**Evidence:** Decisions 039–045, M1-013 through M1-021 (`module_1_forecasting/EXPERIMENT_LOG.md`), "Investigation Summary: Module 1 Remediation Arc" section of `module_1_forecasting/MODULE_CONTEXT.md`.
+
+---
+
+## Why is the actual-vs-predicted gap for Colombo/Gampaha 2026 Wk25 so large, when the surrounding weeks look fine?
+
+**Short answer:** it is a specific, documented reporting-delay artifact in the case data one week earlier, not a general model failure and not primarily a missing-feature (e.g. mobility) problem.
+
+**The mechanism:** Colombo went 507 → **20** → 1,138 cases (Wk23/24/25); Gampaha went 502 → **24** → 1,294. A real epidemic does not crash to near-zero for a single week and then explode — that shape is the signature of delayed reporting: Wk24's real cases were most likely under-reported and folded into Wk25's count on top of genuine continued growth. Both weeks are already flagged `is_reporting_anomaly=True`/the week after in the pipeline (Decision 026/028), independently of this specific question.
+
+**Why it broke the forecast specifically:** both modules' single most important input is "what happened in the last 1-2 weeks" (Module 1's `residual_lag_1` is its top feature by a wide margin; Module 2's `case_anomaly_lag_1/2` account for >60% of its feature importance). Wk24's artificially low count told both models "cases just fell" immediately before the week they needed to predict a multi-fold jump — the models were not wrong to trust that signal in general, they were fed a corrupted version of it once.
+
+**Why the previous weeks looked fine:** Wk18-23 was a genuine, smooth ramp-up, so "trust last week's number" was good advice there, and both modules tracked it reasonably well (~13% sMAPE under the deployment-realistic rolling evaluation). The model did not get worse — its most-trusted input broke for one week.
+
+**Is it a missing-data issue (e.g. human mobility)?** Not the direct cause here — we can point to the exact corrupted data point and mechanism, not just infer a gap. But it is fair to separately volunteer a genuine, broader limitation: the framework has no independent leading indicator (mobility, healthcare-seeking behaviour, vector surveillance) that could signal an accelerating outbreak *before* it shows up in reported case counts. Even with a perfectly clean Wk24, a 2-8x single-week jump is inherently hard for a trend-following model to anticipate a week ahead, since by construction it reacts to what already happened rather than what is about to.
+
+**What was tried and ruled out, so this isn't presented as unexplored:** a real-time detector that would adjust the forecast whenever a dip looks like a reporting delay was tested and rejected (Decision 043/M1-019) — only 42.9% precision overall, worse for Colombo/Gampaha specifically (46.2%/30.0%) — more than half of live flags would be false alarms on a genuine decline, so "fixing" this in real time would do more harm than good.
+
+**Defense one-liner:** "This isn't a case we can't explain — we can point to the exact corrupted data point, the exact mechanism, and the specific dominant feature it poisoned. We also tested the obvious real-time fix and can show why it was rejected, rather than leaving the question unexplored."
+
+**Evidence:** Decisions 026/028/043, M1-019 (`module_1_forecasting/MODULE_CONTEXT.md` Open Question #16, `EXPERIMENT_LOG.md`); `data/processed/module1/weekly_modeling_table.csv` (`is_reporting_anomaly` column); Figure 7.2 (now annotated with this event directly on the chart).
+
+---
+
+## In simple terms, why did BOTH the forecast (Module 1) and the outbreak classification (Module 2) go badly wrong for Wk25 2026, when the models had been doing fine before?
+
+**Short answer:** one bad data point one week earlier confused both models at once, because they both rely most heavily on the exact same kind of clue — "how many cases were there last week."
+
+**The simple story:** Colombo's reported cases went 507 → **20** → 1,138 across three weeks (Gampaha: 502 → 24 → 1,294). A real outbreak doesn't crash to almost nothing for one week and then jump to record levels — that pattern looks like a **reporting delay**: the health system likely didn't finish counting Wk24's real cases on time, and those uncounted cases got added into Wk25's number instead, on top of real continued growth. We can point to this exact data point — it's automatically flagged in our data as unusual (`is_reporting_anomaly`), independently of this specific week.
+
+**Why it fooled both models the same way:** think of each model as asking "what just happened, and how is it changing?" before it guesses what happens next. For Module 1 (the forecast), the single most trusted clue is last week's error trend. For Module 2 (the classifier), the single most trusted clue is how unusual last week's case count was compared to normal. Both of those clues pointed the same wrong direction right before Wk25 — one said "the trend just dropped," the other said "this looks like a big data gap, best guess is nothing unusual." Both models did what they were designed to do; the input they trusted most was itself wrong that one time.
+
+**Why the weeks before and after looked fine:** during the real, gradual build-up (roughly Wk18-23), "trust last week's number" was genuinely good advice, and both models tracked the rising case counts reasonably well. The models did not get worse at their job — the one signal they lean on hardest broke for a single week, right when accuracy mattered most.
+
+**Is this a sign the models are broken, or missing something big like mobility data?** No — we can name the exact cause (one corrupted data point) rather than shrug and say "the model just isn't good enough." It's fair to also mention, separately, that the framework has no independent early-warning signal (like mobility or healthcare-seeking behaviour) that could hint at a surge before it shows up in case counts — but that's a general, honest limitation of the whole approach, not the specific reason this one week failed.
+
+**We didn't just find the cause and stop there — we tried to fix it, honestly:**
+- For Module 1, a real-time "catch this kind of dip and correct the forecast" detector was built and tested. It was **rejected**: it would have been wrong more than half the time for these exact two districts (Decision 043).
+- For Module 2, we specifically tested replacing the missing "how unusual was last week" signal with the next best available reading, mirroring a fix that DID work for Module 1 elsewhere. It was also **rejected** — it made the model's overall accuracy slightly worse, not better, on the validation data used to decide such things (Decision 049/M2-016). We deliberately did not peek at the exact week in question to see if it "would have worked," because that would break the same evaluation rule that makes every other number in this project trustworthy.
+
+**Defense one-liner:** "One bad data point, one week before, fooled both modules the same way — because both lean hardest on 'what just happened.' We can name the exact cause, we tried the obvious fixes for both modules, and we can show honestly why each fix was rejected rather than quietly assumed to work."
+
+**Evidence:** Decisions 026/028/043/049, M1-019, M2-016 (`module_1_forecasting/MODULE_CONTEXT.md` Open Question #16; `module_2_classification/MODULE_CONTEXT.md` Open Question #11; both modules' `EXPERIMENT_LOG.md`); the previous question above for the Module 1-specific technical detail.

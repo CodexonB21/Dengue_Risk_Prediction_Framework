@@ -1,0 +1,38 @@
+<mxfile host="app.diagrams.net" agent="Codexon FYP" version="22.1.0" type="device">
+  <diagram id="figure-6-1-shared" name="Figure 6.1 Shared Pipeline">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="650" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Figure 6.1: Shared preprocessing and module-specific pipeline architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontStyle=1;fontSize=16;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="120" y="20" width="860" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="raw" value="&lt;b&gt;Raw Sources&lt;/b&gt;&lt;br&gt;MoH WER cases&lt;br&gt;Open-Meteo climate&lt;br&gt;GADM L1 / Census / Elevation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="200" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="shared" value="&lt;b&gt;Shared Layer (Decision 013)&lt;/b&gt;&lt;br&gt;Kalmunai→Ampara&lt;br&gt;Epi-week calendar&lt;br&gt;Weekly climate aggregation&lt;br&gt;Population interpolate" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1E3A8A;strokeColor=#1E3A8A;fontColor=#FFFFFF;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="300" y="90" width="220" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="m1" value="&lt;b&gt;Module 1&lt;/b&gt;&lt;br&gt;Week-53 merge · SARIMA → XGBoost" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#86EFAC;strokeColor=#15803D;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="600" y="70" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="m2" value="&lt;b&gt;Module 2&lt;/b&gt;&lt;br&gt;Week-53 keep · RF → Isotonic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="600" y="150" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="m3" value="&lt;b&gt;Module 3&lt;/b&gt;&lt;br&gt;KDE + Moran → RF loop (α=0.05)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DDD6FE;strokeColor=#7C3AED;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="600" y="230" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="out" value="&lt;b&gt;Outputs&lt;/b&gt;&lt;br&gt;features / models / metrics&lt;br&gt;Streamlit dashboard" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="880" y="130" width="180" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#4B5563;strokeWidth=2;" edge="1" parent="1" source="raw" target="shared"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#15803D;strokeWidth=2;" edge="1" parent="1" source="shared" target="m1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#2563EB;strokeWidth=2;" edge="1" parent="1" source="shared" target="m2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#7C3AED;strokeWidth=2;" edge="1" parent="1" source="shared" target="m3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#16A34A;strokeWidth=2;" edge="1" parent="1" source="m1" target="out"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#16A34A;strokeWidth=1;" edge="1" parent="1" source="m2" target="out"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#16A34A;strokeWidth=1;" edge="1" parent="1" source="m3" target="out"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

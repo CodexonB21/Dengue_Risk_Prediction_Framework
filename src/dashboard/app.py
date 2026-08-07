@@ -1,10 +1,15 @@
 """Sri Lanka dengue early-warning dashboard (Streamlit).
 
-Two views:
-  1. **Research evidence** — holdout-validated metrics (thesis-safe).
-  2. **Operational prototype** — live/forward monitoring (not accuracy proof).
+Four pages, in a fixed order that mirrors the project's own evidence-tier
+discipline (validated -> operational-live -> operational-forward ->
+still-accumulating). Each page is a real file under `views/`, registered by
+path (not by callable) so Streamlit's own navigation identity is stable
+across reruns and independently testable via `AppTest.switch_page()`:
 
-Observer guide: ``DASHBOARD_GUIDE.md``.
+  1. **Overview** — 30-second cold-open story, no prior context required.
+  2. **Research Evidence** — holdout-validated metrics (thesis-safe).
+  3. **Operational Monitoring** — live/forward monitoring (not accuracy proof).
+  4. **Prospective Tracking** — self-checking mechanism for forward predictions.
 
 Run::
 
@@ -17,83 +22,16 @@ import subprocess
 import sys
 from pathlib import Path
 
-import geopandas as gpd
-import pandas as pd
 import streamlit as st
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.config import (  # noqa: E402
-    DASHBOARD_REFRESH_MANIFEST_PATH,
-    DISTRICTS,
-    GADM_LEVEL1_SHAPEFILE_PATH,
-    MODULE1_FUTURE_FORECAST_PATH,
-    MODULE1_WEEKLY_MODELING_TABLE_PATH,
-    MODULE2_FUTURE_RISK_PREDICTIONS_PATH,
-    MODULE2_LIVE_RISK_PREDICTIONS_PATH,
-    MODULE3_FUTURE_HOTSPOT_FORECAST_PATH,
-    MODULE3_HYBRID_RISK_MAP_PATH,
-    SHARED_CLIMATE_WEEKLY_PATH,
-)
-from src.dashboard.pages import render_evidence_page, render_operational_page  # noqa: E402
-from src.module3_spatial.kde_baseline import GADM_NAME_FIXES  # noqa: E402
+from src.config import DISTRICTS  # noqa: E402
+from src.dashboard.components import render_glossary_sidebar  # noqa: E402
 
 REFRESH_SCRIPT = PROJECT_ROOT / "scripts" / "refresh_dashboard_data.py"
-
-PAGE_LABELS = {
-    "research": "Research evidence (holdout-validated)",
-    "operational": "Operational prototype (live / forward)",
-}
-
-
-@st.cache_data(show_spinner=False)
-def load_csv(path_str: str, mtime: float | None) -> pd.DataFrame:
-    _ = mtime
-    path = Path(path_str)
-    if not path.exists():
-        return pd.DataFrame()
-    df = pd.read_csv(path)
-    for col in ("Week_Start_Date", "Week_End_Date"):
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors="coerce")
-    return df
-
-
-def _file_mtime(path: Path) -> float | None:
-    return path.stat().st_mtime if path.exists() else None
-
-
-def _load(path: Path) -> pd.DataFrame:
-    return load_csv(str(path), _file_mtime(path))
-
-
-@st.cache_data(show_spinner=False)
-def load_district_geometry() -> gpd.GeoDataFrame:
-    """District polygons in native EPSG:4326 (lat/lon) - NOT the UTM-reprojected
-    version kde_baseline.py's load_district_boundaries() returns, which is in
-    meters and wrong for Plotly's choropleth (expects geographic coordinates).
-    """
-    if not GADM_LEVEL1_SHAPEFILE_PATH.exists():
-        return gpd.GeoDataFrame()
-    gdf = gpd.read_file(GADM_LEVEL1_SHAPEFILE_PATH)
-    gdf["District"] = gdf["NAME_1"].replace(GADM_NAME_FIXES)
-    return gdf[["District", "geometry"]]
-
-
-def _latest_case_week(modeling: pd.DataFrame) -> tuple[int | None, int | None]:
-    if modeling.empty:
-        return None, None
-    row = modeling.sort_values(["Year", "Week"]).iloc[-1]
-    return int(row["Year"]), int(row["Week"])
-
-
-def _latest_climate_week(climate: pd.DataFrame) -> tuple[int | None, int | None]:
-    if climate.empty or "Year" not in climate.columns:
-        return None, None
-    row = climate.sort_values(["Year", "Week"]).iloc[-1]
-    return int(row["Year"]), int(row["Week"])
 
 
 def _run_refresh(skip_weather: bool) -> None:
@@ -120,72 +58,30 @@ def main() -> None:
     )
 
     with st.sidebar:
-        st.header("View")
-        page_key = st.radio(
-            "Select page",
-            options=list(PAGE_LABELS.keys()),
-            format_func=lambda k: PAGE_LABELS[k],
-            index=0,
-            label_visibility="collapsed",
-        )
-
-        st.divider()
         st.header("Controls")
-        district = st.selectbox("District (operational page)", DISTRICTS)
+        # `key="district_select"` is load-bearing: `views/operational_monitoring.py`
+        # reads `st.session_state["district_select"]` directly, since a
+        # file-based page script has no way to receive this as a function
+        # argument the way the pre-multipage `render_operational_page()` call
+        # used to.
+        st.selectbox("District (operational page)", DISTRICTS, key="district_select")
         skip_weather = st.checkbox("Skip weather fetch", value=False)
         if st.button("Refresh operational data"):
             _run_refresh(skip_weather)
             st.rerun()
 
         st.divider()
-        st.markdown(
-            "**Demo order (viva):**\n"
-            "1. Research evidence page first\n"
-            "2. Operational prototype second\n"
-            "3. State operational numbers are not validated accuracy"
-        )
+        render_glossary_sidebar()
 
-    if page_key == "research":
-        render_evidence_page()
-        return
-
-    live = _load(MODULE2_LIVE_RISK_PREDICTIONS_PATH)
-    future_risk = _load(MODULE2_FUTURE_RISK_PREDICTIONS_PATH)
-    future_cases = _load(MODULE1_FUTURE_FORECAST_PATH)
-    m1_weekly = _load(MODULE1_WEEKLY_MODELING_TABLE_PATH)
-    climate = _load(SHARED_CLIMATE_WEEKLY_PATH)
-    manifest = _load(DASHBOARD_REFRESH_MANIFEST_PATH)
-    hybrid_risk = _load(MODULE3_HYBRID_RISK_MAP_PATH)
-    hotspot_forecast = _load(MODULE3_FUTURE_HOTSPOT_FORECAST_PATH)
-    district_geometry = load_district_geometry()
-
-    case_y, case_w = _latest_case_week(m1_weekly)
-    clim_y, clim_w = _latest_climate_week(climate)
-    refresh_ts = (
-        manifest["refreshed_at_utc"].iloc[0]
-        if not manifest.empty and "refreshed_at_utc" in manifest.columns
-        else None
+    pg = st.navigation(
+        [
+            st.Page("views/overview.py", title="Overview", icon="🏠", default=True),
+            st.Page("views/research_evidence.py", title="Research Evidence", icon="✅"),
+            st.Page("views/operational_monitoring.py", title="Operational Monitoring", icon="📡"),
+            st.Page("views/prospective_tracking.py", title="Prospective Tracking", icon="🔵"),
+        ]
     )
-    if refresh_ts:
-        st.sidebar.caption(f"Last refresh (UTC): {refresh_ts}")
-
-    render_operational_page(
-        live=live,
-        future_risk=future_risk,
-        future_cases=future_cases,
-        m1_weekly=m1_weekly,
-        climate=climate,
-        manifest=manifest,
-        hybrid_risk=hybrid_risk,
-        hotspot_forecast=hotspot_forecast,
-        district_geometry=district_geometry,
-        case_y=case_y,
-        case_w=case_w,
-        clim_y=clim_y,
-        clim_w=clim_w,
-        refresh_ts=refresh_ts,
-        district=district,
-    )
+    pg.run()
 
 
 if __name__ == "__main__":

@@ -1,0 +1,131 @@
+<mxfile host="app.diagrams.net" agent="Codexon FYP" version="22.1.0" type="device">
+  <diagram id="figure-5-6-integration" name="Figure 5.6 Integration">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="700" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Integration and Early-Warning Dashboard" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontStyle=1;fontSize=18;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="280" y="10" width="600" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Figure 5.6 — Module outputs feed a 4-page Streamlit decision-support app (research, operational, and prospective evidence tiers)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#4B5563;" vertex="1" parent="1">
+          <mxGeometry x="160" y="38" width="840" height="22" as="geometry" />
+        </mxCell>
+
+        <mxCell id="col1_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F3F4F6;strokeColor=#D1D5DB;opacity=40;" vertex="1" parent="1">
+          <mxGeometry x="20" y="70" width="270" height="560" as="geometry" />
+        </mxCell>
+        <mxCell id="col2_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#93C5FD;opacity=35;" vertex="1" parent="1">
+          <mxGeometry x="300" y="70" width="270" height="560" as="geometry" />
+        </mxCell>
+        <mxCell id="col3_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EDE9FE;strokeColor=#C4B5FD;opacity=35;" vertex="1" parent="1">
+          <mxGeometry x="580" y="70" width="280" height="560" as="geometry" />
+        </mxCell>
+        <mxCell id="col4_bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#86EFAC;opacity=35;" vertex="1" parent="1">
+          <mxGeometry x="870" y="70" width="270" height="560" as="geometry" />
+        </mxCell>
+
+        <mxCell id="h1" value="Module Outputs" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontStyle=1;fontSize=14;fontColor=#374151;" vertex="1" parent="1">
+          <mxGeometry x="20" y="75" width="270" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="h2" value="Integration Layer" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontStyle=1;fontSize=14;fontColor=#1E40AF;" vertex="1" parent="1">
+          <mxGeometry x="300" y="75" width="270" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="h3" value="Dashboard Views" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontStyle=1;fontSize=14;fontColor=#5B21B6;" vertex="1" parent="1">
+          <mxGeometry x="580" y="75" width="280" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="h4" value="Evidence Tiers" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontStyle=1;fontSize=14;fontColor=#166534;" vertex="1" parent="1">
+          <mxGeometry x="870" y="75" width="270" height="26" as="geometry" />
+        </mxCell>
+
+        <!-- MODULE OUTPUTS -->
+        <mxCell id="m1" value="&lt;b&gt;Module 1&lt;/b&gt;&lt;br&gt;Compensated weekly&lt;br&gt;case forecasts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#86EFAC;strokeColor=#15803D;fontColor=#14532D;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="45" y="130" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="m2" value="&lt;b&gt;Module 2&lt;/b&gt;&lt;br&gt;Calibrated probability&lt;br&gt;alert_flag · risk_tier" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="45" y="240" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="m3" value="&lt;b&gt;Module 3&lt;/b&gt;&lt;br&gt;Hybrid hotspot /&lt;br&gt;spatial risk surface" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DDD6FE;strokeColor=#7C3AED;fontColor=#4C1D95;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="45" y="350" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="m_note" value="Magnitude · probability ·&lt;br&gt;geography kept distinct" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#FEF3C7;strokeColor=#D97706;fontColor=#92400E;fontSize=10;size=12;align=center;" vertex="1" parent="1">
+          <mxGeometry x="60" y="460" width="190" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- INTEGRATION -->
+        <mxCell id="app" value="&lt;b&gt;Streamlit Multipage App&lt;/b&gt;&lt;br&gt;Sidebar + st.navigation&lt;br&gt;Read-only consumer of&lt;br&gt;versioned analytical artifacts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1E3A8A;strokeColor=#1E3A8A;fontColor=#FFFFFF;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="325" y="200" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="int_note" value="Not a fourth&lt;br&gt;modelling stage" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#FEE2E2;strokeColor=#DC2626;fontColor=#991B1B;fontSize=10;size=12;align=center;" vertex="1" parent="1">
+          <mxGeometry x="340" y="320" width="190" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="fwd_note" value="M1 → M2 lag substitution:&lt;br&gt;operational forward only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F9FAFB;strokeColor=#9CA3AF;fontColor=#374151;fontSize=10;align=center;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="325" y="400" width="220" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- DASHBOARD VIEWS (four file-based st.Page entries, fixed order) -->
+        <mxCell id="v1" value="&lt;b&gt;1. Overview&lt;/b&gt;&lt;br&gt;Cold-open story" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E5E7EB;strokeColor=#4B5563;fontColor=#111827;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="610" y="115" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="v2" value="&lt;b&gt;2. Research Evidence&lt;/b&gt;&lt;br&gt;Holdout-validated metrics" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E5E7EB;strokeColor=#4B5563;fontColor=#111827;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="610" y="180" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="v3" value="&lt;b&gt;3. Operational Monitoring&lt;/b&gt;&lt;br&gt;Live / forward outputs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E5E7EB;strokeColor=#4B5563;fontColor=#111827;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="610" y="245" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="v4" value="&lt;b&gt;4. Prospective Tracking&lt;/b&gt;&lt;br&gt;Self-checking accuracy trackers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E5E7EB;strokeColor=#4B5563;fontColor=#111827;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="610" y="310" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="v_note" value="No scenario simulation&lt;br&gt;/ Command Centre stack" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#FEE2E2;strokeColor=#DC2626;fontColor=#991B1B;fontSize=10;size=12;align=center;" vertex="1" parent="1">
+          <mxGeometry x="625" y="385" width="190" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- EVIDENCE TIERS (three, never conflated in reporting) -->
+        <mxCell id="e_res" value="&lt;b&gt;Research Evidence&lt;/b&gt;&lt;br&gt;Holdout-validated metrics&lt;br&gt;(basis for thesis claims)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#86EFAC;strokeColor=#15803D;fontColor=#14532D;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="895" y="120" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="e_ops" value="&lt;b&gt;Operational Prototype&lt;/b&gt;&lt;br&gt;Forward forecasts / live risk&lt;br&gt;(labeled separately)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FDE68A;strokeColor=#B45309;fontColor=#78350F;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="895" y="220" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="e_prosp" value="&lt;b&gt;Prospective Tracking&lt;/b&gt;&lt;br&gt;Logged forward predictions&lt;br&gt;reconciled once real weeks resolve" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="895" y="320" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="e_users" value="&lt;b&gt;Intended users&lt;/b&gt;&lt;br&gt;Public health analysts&lt;br&gt;(decision support)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6B7280;fontColor=#374151;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="895" y="420" width="220" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- Edges -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#15803D;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="m1" target="app">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2563EB;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="m2" target="app">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#7C3AED;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="m3" target="app">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5B21B6;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="app" target="v1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5B21B6;strokeWidth=1;endArrow=block;endFill=1;" edge="1" parent="1" source="app" target="v2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5B21B6;strokeWidth=1;endArrow=block;endFill=1;" edge="1" parent="1" source="app" target="v3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#5B21B6;strokeWidth=1;endArrow=block;endFill=1;" edge="1" parent="1" source="app" target="v4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#15803D;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="app" target="e_res">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#B45309;strokeWidth=2;dashed=1;endArrow=block;endFill=1;" edge="1" parent="1" source="app" target="e_ops">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2563EB;strokeWidth=2;dashed=1;endArrow=block;endFill=1;" edge="1" parent="1" source="app" target="e_prosp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -87,21 +87,40 @@ def build_final_predictions(
     xgboost_predictions_path: Path | None = None,
     residual_mode: str | None = None,
     feature_variant: str | None = None,
+    apply_shrinkage: bool = False,
 ) -> pd.DataFrame:
     """Assemble final forecast from Stage 1 + Stage 2.
 
     Additive (Decision 010): ``final = sarima + predicted_residual``.
     Log-scale (M1-006A): ``final = expm1(log1p(sarima) + predicted_r_log)``.
+
+    `apply_shrinkage=True` (Phase 3 remediation, `shrinkage.py`) scales each
+    district's `predicted_residual` by its holdout-confirmed weight before
+    combining (`final = sarima + weight * predicted_residual`) - defaults to
+    `False`, so production output is byte-identical unless explicitly
+    requested. Districts with no entry in `shrinkage.
+    load_final_weights()` (or the file not yet generated) use weight
+    `1.0`, i.e. unchanged behavior.
     """
     mode = validate_residual_mode(residual_mode or M1_STAGE2_RESIDUAL_MODE)
     paths = module1_stage2_paths(mode, feature_variant=feature_variant)
     pred_path = xgboost_predictions_path or paths["xgboost_predictions"]
     df = pd.read_csv(pred_path)
     df["fold_id_numeric"] = pd.to_numeric(df["fold_id"], errors="coerce")
+
+    if apply_shrinkage:
+        from src.module1_forecasting.shrinkage import load_final_weights
+
+        weights_by_district = load_final_weights(residual_mode=mode)
+        weight_array = df["District"].map(weights_by_district).fillna(1.0).to_numpy(dtype=float)
+    else:
+        weight_array = 1.0
+
     df["final_prediction"] = combine_stage2_forecast(
         df["sarima_prediction"].to_numpy(),
         df["predicted_residual"].to_numpy(),
         mode=mode,
+        weight=weight_array,
     )
     df["final_residual"] = df["Number_of_Cases"] - df["final_prediction"]
     df["residual_mode"] = mode
@@ -310,11 +329,21 @@ def run_combine_pipeline(
     *,
     residual_mode: str | None = None,
     feature_variant: str | None = None,
+    apply_shrinkage: bool = False,
+    xgboost_predictions_path: Path | None = None,
 ) -> None:
+    if apply_shrinkage and not feature_variant:
+        raise ValueError(
+            "apply_shrinkage=True requires an explicit feature_variant, so shrinkage-adjusted "
+            "output never silently overwrites the production combined_metrics.csv artifact."
+        )
     mode = validate_residual_mode(residual_mode or M1_STAGE2_RESIDUAL_MODE)
     paths = module1_stage2_paths(mode, feature_variant=feature_variant)
     weekly_df = pd.read_csv(MODULE1_WEEKLY_MODELING_TABLE_PATH, parse_dates=["Week_Start_Date", "Week_End_Date"])
-    predictions_df = build_final_predictions(residual_mode=mode, feature_variant=feature_variant)
+    predictions_df = build_final_predictions(
+        xgboost_predictions_path=xgboost_predictions_path,
+        residual_mode=mode, feature_variant=feature_variant, apply_shrinkage=apply_shrinkage,
+    )
 
     paths["final_predictions"].parent.mkdir(parents=True, exist_ok=True)
     paths["combined_metrics"].parent.mkdir(parents=True, exist_ok=True)
@@ -372,7 +401,17 @@ def run_combine_pipeline(
     dm_results.to_csv(paths["dm_test"], index=False)
     logger.info("Wrote %d Diebold-Mariano test rows to %s.", len(dm_results), paths["dm_test"])
 
-    plot_final_acf_diagnostics(final_residuals_by_district)
+    # Route ablation-run ACF plots to a variant-suffixed subdirectory - a
+    # fixed output_dir here would otherwise silently overwrite the
+    # production diagnostic PNGs on every ablation run (found 2026-08-04
+    # while running the M1-007/M1-009 ablations against this exact path).
+    suffix_parts = [feature_variant] if feature_variant else []
+    if mode != "additive":
+        suffix_parts.append(f"m1_006_{mode}")
+    acf_output_dir = (
+        MODULE1_FIGURES_DIR / f"variant_{'_'.join(suffix_parts)}" if suffix_parts else MODULE1_FIGURES_DIR
+    )
+    plot_final_acf_diagnostics(final_residuals_by_district, output_dir=acf_output_dir)
 
     n_improved = (
         metrics_df[(metrics_df["fold_id"] == "validation_aggregate") & (metrics_df["model"] == "stage1_plus_stage2")]

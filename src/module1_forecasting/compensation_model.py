@@ -114,6 +114,48 @@ CATEGORICAL_FEATURE_COLUMNS = ["District"]
 
 FEATURE_COLUMNS = FOLD_AGNOSTIC_FEATURE_COLUMNS + FOLD_AWARE_FEATURE_COLUMNS + CATEGORICAL_FEATURE_COLUMNS
 
+# M1-021: per-district Stage 2 pilot (revisits the pooled-model decision
+# above with everything else held fixed). `District` is redundant/constant
+# within a single district's own model, so it's dropped here rather than
+# left in as a pointless constant feature.
+PER_DISTRICT_FEATURE_COLUMNS = FOLD_AGNOSTIC_FEATURE_COLUMNS + FOLD_AWARE_FEATURE_COLUMNS
+
+# Three-tier per-district data-sufficiency rule (M1-021) - recalibrated,
+# smaller-data version of the same reasoning already used for the pooled
+# model's fold-1 no-op and MIN_FOLD_FOR_EARLY_STOPPING (decision 1 above):
+# per-district data is ~25x thinner than pooled at the same fold, so the
+# same "too little data to trust a fit" judgment applies at much smaller
+# row counts, not zero.
+MIN_TRAINABLE_ROWS_PER_DISTRICT = 104   # < 2 years: no-op (predicted_residual = 0)
+MIN_ROWS_FOR_EARLY_STOPPING_PER_DISTRICT = 208  # >= 4 years: carve out an internal validation slice
+
+# Phase 2 of the Module 1 remediation plan (targets the finding that 23/25
+# districts still fail Ljung-Box lag-26 post-Stage-2): two extra residual
+# lags plus a strictly-causal EWMA-smoothed residual, computed the same
+# leakage-safe way as residual_lag_1/2 in `build_residual_lags()`. NOT part
+# of the default `FEATURE_COLUMNS` above - only used when `feature_variant
+# == RESIDUAL_EXT_VARIANT` is explicitly requested (see
+# `get_feature_columns()`), so production behavior is unaffected unless this
+# ablation is adopted (mirrors how M1-006A/B were evaluated before
+# promotion).
+RESIDUAL_LAG_EXTENSION_COLUMNS = ["residual_lag_3", "residual_lag_4", "residual_ewma_4"]
+RESIDUAL_EXT_VARIANT = "m1_007_residual_ext"
+
+
+def get_feature_columns(feature_variant: str | None = None) -> list[str]:
+    """Feature list for Stage 2 training/prediction. Returns the unchanged
+    production `FEATURE_COLUMNS` unless `feature_variant ==
+    RESIDUAL_EXT_VARIANT`, in which case `RESIDUAL_LAG_EXTENSION_COLUMNS` are
+    inserted before the trailing `District` categorical column."""
+    if feature_variant == RESIDUAL_EXT_VARIANT:
+        return (
+            FOLD_AGNOSTIC_FEATURE_COLUMNS
+            + FOLD_AWARE_FEATURE_COLUMNS
+            + RESIDUAL_LAG_EXTENSION_COLUMNS
+            + CATEGORICAL_FEATURE_COLUMNS
+        )
+    return FEATURE_COLUMNS
+
 # Fixed, conservative, regularized hyperparameters (not tuned per fold -
 # XGBoost fits in seconds so an exhaustive per-fold grid search isn't the
 # bottleneck Stage 1's auto_arima search was, but the small-data regime here
@@ -311,21 +353,42 @@ def build_residual_lags(
     grouped = merged.groupby("District")["stage2_residual"]
     merged["residual_lag_1"] = grouped.shift(1)
     merged["residual_lag_2"] = grouped.shift(2)
+    # Phase 2 extension columns (RESIDUAL_LAG_EXTENSION_COLUMNS) - computed
+    # unconditionally here (cheap) but only consumed by Stage 2 training/
+    # prediction when `get_feature_columns(RESIDUAL_EXT_VARIANT)` is used.
+    # `residual_ewma_4` must `shift(1)` BEFORE `.ewm(...)`, exactly like
+    # residual_lag_1, or it would leak the current week's own residual into
+    # its own feature.
+    merged["residual_lag_3"] = grouped.shift(3)
+    merged["residual_lag_4"] = grouped.shift(4)
+    merged["residual_ewma_4"] = grouped.transform(lambda s: s.shift(1).ewm(span=4).mean())
 
-    return merged[["District", "Year", "Week", "residual_lag_1", "residual_lag_2"]]
+    return merged[
+        ["District", "Year", "Week", "residual_lag_1", "residual_lag_2"]
+        + RESIDUAL_LAG_EXTENSION_COLUMNS
+    ]
 
 
 # ---------------------------------------------------------------------------
 # Assemble the full Stage 2 working table
 # ---------------------------------------------------------------------------
 
-def assemble_stage2_table(*, residual_mode: str = M1_STAGE2_RESIDUAL_MODE) -> pd.DataFrame:
+def assemble_stage2_table(
+    *,
+    residual_mode: str = M1_STAGE2_RESIDUAL_MODE,
+    weekly_table_path: Path = MODULE1_WEEKLY_MODELING_TABLE_PATH,
+    feature_table_path: Path = MODULE1_STAGE2_FEATURE_TABLE_PATH,
+) -> pd.DataFrame:
+    """`weekly_table_path`/`feature_table_path` (M1-019) let a caller swap in
+    an alternate weekly modeling table / precomputed feature table - e.g.
+    `scripts/evaluate_reporting_leakage_fix.py`'s causal-safe (leakage-
+    closed) variant - without touching the production default paths."""
     validate_residual_mode(residual_mode)
     weekly_df = pd.read_csv(
-        MODULE1_WEEKLY_MODELING_TABLE_PATH, parse_dates=["Week_Start_Date", "Week_End_Date"]
+        weekly_table_path, parse_dates=["Week_Start_Date", "Week_End_Date"]
     )
     feature_df = pd.read_csv(
-        MODULE1_STAGE2_FEATURE_TABLE_PATH, parse_dates=["Week_Start_Date", "Week_End_Date"]
+        feature_table_path, parse_dates=["Week_Start_Date", "Week_End_Date"]
     )
     predictions_df = pd.read_csv(MODULE1_SARIMA_PREDICTIONS_PATH)
 
@@ -361,9 +424,10 @@ def assemble_stage2_table(*, residual_mode: str = M1_STAGE2_RESIDUAL_MODE) -> pd
 # XGBoost fit/predict helpers
 # ---------------------------------------------------------------------------
 
-def _prepare_xy(df_subset: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray]:
-    X = df_subset[FEATURE_COLUMNS].copy()
-    X["District"] = pd.Categorical(X["District"], categories=DISTRICTS)
+def _prepare_xy(df_subset: pd.DataFrame, feature_columns: list[str] = FEATURE_COLUMNS) -> tuple[pd.DataFrame, np.ndarray]:
+    X = df_subset[feature_columns].copy()
+    if "District" in X.columns:
+        X["District"] = pd.Categorical(X["District"], categories=DISTRICTS)
     y = df_subset[TARGET_COL].to_numpy(dtype=float)
     return X, y
 
@@ -382,12 +446,17 @@ def _trainable_mask(stage2_df: pd.DataFrame) -> pd.Series:
     return (~stage2_df[IMPUTED_COL]) & (~stage2_df[TARGET_COL].isna())
 
 
-def _fit_with_early_stopping(X_fit, y_fit, X_val, y_val) -> int:
+def _fit_with_early_stopping(X_fit, y_fit, X_val, y_val, *, xgb_params: dict | None = None) -> int:
     """Probe fit with early stopping to find a sensible tree count; returns
     `best_iteration + 1` (or MAX_ESTIMATORS if early stopping never
-    triggered)."""
+    triggered).
+
+    `xgb_params` (M1-020, hyperparameter search) overrides individual
+    `XGB_BASE_PARAMS` keys - `None` (default) reproduces the exact
+    production behavior."""
+    params = {**XGB_BASE_PARAMS, **(xgb_params or {})}
     probe = xgb.XGBRegressor(
-        **XGB_BASE_PARAMS,
+        **params,
         n_estimators=MAX_ESTIMATORS,
         early_stopping_rounds=EARLY_STOPPING_ROUNDS,
         eval_metric=XGB_EVAL_METRIC,
@@ -397,13 +466,23 @@ def _fit_with_early_stopping(X_fit, y_fit, X_val, y_val) -> int:
     return int(best_iteration) + 1 if best_iteration is not None else MAX_ESTIMATORS
 
 
-def train_and_predict_fold(stage2_df: pd.DataFrame, fold_num: int) -> tuple[np.ndarray, bool, "xgb.XGBRegressor | None"]:
+def train_and_predict_fold(
+    stage2_df: pd.DataFrame, fold_num: int, feature_columns: list[str] = FEATURE_COLUMNS,
+    *, xgb_params: dict | None = None,
+) -> tuple[np.ndarray, bool, "xgb.XGBRegressor | None"]:
     """Train pooled XGBoost on folds `1..fold_num-1` (non-imputed rows only)
     and predict fold `fold_num`'s rows. Fold 1 is a documented no-op.
+
+    `xgb_params` (M1-020) overrides individual `XGB_BASE_PARAMS` keys for
+    this call only - `None` (default) reproduces the exact production
+    behavior, used by `scripts/search_stage2_hyperparameters.py` to score
+    candidate hyperparameter sets against the same walk-forward folds
+    without touching any existing caller.
     """
+    params = {**XGB_BASE_PARAMS, **(xgb_params or {})}
     target_mask = stage2_df["fold_id_numeric"] == fold_num
     target_rows = stage2_df.loc[target_mask]
-    X_target, _ = _prepare_xy(target_rows)
+    X_target, _ = _prepare_xy(target_rows, feature_columns)
 
     if fold_num == 1:
         return np.zeros(len(target_rows)), False, None
@@ -413,51 +492,171 @@ def train_and_predict_fold(stage2_df: pd.DataFrame, fold_num: int) -> tuple[np.n
         # fold_num == 2: only fold 1 available, too little to carve out a
         # further internal early-stopping slice.
         train_mask = (stage2_df["fold_id_numeric"] == 1) & trainable
-        X_train, y_train = _prepare_xy(stage2_df.loc[train_mask])
-        model = xgb.XGBRegressor(**XGB_BASE_PARAMS, n_estimators=FIXED_N_ESTIMATORS_NO_EARLY_STOP)
+        X_train, y_train = _prepare_xy(stage2_df.loc[train_mask], feature_columns)
+        model = xgb.XGBRegressor(**params, n_estimators=FIXED_N_ESTIMATORS_NO_EARLY_STOP)
         model.fit(X_train, y_train)
     else:
         val_fold = fold_num - 1
         fit_mask = stage2_df["fold_id_numeric"].between(1, val_fold - 1) & trainable
         val_mask = (stage2_df["fold_id_numeric"] == val_fold) & trainable
-        X_fit, y_fit = _prepare_xy(stage2_df.loc[fit_mask])
-        X_val, y_val = _prepare_xy(stage2_df.loc[val_mask])
-        best_n = _fit_with_early_stopping(X_fit, y_fit, X_val, y_val)
+        X_fit, y_fit = _prepare_xy(stage2_df.loc[fit_mask], feature_columns)
+        X_val, y_val = _prepare_xy(stage2_df.loc[val_mask], feature_columns)
+        best_n = _fit_with_early_stopping(X_fit, y_fit, X_val, y_val, xgb_params=xgb_params)
 
         train_mask = stage2_df["fold_id_numeric"].between(1, fold_num - 1) & trainable
-        X_train, y_train = _prepare_xy(stage2_df.loc[train_mask])
-        model = xgb.XGBRegressor(**XGB_BASE_PARAMS, n_estimators=best_n)
+        X_train, y_train = _prepare_xy(stage2_df.loc[train_mask], feature_columns)
+        model = xgb.XGBRegressor(**params, n_estimators=best_n)
         model.fit(X_train, y_train)
 
     predicted = model.predict(X_target)
     return predicted, True, model
 
 
-def train_and_predict_holdout(stage2_df: pd.DataFrame) -> tuple[np.ndarray, "xgb.XGBRegressor"]:
+def train_and_predict_holdout(
+    stage2_df: pd.DataFrame, feature_columns: list[str] = FEATURE_COLUMNS,
+    *, xgb_params: dict | None = None,
+) -> tuple[np.ndarray, "xgb.XGBRegressor"]:
     """Train pooled XGBoost on all 14 folds' non-imputed residuals and
     predict the holdout block, carving out fold 14 as the early-stopping
-    validation slice."""
+    validation slice.
+
+    `xgb_params` (M1-020) - see `train_and_predict_fold()`'s docstring;
+    `None` reproduces production behavior exactly."""
+    params = {**XGB_BASE_PARAMS, **(xgb_params or {})}
     target_mask = stage2_df["split"] == "holdout"
     target_rows = stage2_df.loc[target_mask]
-    X_target, _ = _prepare_xy(target_rows)
+    X_target, _ = _prepare_xy(target_rows, feature_columns)
 
     trainable = _trainable_mask(stage2_df)
     fit_mask = stage2_df["fold_id_numeric"].between(1, N_FOLDS - 1) & trainable
     val_mask = (stage2_df["fold_id_numeric"] == N_FOLDS) & trainable
-    X_fit, y_fit = _prepare_xy(stage2_df.loc[fit_mask])
-    X_val, y_val = _prepare_xy(stage2_df.loc[val_mask])
-    best_n = _fit_with_early_stopping(X_fit, y_fit, X_val, y_val)
+    X_fit, y_fit = _prepare_xy(stage2_df.loc[fit_mask], feature_columns)
+    X_val, y_val = _prepare_xy(stage2_df.loc[val_mask], feature_columns)
+    best_n = _fit_with_early_stopping(X_fit, y_fit, X_val, y_val, xgb_params=xgb_params)
 
     train_mask = stage2_df["fold_id_numeric"].between(1, N_FOLDS) & trainable
-    X_train, y_train = _prepare_xy(stage2_df.loc[train_mask])
-    model = xgb.XGBRegressor(**XGB_BASE_PARAMS, n_estimators=best_n)
+    X_train, y_train = _prepare_xy(stage2_df.loc[train_mask], feature_columns)
+    model = xgb.XGBRegressor(**params, n_estimators=best_n)
     model.fit(X_train, y_train)
 
     predicted = model.predict(X_target)
     return predicted, model
 
 
-def train_final_production_model(stage2_df: pd.DataFrame) -> "xgb.XGBRegressor":
+def _fit_one_district(
+    fit_rows: pd.DataFrame, val_rows_for_early_stop: pd.DataFrame | None,
+    feature_columns: list[str], xgb_params: dict | None,
+) -> "xgb.XGBRegressor | None":
+    """Apply the M1-021 three-tier data-sufficiency rule to one district's
+    own training rows and fit accordingly. Returns `None` if there isn't
+    even enough data for the lowest tier (caller treats this as a no-op)."""
+    params = {**XGB_BASE_PARAMS, **(xgb_params or {})}
+    n_rows = len(fit_rows)
+    if n_rows < MIN_TRAINABLE_ROWS_PER_DISTRICT:
+        return None
+
+    X_train, y_train = _prepare_xy(fit_rows, feature_columns)
+    if n_rows < MIN_ROWS_FOR_EARLY_STOPPING_PER_DISTRICT or val_rows_for_early_stop is None or val_rows_for_early_stop.empty:
+        model = xgb.XGBRegressor(**params, n_estimators=FIXED_N_ESTIMATORS_NO_EARLY_STOP)
+        model.fit(X_train, y_train)
+        return model
+
+    X_val, y_val = _prepare_xy(val_rows_for_early_stop, feature_columns)
+    best_n = _fit_with_early_stopping(X_train, y_train, X_val, y_val, xgb_params=xgb_params)
+    model = xgb.XGBRegressor(**params, n_estimators=best_n)
+    model.fit(X_train, y_train)
+    return model
+
+
+def train_and_predict_fold_per_district(
+    stage2_df: pd.DataFrame, fold_num: int,
+    feature_columns: list[str] = PER_DISTRICT_FEATURE_COLUMNS,
+    *, xgb_params: dict | None = None,
+) -> pd.DataFrame:
+    """M1-021: per-district counterpart to `train_and_predict_fold()`. Loops
+    `DISTRICTS`, fitting (or no-op'ing, per the data-sufficiency rule) each
+    district's own model on that district's own out-of-sample residuals
+    from folds `1..fold_num-1` only. Returns a DataFrame with all districts'
+    `fold_num` rows plus `predicted_residual`/`stage2_trained` columns -
+    same shape as the pooled path's per-fold output, so downstream
+    evaluation code needs no changes.
+    """
+    target_rows = stage2_df.loc[stage2_df["fold_id_numeric"] == fold_num].copy()
+    if fold_num == 1:
+        target_rows["predicted_residual"] = 0.0
+        target_rows["stage2_trained"] = False
+        return target_rows
+
+    trainable = _trainable_mask(stage2_df)
+    frames = []
+    for district in DISTRICTS:
+        dist_target = target_rows.loc[target_rows["District"] == district].copy()
+        if dist_target.empty:
+            continue
+        dist_all = stage2_df.loc[stage2_df["District"] == district]
+
+        if fold_num < MIN_FOLD_FOR_EARLY_STOPPING:
+            fit_rows = dist_all.loc[(dist_all["fold_id_numeric"] == 1) & trainable.loc[dist_all.index]]
+            val_rows = None
+        else:
+            val_fold = fold_num - 1
+            fit_mask = dist_all["fold_id_numeric"].between(1, val_fold - 1) & trainable.loc[dist_all.index]
+            val_mask = (dist_all["fold_id_numeric"] == val_fold) & trainable.loc[dist_all.index]
+            fit_rows = dist_all.loc[fit_mask]
+            val_rows = dist_all.loc[val_mask]
+
+        model = _fit_one_district(fit_rows, val_rows, feature_columns, xgb_params)
+        if model is None:
+            dist_target["predicted_residual"] = 0.0
+            dist_target["stage2_trained"] = False
+        else:
+            X_target, _ = _prepare_xy(dist_target, feature_columns)
+            dist_target["predicted_residual"] = model.predict(X_target)
+            dist_target["stage2_trained"] = True
+        frames.append(dist_target)
+
+    return pd.concat(frames, ignore_index=True) if frames else target_rows.assign(predicted_residual=0.0, stage2_trained=False)
+
+
+def train_and_predict_holdout_per_district(
+    stage2_df: pd.DataFrame,
+    feature_columns: list[str] = PER_DISTRICT_FEATURE_COLUMNS,
+    *, xgb_params: dict | None = None,
+) -> pd.DataFrame:
+    """M1-021: per-district counterpart to `train_and_predict_holdout()`.
+    Each district's own model is trained on that district's own out-of-
+    sample residuals from all 14 folds, carving out fold 14 as the early-
+    stopping validation slice wherever that district has enough data.
+    """
+    target_rows = stage2_df.loc[stage2_df["split"] == "holdout"].copy()
+    trainable = _trainable_mask(stage2_df)
+    frames = []
+    for district in DISTRICTS:
+        dist_target = target_rows.loc[target_rows["District"] == district].copy()
+        if dist_target.empty:
+            continue
+        dist_all = stage2_df.loc[stage2_df["District"] == district]
+        fit_mask = dist_all["fold_id_numeric"].between(1, N_FOLDS - 1) & trainable.loc[dist_all.index]
+        val_mask = (dist_all["fold_id_numeric"] == N_FOLDS) & trainable.loc[dist_all.index]
+        fit_rows = dist_all.loc[fit_mask]
+        val_rows = dist_all.loc[val_mask]
+
+        model = _fit_one_district(fit_rows, val_rows, feature_columns, xgb_params)
+        if model is None:
+            dist_target["predicted_residual"] = 0.0
+            dist_target["stage2_trained"] = False
+        else:
+            X_target, _ = _prepare_xy(dist_target, feature_columns)
+            dist_target["predicted_residual"] = model.predict(X_target)
+            dist_target["stage2_trained"] = True
+        frames.append(dist_target)
+
+    return pd.concat(frames, ignore_index=True) if frames else target_rows.assign(predicted_residual=0.0, stage2_trained=False)
+
+
+def train_final_production_model(
+    stage2_df: pd.DataFrame, feature_columns: list[str] = FEATURE_COLUMNS,
+) -> "xgb.XGBRegressor":
     """Train one final model on ALL available out-of-sample residuals (14
     folds + holdout, non-imputed) for potential future live forecasting use.
     Not used for any reported metric - holdout has already served its
@@ -471,11 +670,11 @@ def train_final_production_model(stage2_df: pd.DataFrame) -> "xgb.XGBRegressor":
 
     fit_mask = stage2_df["fold_id_numeric"].between(1, N_FOLDS) & trainable
     val_mask = (stage2_df["split"] == "holdout") & trainable
-    X_fit, y_fit = _prepare_xy(stage2_df.loc[fit_mask])
-    X_val, y_val = _prepare_xy(stage2_df.loc[val_mask])
+    X_fit, y_fit = _prepare_xy(stage2_df.loc[fit_mask], feature_columns)
+    X_val, y_val = _prepare_xy(stage2_df.loc[val_mask], feature_columns)
     best_n = _fit_with_early_stopping(X_fit, y_fit, X_val, y_val)
 
-    X_all, y_all = _prepare_xy(stage2_df.loc[all_mask])
+    X_all, y_all = _prepare_xy(stage2_df.loc[all_mask], feature_columns)
     model = xgb.XGBRegressor(**XGB_BASE_PARAMS, n_estimators=best_n)
     model.fit(X_all, y_all)
     return model
@@ -578,12 +777,20 @@ def run_stage2_pipeline(
     *,
     residual_mode: str | None = None,
     feature_variant: str | None = None,
+    weekly_table_path: Path = MODULE1_WEEKLY_MODELING_TABLE_PATH,
+    feature_table_path: Path = MODULE1_STAGE2_FEATURE_TABLE_PATH,
 ) -> pd.DataFrame:
     mode = validate_residual_mode(residual_mode or M1_STAGE2_RESIDUAL_MODE)
     paths = module1_stage2_paths(mode, feature_variant=feature_variant)
+    feature_columns = get_feature_columns(feature_variant)
 
-    logger.info("Assembling Stage 2 feature table (residual mode=%s)...", mode)
-    stage2_df = assemble_stage2_table(residual_mode=mode)
+    logger.info(
+        "Assembling Stage 2 feature table (residual mode=%s, feature_variant=%s, %d features)...",
+        mode, feature_variant, len(feature_columns),
+    )
+    stage2_df = assemble_stage2_table(
+        residual_mode=mode, weekly_table_path=weekly_table_path, feature_table_path=feature_table_path,
+    )
 
     paths["xgboost_models_dir"].mkdir(parents=True, exist_ok=True)
     paths["xgboost_metrics"].parent.mkdir(parents=True, exist_ok=True)
@@ -595,14 +802,14 @@ def run_stage2_pipeline(
     logger.info("Fold 1: no-op (no prior residual data) - %d rows, predicted_residual=0.", len(fold1_rows))
 
     for fold_num in range(2, N_FOLDS + 1):
-        predicted, trained, model = train_and_predict_fold(stage2_df, fold_num)
+        predicted, trained, model = train_and_predict_fold(stage2_df, fold_num, feature_columns)
         target_rows = stage2_df.loc[stage2_df["fold_id_numeric"] == fold_num]
         output_frames.append(_build_output_rows(target_rows, predicted, trained))
         if model is not None:
             _save_xgboost_model(model, paths["xgboost_models_dir"] / f"fold_{fold_num}.json")
         logger.info("Fold %d: trained on folds 1-%d, predicted %d rows.", fold_num, fold_num - 1, len(target_rows))
 
-    predicted_holdout, holdout_model = train_and_predict_holdout(stage2_df)
+    predicted_holdout, holdout_model = train_and_predict_holdout(stage2_df, feature_columns)
     holdout_rows = stage2_df.loc[stage2_df["split"] == "holdout"]
     output_frames.append(_build_output_rows(holdout_rows, predicted_holdout, stage2_trained=True))
     _save_xgboost_model(holdout_model, paths["xgboost_models_dir"] / "holdout.json")
@@ -614,7 +821,7 @@ def run_stage2_pipeline(
     logger.info("Wrote %d Stage 2 prediction rows to %s.", len(predictions_df), paths["xgboost_predictions"])
 
     logger.info("Training final production model on all available out-of-sample residuals...")
-    final_model = train_final_production_model(stage2_df)
+    final_model = train_final_production_model(stage2_df, feature_columns)
     _save_xgboost_model(final_model, paths["xgboost_final_model"])
 
     importance = final_model.get_booster().get_score(importance_type="gain")
@@ -625,7 +832,7 @@ def run_stage2_pipeline(
     )
     # Features never split on are absent from get_score() - report them
     # explicitly at zero rather than silently omitting them.
-    missing = set(FEATURE_COLUMNS) - set(importance_df["feature"])
+    missing = set(feature_columns) - set(importance_df["feature"])
     if missing:
         importance_df = pd.concat(
             [importance_df, pd.DataFrame({"feature": sorted(missing), "gain": 0.0})], ignore_index=True

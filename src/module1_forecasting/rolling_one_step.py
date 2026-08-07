@@ -14,6 +14,13 @@ Uses the same district configs, XGBoost final model, and feature layout as
 `compensation_model.py` / `forecast_future.py`. Case-derived features
 respect `is_imputed` and `is_reporting_anomaly` masking via
 `feature_engineering.build_fold_agnostic_features`.
+
+`compute_dm_results_rolling()` additionally runs a Diebold-Mariano test
+per district on this series (Phase 1 of the Module 1 remediation plan) -
+`combine.py`'s own DM test only reaches significance for 5/25 districts at
+its strict holdout-only scope (n=104/district); `--scope all` here produces
+a much larger per-district out-of-sample sample. This is reporting only -
+no model or feature is ever selected from it.
 """
 
 from __future__ import annotations
@@ -21,11 +28,15 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import warnings
+from collections import deque
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 import pandas as pd
 import xgboost as xgb
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -34,15 +45,16 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.config import (  # noqa: E402
     DISTRICTS,
     M1_STAGE2_RESIDUAL_MODE,
+    MODULE1_ROLLING_ONE_STEP_DM_PATH,
     MODULE1_ROLLING_ONE_STEP_METRICS_PATH,
     MODULE1_ROLLING_ONE_STEP_PATH,
     MODULE1_SARIMA_CONFIG_PATH,
     MODULE1_WEEKLY_MODELING_TABLE_PATH,
     module1_stage2_paths,
 )
-from src.module1_forecasting.baseline_sarima import fit_and_forecast  # noqa: E402
+from src.module1_forecasting.baseline_sarima import _has_explosive_ar_root, fit_and_forecast  # noqa: E402
 from src.module1_forecasting.compensation_model import FEATURE_COLUMNS  # noqa: E402
-from src.module1_forecasting.evaluate import smape  # noqa: E402
+from src.module1_forecasting.evaluate import dm_test, smape  # noqa: E402
 from src.module1_forecasting.residual_transform import (  # noqa: E402
     combine_stage2_forecast,
     compute_stage2_target,
@@ -65,6 +77,7 @@ from src.module1_forecasting.validation import (  # noqa: E402
 logger = logging.getLogger(__name__)
 
 CLIMATE_RAW_COLUMNS = [RAINFALL_COLUMN, TEMPERATURE_COLUMN, HUMIDITY_COLUMN]
+DM_MAX_LAG = 12  # matches combine.py's DM_MAX_LAG for the holdout-block DM test
 FOLD_AGNOSTIC_NUMERIC = [c for c in FEATURE_COLUMNS if c not in (
     "rainfall_anomaly", "temperature_anomaly", "humidity_anomaly",
     "sarima_prediction", "residual_lag_1", "residual_lag_2", "District",
@@ -90,6 +103,169 @@ def _week_key(year: int, week: int) -> tuple[int, int]:
     return int(year), int(week)
 
 
+def _low_freq_refit_step(
+    train_series: pd.Series,
+    order: tuple[int, int, int],
+    seasonal_order: tuple[int, int, int, int],
+    use_log1p: bool,
+    context: str,
+    *,
+    fitted_state,
+    state_len: int,
+    weeks_since_refit: int,
+    refit_interval_weeks: int,
+):
+    """M1-014: one rolling step under a less-frequent refit cadence.
+
+    Refits fresh (cold `.fit()`, same cost as the default weekly path) only
+    every `refit_interval_weeks`; in between, extends the existing fitted
+    state with the single newly-available observation via
+    `SARIMAXResults.append(refit=False)` - a cheap Kalman-filter state
+    update, NOT a re-optimization (confirmed via the statsmodels docstring
+    before implementing this) - then forecasts 1 step from the updated
+    state. Targets the hypothesis that refitting every single week (M1-011/
+    Decision 035) may be *more* frequent than the true underlying process
+    needs, without giving up entirely on incorporating new data (which pure
+    buy-and-hold would do).
+
+    Returns `(forecast, new_fitted_state, new_state_len, new_weeks_since_refit)`.
+    On any failure, returns `(nan, None, 0, refit_interval_weeks)` - `None`
+    state and `weeks_since_refit == refit_interval_weeks` force a fresh cold
+    refit on the next call rather than propagating a broken state forward.
+    """
+    values = train_series.to_numpy(dtype=float)
+    fit_values = np.log1p(values) if use_log1p else values
+    need_refit = fitted_state is None or weeks_since_refit >= refit_interval_weeks
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            if need_refit:
+                model = SARIMAX(
+                    fit_values, order=order, seasonal_order=seasonal_order,
+                    enforce_stationarity=False, enforce_invertibility=False,
+                )
+                fitted = model.fit(disp=False)
+                new_state_len = len(fit_values)
+                new_weeks_since_refit = 0
+            else:
+                new_obs = fit_values[state_len:]
+                fitted = fitted_state.append(new_obs, refit=False)
+                new_state_len = len(fit_values)
+                new_weeks_since_refit = weeks_since_refit + 1
+
+            if _has_explosive_ar_root(fitted):
+                logger.warning(
+                    "Low-freq-refit SARIMAX for %s (order=%s, seasonal_order=%s, "
+                    "use_log1p=%s, need_refit=%s) is non-stationary/explosive; "
+                    "forcing a fresh cold refit next call.",
+                    context, order, seasonal_order, use_log1p, need_refit,
+                )
+                return np.nan, None, 0, refit_interval_weeks
+            forecast = float(fitted.forecast(steps=1)[0])
+    except Exception:
+        logger.warning(
+            "Low-freq-refit SARIMAX fit/append/forecast failed for %s "
+            "(order=%s, seasonal_order=%s, use_log1p=%s, need_refit=%s); "
+            "forcing a fresh cold refit next call.",
+            context, order, seasonal_order, use_log1p, need_refit, exc_info=True,
+        )
+        return np.nan, None, 0, refit_interval_weeks
+
+    if use_log1p:
+        forecast = float(np.expm1(forecast))
+    forecast = max(forecast, 0.0)
+    return forecast, fitted, new_state_len, new_weeks_since_refit
+
+
+def _vintage_ensemble_step(
+    train_series: pd.Series,
+    order: tuple[int, int, int],
+    seasonal_order: tuple[int, int, int, int],
+    use_log1p: bool,
+    context: str,
+    *,
+    vintage_deque: "deque[tuple[int, object]]",
+    ensemble_window: int,
+):
+    """M1-015: fresh weekly refit (identical cost/behavior to the default
+    cold path - no slowdown), but the final SARIMA prediction for week t is
+    the average, in transformed space, of this week's own 1-step forecast
+    AND the forecasts that the last `ensemble_window - 1` weeks' OWN
+    independently-fitted models make for the SAME target week (extended
+    forward via cheap `.forecast(steps=h)` calls, not refit). Targets the
+    hypothesis (M1-011) that each week's fresh MLE optimum is itself noisy;
+    averaging several independent vintages' opinions about the same target
+    week is a standard forecast-combination approach to reducing that noise,
+    distinct from - and not ruled out by - M1-013's rejected warm-start
+    approach (which tried to change what a single fit converges to, not
+    combine several).
+
+    Mutates `vintage_deque` in place (appends this week's fit, evicts the
+    oldest once over `ensemble_window`). Returns the ensembled forecast.
+    """
+    values = train_series.to_numpy(dtype=float)
+    fit_values = np.log1p(values) if use_log1p else values
+    target_train_len = len(fit_values)  # this model's steps=1 forecast covers index target_train_len
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            model = SARIMAX(
+                fit_values, order=order, seasonal_order=seasonal_order,
+                enforce_stationarity=False, enforce_invertibility=False,
+            )
+            fitted = model.fit(disp=False)
+            if _has_explosive_ar_root(fitted):
+                logger.warning(
+                    "Vintage-ensemble SARIMAX for %s (order=%s, seasonal_order=%s, "
+                    "use_log1p=%s) is non-stationary/explosive; dropping this "
+                    "vintage from the ensemble.",
+                    context, order, seasonal_order, use_log1p,
+                )
+                vintage_deque.append((target_train_len, None))
+                if len(vintage_deque) > ensemble_window:
+                    vintage_deque.popleft()
+                return np.nan
+            this_week_forecast = float(fitted.forecast(steps=1)[0])
+    except Exception:
+        logger.warning(
+            "Vintage-ensemble SARIMAX fit/forecast failed for %s (order=%s, "
+            "seasonal_order=%s, use_log1p=%s); dropping this vintage.",
+            context, order, seasonal_order, use_log1p, exc_info=True,
+        )
+        vintage_deque.append((target_train_len, None))
+        if len(vintage_deque) > ensemble_window:
+            vintage_deque.popleft()
+        return np.nan
+
+    forecasts_transformed = [this_week_forecast]
+    for older_train_len, older_fitted in vintage_deque:
+        if older_fitted is None:
+            continue
+        horizon = target_train_len - older_train_len + 1
+        if horizon <= 0:
+            continue
+        try:
+            forecasts_transformed.append(float(older_fitted.forecast(steps=horizon)[-1]))
+        except Exception:
+            logger.warning(
+                "Vintage-ensemble older-fit forecast failed for %s (horizon=%d); "
+                "excluding that vintage from this week's average.",
+                context, horizon, exc_info=True,
+            )
+
+    vintage_deque.append((target_train_len, fitted))
+    if len(vintage_deque) > ensemble_window:
+        vintage_deque.popleft()
+
+    forecast = float(np.mean(forecasts_transformed))
+    if use_log1p:
+        forecast = float(np.expm1(forecast))
+    forecast = max(forecast, 0.0)
+    return forecast
+
+
 def rolling_one_step_district(
     district: str,
     weekly_df: pd.DataFrame,
@@ -99,7 +275,47 @@ def rolling_one_step_district(
     min_train_weeks: int,
     target_keys: set[tuple[int, int]] | None,
     residual_mode: str = M1_STAGE2_RESIDUAL_MODE,
+    sarima_prediction_overrides: dict[tuple[int, int], float] | None = None,
+    model_resolver: "Callable[[int, int], xgb.XGBRegressor] | None" = None,
+    warm_start: bool = False,
+    refit_interval_weeks: int | None = None,
+    ensemble_window: int | None = None,
 ) -> pd.DataFrame:
+    """
+    `sarima_prediction_overrides` (Open Question #17 diagnostic,
+    `scripts/diagnose_rolling_dm_gap.py`): when a `(Year, Week)` key is
+    present, skip the expensive `fit_and_forecast()` SARIMAX refit and reuse
+    the given value instead - lets a diagnostic reuse an already-completed
+    rolling run's `sarima_prediction` column verbatim while only varying
+    which Stage 2 model scores the (otherwise identical) feature row. Safe
+    because `residual_lag_1/2` are built from ACTUAL residuals
+    (`compute_stage2_target(actual, sarima_pred)`), not from any model's
+    prediction, so feature rows are already model-independent - only
+    `predicted_residual`/`final_prediction` change.
+
+    `model_resolver(year, week) -> xgb.XGBRegressor`, if given, picks which
+    Stage 2 model scores that row's feature vector, instead of the single
+    `xgb_model` passed in (which remains the default for any week the
+    resolver doesn't override).
+
+    `warm_start` (M1-013, root-causing Open Question #17/Decision 035's
+    finding that weekly SARIMA refits are only weakly correlated with the
+    walk-forward fold refits of the same weeks): when True, each week's
+    `fit_and_forecast()` call is seeded with the PREVIOUS week's converged
+    `SARIMAX` parameters via `start_params` (valid since `order`/
+    `seasonal_order` - and therefore the parameter vector's shape - are
+    fixed for this district's entire loop; only the training window grows
+    by one row each week). The hypothesis: this reduces week-to-week
+    optimizer-local-optimum jumping relative to a cold `.fit()` every time.
+    Falls back to a cold start (`start_params=None`) for the first scored
+    week and after any failed fit (no params to carry forward).
+
+    `refit_interval_weeks` (M1-014, `_low_freq_refit_step`) and
+    `ensemble_window` (M1-015, `_vintage_ensemble_step`) are mutually
+    exclusive with each other and with `warm_start` - at most one of the
+    three should be set per call. Both default to `None` (unchanged weekly-
+    cold-refit behavior).
+    """
     dist_df = (
         weekly_df.loc[weekly_df["District"] == district]
         .sort_values(["Year", "Week"])
@@ -113,6 +329,11 @@ def rolling_one_step_district(
 
     residual_history: dict[tuple[int, int], float] = {}
     rows: list[dict] = []
+    last_params: np.ndarray | None = None
+    low_freq_fitted = None
+    low_freq_state_len = 0
+    weeks_since_refit = 0
+    vintage_deque: deque = deque()
 
     for i in range(min_train_weeks, len(dist_df)):
         row = dist_df.iloc[i]
@@ -121,21 +342,54 @@ def rolling_one_step_district(
         if target_keys is not None and key not in target_keys:
             continue
 
-        train_df = dist_df.iloc[:i]
-        train_series = pd.Series(
-            train_df["Number_of_Cases"].to_numpy(dtype=float),
-            index=pd.MultiIndex.from_frame(train_df[["Year", "Week"]]),
-        )
-        sarima_pred = float(
-            fit_and_forecast(
-                train_series,
-                n_periods=1,
-                order=sarima_config["order"],
-                seasonal_order=sarima_config["seasonal_order"],
-                use_log1p=sarima_config["use_log1p"],
-                context=f"{district} rolling 1-step {year} Wk{week}",
-            )[0]
-        )
+        override = sarima_prediction_overrides.get(key) if sarima_prediction_overrides else None
+        if override is not None:
+            sarima_pred = float(override)
+        else:
+            train_df = dist_df.iloc[:i]
+            train_series = pd.Series(
+                train_df["Number_of_Cases"].to_numpy(dtype=float),
+                index=pd.MultiIndex.from_frame(train_df[["Year", "Week"]]),
+            )
+            if refit_interval_weeks is not None:
+                sarima_pred, low_freq_fitted, low_freq_state_len, weeks_since_refit = _low_freq_refit_step(
+                    train_series,
+                    sarima_config["order"], sarima_config["seasonal_order"], sarima_config["use_log1p"],
+                    context=f"{district} rolling low-freq-refit {year} Wk{week}",
+                    fitted_state=low_freq_fitted, state_len=low_freq_state_len,
+                    weeks_since_refit=weeks_since_refit, refit_interval_weeks=refit_interval_weeks,
+                )
+            elif ensemble_window is not None:
+                sarima_pred = _vintage_ensemble_step(
+                    train_series,
+                    sarima_config["order"], sarima_config["seasonal_order"], sarima_config["use_log1p"],
+                    context=f"{district} rolling vintage-ensemble {year} Wk{week}",
+                    vintage_deque=vintage_deque, ensemble_window=ensemble_window,
+                )
+            elif warm_start:
+                forecast_arr, fitted_params = fit_and_forecast(
+                    train_series,
+                    n_periods=1,
+                    order=sarima_config["order"],
+                    seasonal_order=sarima_config["seasonal_order"],
+                    use_log1p=sarima_config["use_log1p"],
+                    context=f"{district} rolling 1-step {year} Wk{week}",
+                    start_params=last_params,
+                    return_params=True,
+                )
+                sarima_pred = float(forecast_arr[0])
+                last_params = fitted_params if fitted_params is not None else last_params
+            else:
+                sarima_pred = float(
+                    fit_and_forecast(
+                        train_series,
+                        n_periods=1,
+                        order=sarima_config["order"],
+                        seasonal_order=sarima_config["seasonal_order"],
+                        use_log1p=sarima_config["use_log1p"],
+                        context=f"{district} rolling 1-step {year} Wk{week}",
+                    )[0]
+                )
 
         # Features for week t use history through t (current-week cases nulled).
         hist_df = dist_df.iloc[: i + 1][work_cols].copy()
@@ -162,7 +416,8 @@ def rolling_one_step_district(
 
         X = pd.DataFrame([feature_row])[FEATURE_COLUMNS]
         X["District"] = pd.Categorical(X["District"], categories=DISTRICTS)
-        predicted_residual = float(xgb_model.predict(X)[0])
+        active_model = model_resolver(year, week) if model_resolver is not None else xgb_model
+        predicted_residual = float(active_model.predict(X)[0])
         final_prediction = float(
             combine_stage2_forecast(sarima_pred, predicted_residual, mode=residual_mode)
         )
@@ -241,12 +496,41 @@ def summarize_metrics(result: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(summary_rows)
 
 
+def compute_dm_results_rolling(result: pd.DataFrame, *, scope: str) -> pd.DataFrame:
+    """Diebold-Mariano test (Stage-1-only vs Stage-1+Stage-2), per district,
+    on the rolling one-step series.
+
+    `combine.py`'s own DM test only reaches `p < 0.05` for 5/25 districts at
+    its strict holdout-only scope (n=104/district) - this is a genuinely
+    larger out-of-sample sample per district (every rolling-scored week, not
+    just the 104-week holdout block), giving the test more statistical
+    power. Masking mirrors `combine.py` exactly (`is_imputed` only -
+    `is_reporting_anomaly` rows are NOT excluded, matching the existing
+    convention there). This is pure evidence-gathering: no model or feature
+    is ever selected from this result, so it carries no leakage risk.
+    """
+    scored = result.loc[~result["is_imputed"]].copy()
+    rows: list[dict] = []
+    for district in sorted(scored["District"].unique()):
+        dist = scored.loc[scored["District"] == district]
+        e1 = (dist["Number_of_Cases"] - dist["sarima_prediction"]).to_numpy(dtype=float)
+        e2 = (dist["Number_of_Cases"] - dist["final_prediction"]).to_numpy(dtype=float)
+        dm = dm_test(e1, e2, max_lag=DM_MAX_LAG, loss="squared")
+        rows.append({"District": district, "scope": scope, **dm})
+    return pd.DataFrame(rows)
+
+
 def run_rolling_one_step(
     districts: list[str] | None = None,
     *,
     scope: str = "holdout",
     min_train_years: int = DEFAULT_MIN_TRAIN_YEARS,
     residual_mode: str | None = None,
+    warm_start: bool = False,
+    ensemble_window: int | None = None,
+    output_path: Path | None = None,
+    metrics_path: Path | None = None,
+    dm_path: Path | None = None,
 ) -> pd.DataFrame:
     mode = validate_residual_mode(residual_mode or M1_STAGE2_RESIDUAL_MODE)
     paths = module1_stage2_paths(mode)
@@ -274,23 +558,29 @@ def run_rolling_one_step(
                 min_train_weeks=min_train_weeks,
                 target_keys=target_keys,
                 residual_mode=mode,
+                warm_start=warm_start,
+                ensemble_window=ensemble_window,
             )
         )
 
     result = pd.concat(frames, ignore_index=True)
-    MODULE1_ROLLING_ONE_STEP_PATH.parent.mkdir(parents=True, exist_ok=True)
-    result.to_csv(MODULE1_ROLLING_ONE_STEP_PATH, index=False)
+    out_path = output_path or MODULE1_ROLLING_ONE_STEP_PATH
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    result.to_csv(out_path, index=False)
 
     metrics = summarize_metrics(result)
-    MODULE1_ROLLING_ONE_STEP_METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    metrics.to_csv(MODULE1_ROLLING_ONE_STEP_METRICS_PATH, index=False)
+    met_path = metrics_path or MODULE1_ROLLING_ONE_STEP_METRICS_PATH
+    met_path.parent.mkdir(parents=True, exist_ok=True)
+    metrics.to_csv(met_path, index=False)
+
+    dm_results = compute_dm_results_rolling(result, scope=scope)
+    dm_out_path = dm_path or MODULE1_ROLLING_ONE_STEP_DM_PATH
+    dm_out_path.parent.mkdir(parents=True, exist_ok=True)
+    dm_results.to_csv(dm_out_path, index=False)
 
     logger.info(
-        "Wrote %d rolling 1-step rows to %s and %d summary rows to %s.",
-        len(result),
-        MODULE1_ROLLING_ONE_STEP_PATH,
-        len(metrics),
-        MODULE1_ROLLING_ONE_STEP_METRICS_PATH,
+        "Wrote %d rolling 1-step rows to %s, %d summary rows to %s, and %d DM-test rows to %s.",
+        len(result), out_path, len(metrics), met_path, len(dm_results), dm_out_path,
     )
     return result
 
@@ -311,10 +601,24 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Stage 2 target transform (must match trained XGBoost model).",
     )
+    parser.add_argument(
+        "--warm-start", action="store_true",
+        help="Seed each week's SARIMAX fit with the previous week's converged params (M1-013).",
+    )
+    parser.add_argument(
+        "--ensemble-window", type=int, default=None,
+        help=("Average this many independent weekly SARIMA vintages per target week (M1-015/"
+              "Decision 040 - matches MODULE1_NOWCAST_ENSEMBLE_WINDOW=4 in production run_nowcast()). "
+              "Mutually exclusive with --warm-start. Default: unset (plain weekly cold refit, the "
+              "existing committed rolling_one_step_predictions.csv's behavior)."),
+    )
     return parser.parse_args(argv)
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     args = _parse_args()
-    run_rolling_one_step(districts=args.districts, scope=args.scope, residual_mode=args.residual_mode)
+    run_rolling_one_step(
+        districts=args.districts, scope=args.scope, residual_mode=args.residual_mode,
+        warm_start=args.warm_start, ensemble_window=args.ensemble_window,
+    )
