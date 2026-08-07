@@ -538,6 +538,15 @@ Notes:
 
 - Source: `data/processed/module1/final_combined_predictions.csv` (holdout, non-imputed).
 - Do not use `future_forecast_*.png` (operational, no ground truth).
+- **Updated 2026-08-07**: the chart now merges in `is_reporting_anomaly` (from
+  `weekly_modeling_table.csv`) and annotates the week immediately after any flagged week
+  (e.g. Colombo/Gampaha 2026 Wk25, and Colombo's earlier 2026 Wk14 event) with an "X" marker
+  + "flagged reporting-delay catch-up spike (§7.3)" callout. Reason: the 2026 Wk25 spike
+  (Colombo 1,138 / Gampaha 1,294 actual vs. both forecast lines staying flat) is a dramatic,
+  unexplained-looking miss at first glance without this — annotating it turns a scary-looking
+  outlier into a demonstrated, already-investigated limitation (Decision 026/028/043) instead
+  of something to hide. Generator: `generate_figure_7_2_7_3.py` (data-driven, not hardcoded to
+  this one week — will also catch any future flagged week in the holdout window).
 
 ---
 

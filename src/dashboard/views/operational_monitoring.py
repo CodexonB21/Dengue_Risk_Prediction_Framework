@@ -163,11 +163,24 @@ def render_operational_page(
         if live.empty:
             st.warning("No live risk predictions.")
         else:
-            dlive = live.loc[live["District"] == district].sort_values(["Year", "Week"])
-            recent_cols = [
-                "Year", "Week", "calibrated_probability", "risk_tier", "alert_flag",
-                "feature_completeness_pct", "already_scored_in_pipeline",
+            dlive = live.loc[live["District"] == district].sort_values(["Year", "Week"]).copy()
+            # Merge in the reporting-anomaly flag (Decision 026/028) - live_risk_predictions.csv
+            # doesn't carry it itself - so a genuine reporting-delay catch-up week reads as an
+            # explained data-quality event here too, not just an unexplained low-probability
+            # week sitting right next to a real case-count spike (same treatment as the
+            # Case forecast tab below).
+            anomaly_flags = m1_weekly.loc[
+                m1_weekly["District"] == district, ["Year", "Week", "is_reporting_anomaly"]
             ]
+            dlive = dlive.merge(anomaly_flags, on=["Year", "Week"], how="left")
+            dlive["is_reporting_anomaly"] = dlive["is_reporting_anomaly"].fillna(False)
+            dlive["catch_up_week"] = dlive["is_reporting_anomaly"].shift(1, fill_value=False)
+
+            recent_cols = [
+                "Year", "Week", "Number_of_Cases", "calibrated_probability", "risk_tier",
+                "alert_flag", "feature_completeness_pct", "already_scored_in_pipeline",
+            ]
+            recent_cols = [c for c in recent_cols if c in dlive.columns]
             st.dataframe(
                 dlive[recent_cols],
                 column_config=column_help(recent_cols),
@@ -185,7 +198,23 @@ def render_operational_page(
                 y=alert_threshold, line_dash="dot",
                 annotation_text=f"alert threshold ({alert_threshold:.2f})",
             )
+            flagged = dlive.loc[dlive["catch_up_week"]]
+            if not flagged.empty:
+                fig.add_scatter(
+                    x=flagged["Week_Start_Date"],
+                    y=flagged["calibrated_probability"],
+                    mode="markers",
+                    marker=dict(symbol="x", size=13, color="#B45309"),
+                    name="Follows a flagged reporting-delay dip",
+                )
             st.plotly_chart(fig, use_container_width=True)
+            if dlive["catch_up_week"].any():
+                st.caption(
+                    "🟠 marker: this week immediately follows a week flagged as a likely reporting "
+                    "dip/catch-up (Decision 026/028) — case-derived lag features for it were built "
+                    "on an artificially low prior-week count, so the probability here should be read "
+                    "alongside the actual `Number_of_Cases` column above, not on its own."
+                )
 
     with tab_cases:
         module_badge("m1")

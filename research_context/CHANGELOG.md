@@ -6,6 +6,91 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-08-07 - Module 2 case-anomaly-lag carry-forward substitution tested and rejected (M2-016/Decision 049)
+
+### Module
+Module 2
+
+### Change
+Following the Wk25 annotation work, investigated the mechanism behind Colombo/Gampaha's 2026
+Wk25 false negative (real outbreak, `label=1`, but scored "low"/"medium" risk): traced to
+`case_anomaly_lag_1` (Stage 1's dominant feature, ~35% importance) going `NaN` because the
+preceding week shares Module 1's `is_reporting_anomaly` flag. Tested substituting
+`case_anomaly_lag_2` for the masked value (mirroring Module 1's Decision 030 `cases_lag_1`
+substitution) via a new `carry_forward_masked_lag1` parameter on
+`feature_engineering.compute_case_anomaly_lags()`/`build_module2_feature_table()`, benchmarked
+in `scripts/m2_016_case_anomaly_lag1_carryforward.py` against the current production Random
+Forest hyperparameters (Decision 047) on the same 13 walk-forward folds.
+
+### Reason
+User asked to build and holdout-test the fix rather than speculate about whether it would help.
+
+### Impact
+- **Rejected**: validation median PR-AUC regressed slightly (0.3865 vs. baseline 0.3917).
+  Holdout was NOT examined, per the project's pre-registered "validation wins first, holdout
+  checks once" rule — the specific Wk25 row that motivated this experiment sits inside that
+  untouched block, so whether the fix would have helped THAT prediction remains genuinely
+  unknown, by design (no result was allowed to leak from peeking).
+- New `carry_forward_masked_lag1` parameter defaults to `False` (production behavior
+  unchanged) but is kept in the codebase as a documented, tested-and-rejected variant.
+- No production model, feature table, or default artifact changed.
+
+### Documentation Updated
+`research_context/RESEARCH_DECISIONS.md` (new Decision 049), `module_2_classification/
+MODULE_CONTEXT.md` (Open Question #11), `module_2_classification/EXPERIMENT_LOG.md` (M2-016),
+`research_context/CHANGELOG.md` (this entry).
+
+---
+
+## 2026-08-07 - Reporting-anomaly weeks annotated in Figure 7.2 and the dashboard's Recent Risk tab
+
+### Module
+Module 1 / Module 2 / Report / Dashboard
+
+### Change
+User flagged that the 2026 Wk25 Colombo/Gampaha spike (real cases 1,138/1,294 vs. both
+Module 1 forecast lines staying flat, and Module 2's live-scoring probability sitting where
+it does) would look like an unexplained model failure to an evaluator seeing it cold, in
+both the academic report and the dashboard, and asked whether to suppress it. Decided
+against suppression (would look worse if discovered, and contradicts the dashboard's own
+established 2026-08-07 redesign philosophy of surfacing `is_reporting_anomaly` rather than
+hiding it) - instead extended the existing annotation pattern to the two places that were
+still missing it:
+
+1. **`generate_figure_7_2_7_3.py`** (`make_figure_7_2`): merges in `is_reporting_anomaly`
+   from `weekly_modeling_table.csv` (not present in `final_combined_predictions.csv` itself)
+   and marks the week immediately AFTER any flagged week with an "X" + callout. Data-driven,
+   not hardcoded to Wk25 - it also caught a second, earlier Colombo event (~2026 Wk14) that a
+   hardcoded fix would have missed.
+2. **`src/dashboard/views/operational_monitoring.py`** (`tab_recent`, "Recent risk" tab):
+   `live_risk_predictions.csv` didn't carry the case counts in its displayed table or the
+   `is_reporting_anomaly` flag at all. Added `Number_of_Cases` to the displayed columns,
+   merged in the flag from `m1_weekly` (already loaded in this view), and added the same
+   marker + caption pattern already used on the neighboring "Case forecast" tab.
+
+### Reason
+See above - an evaluator-facing artifact showing a large, unexplained-looking miss is a
+worse outcome than showing the same miss WITH the already-documented explanation attached.
+This is the same treatment the 2026-08-07 dashboard redesign already gave the "Case
+forecast" tab; it had just not been extended to Figure 7.2 or the "Recent risk" tab yet.
+
+### Impact
+- `figure_7_2_module1_holdout_forecasts.png` regenerated with the new annotations.
+- `operational_monitoring.py` edit verified via a `streamlit.testing.v1.AppTest` run
+  (Overview → Operational Monitoring, district=Colombo and Gampaha) - zero exceptions.
+- No model, threshold, or evaluation metric changed - this is presentation-layer only.
+- Separately, confirmed (not yet acted on) that `live_scoring.py`'s calibrated probability
+  for Colombo/Gampaha Wk25 (~0.50/0.58) differs substantially from the walk-forward/holdout
+  evaluation's calibrated probability for the same week (~0.05) - expected per the documented
+  evidence-tier distinction (different feature/model vintage), but flagged here in case it's
+  worth a closer look later.
+
+### Documentation Updated
+`research_context/REPORT_DIAGRAM_PLAN.md` (Figure 7.2 entry), `research_context/CHANGELOG.md`
+(this entry).
+
+---
+
 ## 2026-08-07 - Report diagrams (Figures 5.1, 5.4, 5.6) corrected ahead of poster redesign
 
 ### Module

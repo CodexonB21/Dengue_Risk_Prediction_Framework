@@ -2044,3 +2044,52 @@ fix is to log now and wait for real weeks to resolve, exactly as Module 1 alread
 ### Documentation Updated
 `module_2_classification/MODULE_CONTEXT.md`, `module_2_classification/EXPERIMENT_LOG.md`
 (M2-015), `research_context/CHANGELOG.md`.
+
+---
+
+## Decision 049: Case-Anomaly-Lag-1 Carry-Forward Substitution Rejected — Validation Regressed (M2-016)
+
+**Module:** Module 2
+**Status:** Rejected (tested 2026-08-07, not promoted)
+**Date:** 2026-08-07
+
+### Decision
+Tested substituting `case_anomaly_lag_2` for a masked `case_anomaly_lag_1` (when the prior week
+is `is_reporting_anomaly`) instead of leaving it `NaN` - mirroring Module 1's Decision 030/M1-006B
+`cases_lag_1` nowcast substitution, but scoped to Module 2's own dominant Stage 1 feature.
+Motivated by a user-facing investigation into why Colombo/Gampaha's 2026 Wk25 real outbreak
+(`label=1`, cases 1,138/1,294) was scored "low"/"medium" risk, not "high" - traced to
+`case_anomaly_lag_1` (~35% of Random Forest importance) going missing for that week because the
+immediately preceding week (Wk24) carries the same reporting-delay flag already documented for
+Module 1 (Decision 026/028). Benchmarked via `scripts/m2_016_case_anomaly_lag1_carryforward.py`:
+13-fold walk-forward median PR-AUC, current production Random Forest hyperparameters
+(Decision 047) held fixed as the only controlled variable.
+
+**Result: carry-forward is slightly WORSE on validation** (median PR-AUC 0.3865 vs. baseline
+0.3917) - does not clear the pre-registered "beats baseline" bar. Per the project's own
+"validation wins first, holdout checks once" rule, the holdout block was NOT examined - meaning
+this experiment cannot say whether the substitution would have changed the specific Colombo/
+Gampaha Wk25 prediction that motivated it, since that row lives inside the untouched holdout.
+
+### Reason
+`case_anomaly_lag_2` is already its own feature (~27% importance); copying its value into
+`case_anomaly_lag_1` supplies no genuinely new information to the Random Forest and can dilute
+splits, while on the far more common non-outbreak weeks following a flagged anomaly it risks
+injecting a stale nonzero anomaly reading where the existing median-impute default ("assume
+normal") is usually the safer call, given the label's low overall prevalence (Decision 025,
+~8.6% pooled).
+
+### Implication
+- `feature_engineering.compute_case_anomaly_lags()`/`build_module2_feature_table()` gained a
+  `carry_forward_masked_lag1` parameter, default `False` - production behavior is unchanged.
+  Kept in the codebase (not reverted) as a documented, tested-and-rejected variant for future
+  ablation replay, consistent with this project's treatment of other negative results
+  (e.g. M1-006A).
+- The Colombo/Gampaha Wk25 false negative itself remains unexplained-by-fix, though its
+  MECHANISM is now documented precisely (dominant feature goes missing right when an
+  accelerating outbreak most needs it seen) - a genuine, open limitation, not a solved one.
+- No production artifact, model, or default changed.
+
+### Documentation Updated
+`module_2_classification/MODULE_CONTEXT.md`, `module_2_classification/EXPERIMENT_LOG.md`
+(M2-016), `research_context/CHANGELOG.md`.

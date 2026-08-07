@@ -31,15 +31,27 @@ def make_figure_7_2() -> Path:
     pred = pred[(pred["split"] == "holdout") & (~pred["is_imputed"])].copy()
     pred["date"] = week_to_date(pred["Year"], pred["Week"])
 
+    # Merge in the reporting-anomaly flag (Decision 026/028) - not present in
+    # final_combined_predictions.csv itself - so a genuine reporting-delay
+    # catch-up spike can be labeled on the chart instead of reading as an
+    # unexplained model failure at a glance (a viva panel WILL ask about a
+    # 3-8x miss otherwise; the flag + evidence trail already exist).
+    weekly = pd.read_csv(
+        ROOT / "data/processed/module1/weekly_modeling_table.csv",
+        usecols=["District", "Year", "Week", "is_reporting_anomaly"],
+    )
+    pred = pred.merge(weekly, on=["District", "Year", "Week"], how="left")
+    pred["is_reporting_anomaly"] = pred["is_reporting_anomaly"].fillna(False)
+
     districts = ["Colombo", "Gampaha"]
-    fig, axes = plt.subplots(2, 1, figsize=(10, 7.2), sharex=True)
+    fig, axes = plt.subplots(2, 1, figsize=(10, 7.6), sharex=True)
     colors = {
         "actual": "#1f2937",
         "stage1": "#9ca3af",
         "stage12": "#b45309",
     }
     for ax, dist in zip(axes, districts):
-        d = pred[pred["District"] == dist].sort_values(["Year", "Week"])
+        d = pred[pred["District"] == dist].sort_values(["Year", "Week"]).reset_index(drop=True)
         ax.plot(
             d["date"],
             d["Number_of_Cases"],
@@ -62,6 +74,26 @@ def make_figure_7_2() -> Path:
             lw=1.5,
             label="Stage 1+2 (compensated)",
         )
+
+        # Flag the week immediately AFTER a reporting-anomaly dip - that is
+        # the catch-up spike week the model under-predicts, not the (small,
+        # easy-to-miss) dip itself.
+        catch_up = d.index[d["is_reporting_anomaly"].shift(1, fill_value=False)]
+        for idx in catch_up:
+            row = d.loc[idx]
+            ax.annotate(
+                "flagged reporting-delay\ncatch-up spike (§7.3)",
+                xy=(row["date"], row["Number_of_Cases"]),
+                xytext=(-95, -28),
+                textcoords="offset points",
+                fontsize=8,
+                color="#991b1b",
+                ha="left",
+                arrowprops=dict(arrowstyle="-|>", color="#991b1b", lw=1.2),
+            )
+            ax.scatter([row["date"]], [row["Number_of_Cases"]], marker="x",
+                       s=70, color="#991b1b", zorder=5, linewidths=2)
+
         ax.set_ylabel("Weekly cases")
         ax.set_title(dist, loc="left", fontsize=11, fontweight="semibold")
         ax.grid(True, axis="y", alpha=0.25)

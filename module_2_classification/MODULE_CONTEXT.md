@@ -259,6 +259,23 @@ list."
     on latest weeks. **Remaining limitation:** forward epi-weeks beyond the
     master calendar edge may lack forecast climate until calendar extension is
     added; daily forecast API horizon is ~16 days.
+11. **Diagnosed, fix tested and rejected (2026-08-07, Decision 049/M2-016).**
+    Why did Colombo/Gampaha's 2026 Wk25 real outbreak (`label=1`, cases
+    1,138/1,294) score "low"/"medium" risk, not "high"? Root cause: the
+    immediately preceding week (Wk24) shares Module 1's documented
+    reporting-delay flag (`is_reporting_anomaly`, Decision 026/028), which
+    masks `case_anomaly_lag_1` — Stage 1's single most important feature
+    (~35% of Random Forest importance) — to `NaN` for the following week.
+    `RandomForestClassifier`'s median-imputer then fills that gap with
+    approximately "no anomaly", the wrong prior during a genuine
+    accelerating outbreak. Tested the obvious fix (substitute
+    `case_anomaly_lag_2`, mirroring Module 1's Decision 030 `cases_lag_1`
+    nowcast substitution): **rejected** — validation median PR-AUC
+    regressed slightly (0.3865 vs. 0.3917); holdout was never examined per
+    the project's own "validation wins first" rule, so whether it would
+    have changed this specific prediction remains genuinely unknown. The
+    mechanism is now documented precisely; the false negative itself is
+    not fixed. See `EXPERIMENT_LOG.md` M2-016.
 
 ---
 

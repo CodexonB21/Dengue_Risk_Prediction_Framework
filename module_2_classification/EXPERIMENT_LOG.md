@@ -1501,3 +1501,37 @@ Answering a direct capability question ("can it predict next week") surfaced two
 
 ### Documentation Updated
 `research_context/RESEARCH_DECISIONS.md` (new Decision 048), `module_2_classification/MODULE_CONTEXT.md`, `module_2_classification/EXPERIMENT_LOG.md`, `research_context/CHANGELOG.md`.
+
+---
+
+## Experiment ID: M2-016
+
+### Date
+2026-08-07
+
+### Research Question
+Colombo/Gampaha 2026 Wk25 (user-facing chat investigation): both districts' actual case counts (1,138/1,294) statistically qualify as an outbreak (`label=1`), but Module 2 predicted "low"/"medium" risk, not "high" — a real false negative. Root cause traced to `case_anomaly_lag_1` (Stage 1's single most important feature, ~35% of Random Forest importance) going `NaN` for that week, because the immediately preceding week (Wk24) was flagged `is_reporting_anomaly` (a reporting-delay artifact, not a genuine case-count collapse) — `RandomForestClassifier`'s median-imputer then fills the gap with approximately "no anomaly", the wrong prior during a genuine accelerating outbreak. Question: does substituting `case_anomaly_lag_2` (the last known-good anomaly reading) for the masked `case_anomaly_lag_1`, mirroring Module 1's Decision 030/M1-006B `cases_lag_1` nowcast substitution, improve Stage 1 discrimination?
+
+### Label Definition
+Unchanged (Decision 025 harmonic estimator, `k=3.0`).
+
+### Data Period
+Same 13 walk-forward folds + untouched 2-year holdout as production Stage 1 (Decision 021/025).
+
+### Stage 1 / Stage 2 Model
+Random Forest only (the official Stage 1 model, Decision 025/047), current production `RF_PARAMS` held fixed — isolates the feature-engineering change as the only variable. New `feature_engineering.compute_case_anomaly_lags(..., carry_forward_masked_lag1=True)` (default `False`, off in production): when the prior week is `is_reporting_anomaly`, sets `case_anomaly_lag_1 = case_anomaly_lag_2` instead of leaving it `NaN`.
+
+### Results
+13-fold validation median PR-AUC: baseline **0.3917** vs. carry-forward **0.3865** — carry-forward is slightly WORSE, not better. Per-fold direction is genuinely mixed (helps folds 1, 3, 10, 13; hurts folds 2, 5, 6, 8, 9, 11, 12; ties folds 4, 7) — not a clean negative across the board, but it does not clear the pre-registered "beats baseline on validation" bar. **Holdout was NOT checked**, per the project's own "validation wins first, holdout checks once" rule — the specific Colombo/Gampaha Wk25 row that motivated this experiment sits inside that untouched holdout block, so this experiment cannot say whether the substitution would have changed that specific prediction. Full per-fold table: `outputs/metrics/module2/m2_016_case_anomaly_carryforward_comparison.csv`.
+
+### Interpretation
+A plausible (not confirmed) explanation for the mixed/negative result: `case_anomaly_lag_2` is already its own feature (~27% importance) — copying its value into `case_anomaly_lag_1` doesn't give the Random Forest genuinely new information, just a near-duplicate of a feature it already sees, which can dilute splits without adding signal. It also means that on the (much more common) non-outbreak weeks following a flagged anomaly, the substitution can inject a stale-but-nonzero anomaly reading where "assume normal" would have been the safer default — consistent with the low overall label prevalence (Decision 025, ~8.6% pooled) making "assume normal" right more often than any specific substitute value. `case_zscore`-based nowcasting is a fundamentally noisier target for this treatment than Module 1's raw case count was.
+
+### Decision
+**Rejected — not promoted.** Production `feature_engineering.py` behavior is unchanged (`carry_forward_masked_lag1` defaults to `False`); the new parameter is kept in the codebase (not reverted) as a documented, tested-and-rejected variant, consistent with this project's treatment of prior negative results (e.g. M1-006A, Decision 033). See Decision 049.
+
+### Artifacts
+`src/module2_classification/feature_engineering.py` (new `carry_forward_masked_lag1` parameter, default off), `scripts/m2_016_case_anomaly_lag1_carryforward.py` (new), `data/features/module2/stage1_feature_table_m2_016_carryforward.csv` (variant feature table, not production), `outputs/metrics/module2/m2_016_case_anomaly_carryforward_comparison.csv`.
+
+### Documentation Updated
+`research_context/RESEARCH_DECISIONS.md` (new Decision 049), `module_2_classification/MODULE_CONTEXT.md`, `module_2_classification/EXPERIMENT_LOG.md` (this entry), `research_context/CHANGELOG.md`.
