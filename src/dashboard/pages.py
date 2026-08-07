@@ -11,10 +11,12 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 from branca.element import MacroElement
 from folium.raster_layers import ImageOverlay
 from jinja2 import Template
+from plotly.subplots import make_subplots
 from streamlit_folium import st_folium
 
 from src.config import (
@@ -238,6 +240,74 @@ def _latest_hybrid_risk(hybrid_risk: pd.DataFrame) -> pd.DataFrame:
     return hybrid_risk.loc[
         (hybrid_risk["Year"] == latest_key["Year"]) & (hybrid_risk["Week"] == latest_key["Week"])
     ]
+
+
+# Same red/green identity used in the standalone actual-vs-predicted artifact
+# shared with the team - kept consistent rather than falling back to Plotly's
+# default categorical cycle, so "red = actual, green = predicted" reads the
+# same way in both places.
+_ACTUAL_COLOR = "#b3392f"
+_PREDICTED_COLOR = "#1f7a5c"
+
+
+def _hybrid_risk_actual_vs_predicted_chart(hybrid_risk: pd.DataFrame, district: str) -> go.Figure:
+    """District history: actual `Number_of_Cases` vs. predicted `Risk`
+    (top panel), with a synchronized error panel below it (Predicted minus
+    Actual, positive = over-predicted / green, negative = under-predicted /
+    red) - same encoding as the standalone HTML version. `hybrid_risk_map.csv`
+    has no date column, only integer Year/Week, so the x-axis is a plain row
+    index with tick labels placed at each year's first index (avoids the
+    ISO week-53 date-parsing edge case some epi-week/year combinations hit).
+    """
+    d = hybrid_risk.loc[hybrid_risk["District"] == district].sort_values(["Year", "Week"]).reset_index(drop=True)
+    x = d.index.to_numpy()
+    week_label = d["Year"].astype(str) + " Wk" + d["Week"].astype(str)
+    diff = d["Risk"] - d["Number_of_Cases"]
+    diff_over = diff.clip(lower=0)
+    diff_under = diff.clip(upper=0)
+
+    year_starts = d.groupby("Year").head(1)
+    tick_x = year_starts.index.to_numpy()
+    tick_text = year_starts["Year"].astype(str).to_numpy()
+
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08,
+        row_heights=[0.68, 0.32],
+        subplot_titles=(f"{district}: actual vs. predicted (Hybrid Risk)", "Error (Predicted − Actual)"),
+    )
+    fig.add_scatter(
+        x=x, y=d["Number_of_Cases"], mode="lines", name="Actual (Number_of_Cases)",
+        line=dict(color=_ACTUAL_COLOR, width=1.75), customdata=week_label,
+        hovertemplate="%{customdata}<br>Actual: %{y:.0f}<extra></extra>", row=1, col=1,
+    )
+    fig.add_scatter(
+        x=x, y=d["Risk"], mode="lines", name="Predicted (Hybrid Risk)",
+        line=dict(color=_PREDICTED_COLOR, width=1.75, dash="dash"), customdata=week_label,
+        hovertemplate="%{customdata}<br>Predicted: %{y:.1f}<extra></extra>", row=1, col=1,
+    )
+    fig.add_scatter(
+        x=x, y=diff_over, mode="lines", name="Over-predicted", fill="tozeroy",
+        line=dict(color=_PREDICTED_COLOR, width=0.5), fillcolor="rgba(31,122,92,0.28)",
+        customdata=week_label, hovertemplate="%{customdata}<br>Error: +%{y:.1f}<extra></extra>",
+        row=2, col=1,
+    )
+    fig.add_scatter(
+        x=x, y=diff_under, mode="lines", name="Under-predicted", fill="tozeroy",
+        line=dict(color=_ACTUAL_COLOR, width=0.5), fillcolor="rgba(179,57,47,0.28)",
+        customdata=week_label, hovertemplate="%{customdata}<br>Error: %{y:.1f}<extra></extra>",
+        row=2, col=1,
+    )
+    fig.add_hline(y=0, line_width=1, line_color="rgba(120,120,120,0.6)", row=2, col=1)
+
+    fig.update_xaxes(tickmode="array", tickvals=tick_x, ticktext=tick_text, row=2, col=1)
+    fig.update_xaxes(showticklabels=False, row=1, col=1)
+    fig.update_layout(
+        height=560,
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="left", x=0),
+        margin=dict(t=70, b=10),
+    )
+    return fig
 
 
 # 1500m - finer than the risk_surface.py report figure's 1000m would be
@@ -856,6 +926,16 @@ def render_operational_page(
             m1, m2 = st.columns(2)
             m1.metric(f"{district}: Hybrid Risk", f"{row['Risk']:.1f}")
             m2.metric(f"{district}: Actual cases (same week)", int(row["Number_of_Cases"]))
+
+        st.markdown(f"##### {district}: actual vs. predicted, full history")
+        st.caption(
+            "Predicted (Hybrid Risk) is out-of-fold (5-fold spatial K-means CV) — a model "
+            "that never trained on this district. The panel below shows Predicted minus "
+            "Actual: green above zero = over-predicted, red below zero = under-predicted. "
+            "Change the district in the sidebar to update both panels together."
+        )
+        history_fig = _hybrid_risk_actual_vs_predicted_chart(hybrid_risk, district)
+        st.plotly_chart(history_fig, use_container_width=True)
 
     st.divider()
     st.subheader("Module 3 — next-week hotspot forecast")
