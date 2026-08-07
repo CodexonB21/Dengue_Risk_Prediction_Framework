@@ -65,7 +65,17 @@ from src.module3_spatial.kde_baseline import district_centroid_coords, load_dist
 
 logger = logging.getLogger(__name__)
 
-TARGET_COL = "residual_rescaled"
+TARGET_COL = "relative_residual"
+# UPDATED 2026-08-08 (EXPERIMENT_LOG.md M3-015): was "residual_rescaled". A
+# direct diagnostic of the raw absolute residual found it strongly
+# heteroscedastic (corr(Risk_0, |residual|) = 0.78; corr(log(Risk_0),
+# log(|residual|+1)) = 0.81) - every absolute-residual model let the
+# handful of huge outbreak weeks dominate the learning signal. Modeling the
+# RELATIVE residual instead fixes this and produces a genuine, bootstrap-
+# confirmed improvement over both naive persistence and the previous
+# absolute-residual RF on every reported metric (M3-015). Reconstruction
+# back to an absolute Risk value is exact, not approximate:
+# Risk_t = Risk_(t-1) + predicted_relative_residual * (Risk_(t-1) + 1).
 
 FEATURE_COLUMNS = [
     "rain_sum (mm)", "temperature_2m_mean (°C)",
@@ -100,6 +110,22 @@ FEATURE_COLUMNS = [
 RESIDUAL_LAG_WEEKS = [1, 2, 3, 4]
 RESIDUAL_LAG_COLUMNS = [f"residual_rescaled_lag_{lag}" for lag in RESIDUAL_LAG_WEEKS]
 STAGE2_FEATURE_COLUMNS = FEATURE_COLUMNS + RESIDUAL_LAG_COLUMNS
+# NOTE: STAGE2_FEATURE_COLUMNS (20 columns) is kept exactly as it was after
+# M3-008 - NOT extended further in place - so that
+# `stacked_persistence_experiment.py` (M3-011, frozen) stays byte-for-byte
+# reproducible if ever rerun, the same reasoning that already keeps
+# FEATURE_COLUMNS itself frozen for `alpha_sweep.py`/`stage2_experiments.py`.
+# The OFFICIAL Stage 2 model (this file's own `run_compensation_model()`,
+# `iterative_loop.py`, `evaluate.py`, `forecast_future.py`) uses
+# STAGE2_FEATURE_COLUMNS_V2 below instead.
+
+# Own-district lags of the RELATIVE residual (1-4 weeks) - promoted from the
+# `relative_residual_compensation.py` experiment (2026-08-08, M3-015): fixes
+# the heteroscedasticity of the absolute residual (see TARGET_COL comment
+# above) and, combined with the relative target, beats both naive
+# persistence and the previous absolute-residual RF on every metric.
+RELATIVE_LAG_COLUMNS = [f"relative_residual_lag_{lag}" for lag in RESIDUAL_LAG_WEEKS]
+STAGE2_FEATURE_COLUMNS_V2 = STAGE2_FEATURE_COLUMNS + RELATIVE_LAG_COLUMNS
 
 N_SPATIAL_FOLDS = 5
 SPATIAL_CV_SEED = 42
@@ -174,15 +200,25 @@ def rescale_kde_baseline(df: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def add_residual_lag_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Adds RESIDUAL_LAG_COLUMNS via `.shift()` on each district's own
-    time-ordered rows (same pattern `feature_engineering.py::
-    compute_lag_features` already uses for climate) - requires
-    `residual_rescaled` to already exist (call AFTER `rescale_kde_baseline`).
+    """Adds RESIDUAL_LAG_COLUMNS and RELATIVE_LAG_COLUMNS via `.shift()` on
+    each district's own time-ordered rows (same pattern
+    `feature_engineering.py::compute_lag_features` already uses for
+    climate) - requires `residual_rescaled` and `kde_baseline_rescaled` to
+    already exist (call AFTER `rescale_kde_baseline`).
+
+    `relative_residual` (added 2026-08-08, M3-015) divides the absolute
+    residual by (kde_baseline_rescaled + 1) - the same "+1" denominator
+    guard `rescale_kde_baseline` itself uses - fixing the heteroscedasticity
+    a direct diagnostic found in the absolute residual (see TARGET_COL
+    comment above).
     """
     df = df.sort_values(["District", "Week_Start_Date"]).reset_index(drop=True)
+    df["relative_residual"] = df["residual_rescaled"] / (df["kde_baseline_rescaled"] + 1)
     grouped = df.groupby("District")
     for lag, col in zip(RESIDUAL_LAG_WEEKS, RESIDUAL_LAG_COLUMNS):
         df[col] = grouped["residual_rescaled"].shift(lag)
+    for lag, col in zip(RESIDUAL_LAG_WEEKS, RELATIVE_LAG_COLUMNS):
+        df[col] = grouped["relative_residual"].shift(lag)
     return df
 
 
@@ -191,17 +227,21 @@ def drop_residual_lag_nan(df: pd.DataFrame) -> pd.DataFrame:
     `add_residual_lag_features` introduces - a SEPARATE 100-row drop from
     `load_training_table`'s own climate lag_4 drop (both remove each
     district's first 4 remaining rows, but at different pipeline stages),
-    leaving 25,123 -> 25,023 rows. Validates STAGE2_FEATURE_COLUMNS (not
-    just FEATURE_COLUMNS) is NaN-free afterward.
+    leaving 25,123 -> 25,023 rows. Validates STAGE2_FEATURE_COLUMNS_V2 (a
+    strict superset of STAGE2_FEATURE_COLUMNS) is NaN-free afterward -
+    RELATIVE_LAG_COLUMNS shares the identical shift pattern and underlying
+    non-null condition as RESIDUAL_LAG_COLUMNS (relative_residual is defined
+    wherever residual_rescaled is), so this single drop clears both, checked
+    directly here rather than assumed.
     """
     before = len(df)
     df = df.dropna(subset=RESIDUAL_LAG_COLUMNS).reset_index(drop=True)
     dropped = before - len(df)
 
-    remaining_nan = df[STAGE2_FEATURE_COLUMNS].isna().sum()
+    remaining_nan = df[STAGE2_FEATURE_COLUMNS_V2].isna().sum()
     remaining_nan = remaining_nan[remaining_nan > 0]
     if not remaining_nan.empty:
-        raise ValueError(f"Unexpected NaN remains in STAGE2_FEATURE_COLUMNS after the residual-lag drop:\n{remaining_nan}")
+        raise ValueError(f"Unexpected NaN remains in STAGE2_FEATURE_COLUMNS_V2 after the residual-lag drop:\n{remaining_nan}")
 
     logger.info("Dropped %d additional rows lacking residual_lag_4 history (%d remain).", dropped, len(df))
     return df
@@ -306,7 +346,7 @@ def run_compensation_model() -> pd.DataFrame:
         folds_df.groupby("spatial_fold")["District"].apply(list).to_string(),
     )
 
-    fold_metrics, fold_models = run_spatial_cv(df, folds_df, feature_cols=STAGE2_FEATURE_COLUMNS)
+    fold_metrics, fold_models = run_spatial_cv(df, folds_df, feature_cols=STAGE2_FEATURE_COLUMNS_V2)
     for fold_id, model in fold_models.items():
         joblib.dump(model, MODULE3_RF_FOLDS_DIR / f"fold_{fold_id}.joblib")
 
@@ -329,19 +369,21 @@ def run_compensation_model() -> pd.DataFrame:
     metrics_df.to_csv(MODULE3_RF_METRICS_PATH, index=False)
 
     logger.info(
-        "Aggregate: MAE = %.3f +/- %.3f, RMSE = %.3f +/- %.3f (mean +/- std across %d folds).",
-        fold_metrics["mae"].mean(), fold_metrics["mae"].std(),
+        "Aggregate (RELATIVE-residual scale, since TARGET_COL=%r as of M3-015 - "
+        "not directly comparable to the pre-2026-08-08 absolute-scale figures): "
+        "MAE = %.3f +/- %.3f, RMSE = %.3f +/- %.3f (mean +/- std across %d folds).",
+        TARGET_COL, fold_metrics["mae"].mean(), fold_metrics["mae"].std(),
         fold_metrics["rmse"].mean(), fold_metrics["rmse"].std(),
         N_SPATIAL_FOLDS,
     )
 
     logger.info("Training final production model on all %d districts...", 25)
     final_model = RandomForestRegressor(**RF_PARAMS)
-    final_model.fit(df[STAGE2_FEATURE_COLUMNS], df[TARGET_COL])
+    final_model.fit(df[STAGE2_FEATURE_COLUMNS_V2], df[TARGET_COL])
     joblib.dump(final_model, MODULE3_RF_FINAL_MODEL_PATH)
 
     importance_df = (
-        pd.DataFrame({"feature": STAGE2_FEATURE_COLUMNS, "importance": final_model.feature_importances_})
+        pd.DataFrame({"feature": STAGE2_FEATURE_COLUMNS_V2, "importance": final_model.feature_importances_})
         .sort_values("importance", ascending=False)
         .reset_index(drop=True)
     )

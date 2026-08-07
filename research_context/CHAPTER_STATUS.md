@@ -340,7 +340,7 @@ Status: Drafting
 - 5.4 High-Level Architecture of Individual Modules
   - 5.4.1 Module 1 — **standalone draft ready** (~580 words; + Figure 5.3)
   - 5.4.2 Module 2 — **standalone draft ready** (~620 words; + Figure 5.4 + Table 5.2)
-  - 5.4.3 Module 3 — **standalone draft ready** (~610 words; + Figure 5.5)
+  - 5.4.3 Module 3 — **standalone draft ready** (~670 words; + Figure 5.5) — UPDATED 2026-08-08 (M3-015): Stage 2 text now describes the relative-residual target and α=1; Figure 5.5 `.drawio` source corrected, PNG re-export still needed
 - 5.5 Integration and Output Design — **standalone draft ready** (~520 words; + Figure 5.6)
 - 5.6 Summary — **standalone draft ready** (~175 words)
 
@@ -447,7 +447,7 @@ Earlier M1/M2 stub: `research_context/report_drafts/chapter6_6.2_6.3_m1_m2.md` (
 | 6.3 Shared preprocessing | Draft Complete | 430 |
 | 6.4 Module 1 | Draft Complete | 880 |
 | 6.5 Module 2 | Draft Complete | 900 |
-| 6.6 Module 3 | Draft Complete | 920 |
+| 6.6 Module 3 | Draft Complete (UPDATED 2026-08-08, M3-015) | 1080 |
 | 6.7 Dashboard | Draft Complete | 430 |
 | 6.8 Summary | Draft Complete | 175 |
 
@@ -458,7 +458,7 @@ Key corrections vs interim draft:
 - Walk-forward + 2-year holdout (M1/M2); spatial CV (M3)
 - Module 1 week-53 merge vs Module 2 week-53 keep
 - Module 2: Random Forest (tuned, Decision 047) + Platt scaling (was isotonic pre-tuning); no SMOTE, no balanced_subsample, no Gradient Boosting
-- Module 3: KDE + Moran’s I + RF iterative loop (α=0.05); IDW viz-only
+- Module 3: KDE + Moran’s I + RF iterative loop, relative-residual target, α=1 (UPDATED 2026-08-08, M3-015 — was absolute-residual, α=0.05); IDW viz-only
 - Soft decision-support dashboard (no Command Centre)
 
 ---
@@ -488,11 +488,26 @@ Status: **Drafting** (accepted full three-module structure, 2026-07-30)
 | 7.2 Evaluation Strategy | Draft Complete | ~560 |
 | 7.3 Module 1 | Draft Complete | ~920 |
 | 7.4 Module 2 | Draft Complete | ~950 |
-| 7.5 Module 3 | Draft Complete | ~850 |
+| 7.5 Module 3 | Draft Complete (UPDATED 2026-08-08, M3-015) | ~1,050 |
 | 7.6 Comparative | Draft Complete | ~430 |
 | 7.7 Discussion | Draft Complete | ~410 |
 | 7.8 Summary | Draft Complete | ~155 |
-| **Chapter 7 total** | **Draft ready** | **~4,475** |
+| **Chapter 7 total** | **Draft ready** | **~4,675** |
+
+**2026-08-08 update (M3-015 — relative-residual Stage 2 promoted):** Module 3's Stage 2
+now genuinely improves aggregate case-fit AND hotspot-ranking accuracy over both Stage 1
+alone and a naive persistence baseline, superseding the M3-005 null result and the
+subsequent M3-010 "loses to persistence" finding, both of which are kept only as
+design-rationale context in 7.5.3, not as the final claim. Updated in place (not a new
+v2 file, since this is a straightforward factual correction, not a branching numbering
+decision like the Module 2 tuning update): `chapter7_7.5_module3.md`,
+`chapter7_evaluation.md`, `chapter7_evaluation_v2.md`, and the Module 3 paragraphs in
+both `chapter7_7.6_7.8_comparative_discussion_summary.md` and its `_v2.md`. Figure 7.5
+and the underlying `outputs/figures/module3/*.png` figures were regenerated from the
+promoted model; `figure_5_5_module3_architecture.drawio`'s text was corrected but its
+`.png` export was NOT (no draw.io CLI available — needs manual re-export before
+submission), and `figure_6_4_module3_implementation.png` inherits that same staleness
+since it was adapted from Figure 5.5.
 
 **2026-08-06 update (Decision 047/M2-013 — Random Forest tuning adopted):** Random
 Forest hyperparameter tuning changed Module 2's production numbers and flipped Stage 2's
@@ -519,7 +534,7 @@ unchanged**:
 - Evaluation metrics per module
 - Forecasting results (Stage 1 vs Stage 1+2; production stack)
 - Classification results (RF; isotonic; alerts/tiers)
-- Spatial hotspot results (Moran’s I; α=0.05; honest null aggregate fit)
+- Spatial hotspot results (Moran’s I; relative-residual α=1; genuine aggregate-fit and hotspot-ranking improvement over Stage 1 and naive persistence, with two honestly-reported caveats)
 - Cross-module complementarity (M2-009)
 - Interpretation of findings
 
@@ -549,7 +564,7 @@ Do not invent performance values. Use actual experiment logs only.
 Primary draft: `research_context/report_drafts/chapter7_evaluation.md`  
 Legacy M1/M2-only draft retained for reference: `chapter7_m1_m2_evaluation.md` (superseded numbering).
 
-Honesty: Module 3 Stage 2 does **not** improve aggregate case-fit (M3-005); operational live/forward outputs are not holdout evidence; Module 2 Stage 1 = Random Forest; thresholds τ=0.14 / high=0.35.
+Honesty: Module 3 Stage 2, in its final promoted form, **does** improve aggregate case-fit and hotspot-ranking accuracy over both Stage 1 and naive persistence (M3-015, bootstrap-confirmed) — the M3-005 null result and M3-010's "loses to persistence" finding are superseded and kept only as design-rationale history, with the NE-monsoon weakness as the current open caveat; operational live/forward outputs are not holdout evidence; Module 2 Stage 1 = Random Forest; thresholds τ=0.14 / high=0.35.
 
 ---
 
@@ -583,7 +598,7 @@ Status: **Draft ready** (accepted structure 2026-07-30)
 
 Primary draft: `research_context/report_drafts/chapter8_conclusion_further_work.md`
 
-Avoid deployment overclaim; align with Chapter 7 evaluation honesty (incl. Module 3 null aggregate fit).
+Avoid deployment overclaim; align with Chapter 7 evaluation honesty (Module 3 Stage 2 now genuinely improves aggregate fit, M3-015 — keep the two earlier null design iterations and the NE-monsoon caveat as honest context, not the final claim).
 
 ---
 
@@ -701,7 +716,7 @@ Status: **Drafting** (Appendix A ready 2026-07-30)
 
 Module 1: Figs 6.2/7.2/7.3; Tables 7.1 (headline). Presentation-safe (2026-07-31): negatives/caveats excluded — see each pack’s *Excluded from slides* section.  
 Module 2: Figs 6.3/7.4; Tables 7.3–7.4/7.7 (trimmed). RF → isotonic; τ = 0.14.  
-Module 3: Figs 6.4/7.5; Table 7.5 (positive rows); feature_importance. Table 7.6 and null-fit excluded from slides.
+Module 3: Figs 6.4/7.5; Table 7.5 (positive rows); feature_importance. UPDATED 2026-08-08 (M3-015): Table 7.6 is now a POSITIVE result and should be included, not excluded — see `PRESENTATION_MODULE3_SLIDES.md`.
 
 ---
 

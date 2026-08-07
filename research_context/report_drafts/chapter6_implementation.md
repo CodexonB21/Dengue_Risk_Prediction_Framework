@@ -248,29 +248,29 @@ Stage 2 defines the spatial residual as
 Residual = Actual_case_intensity − Current_Risk
 ```
 
-where Current_Risk begins as the rescaled KDE baseline and is updated across iterations. A Random Forest regressor predicts residuals from rainfall and temperature lags, climate anomalies, monsoon indicators, elevation, population density, and a Mahalanobis anomaly score over selected environmental and demographic variables. Validation uses spatial K-means cross-validation on district centroids so that whole districts remain together within folds, matching the spatial rather than temporal research question of Module 3.
+where Current_Risk begins as the rescaled KDE baseline and is updated across iterations. An initial implementation trained a Random Forest regressor to predict this residual from rainfall and temperature lags, climate anomalies, monsoon indicators, elevation, population density, and a Mahalanobis anomaly score, but produced no genuine improvement in fit once benchmarked honestly. Diagnosing this null result showed that none of those covariates gave the model any information about a district's own recent case trajectory; own-district lags of the residual (one to four weeks back) were added to close this gap and immediately became the dominant features. A second refinement addressed the scale of the target: a direct diagnostic of the raw (absolute) residual found it strongly heteroscedastic, so Stage 2 now predicts a relative residual — the absolute residual divided by the current baseline risk — with an exact reconstruction back to an absolute Risk value. Validation uses spatial K-means cross-validation on district centroids so that whole districts remain together within folds, matching the spatial rather than temporal research question of Module 3.
 
-The iterative update applies shrinkage:
+The iterative update is:
 
 ```text
-Risk_t = Risk_(t-1) + α · predicted_residual_t
+Risk_t = Risk_(t-1) + α · predicted_relative_residual_t · (Risk_(t-1) + 1)
 ```
 
-with α = 0.05. The unshrunk update was found to diverge under honest out-of-fold residual prediction because static district covariates make held-out-district extrapolation imperfect; adding full-magnitude prediction error back into Risk compounds iteration over iteration. The shrinkage term stabilises convergence under a dual check on risk-value change and residual Moran’s I significance, with a small iteration cap as a safeguard. Retraining within the loop uses the same spatial folds so that predicted residuals remain out of fold for held-out districts rather than memorising in-sample targets.
+with α = 1, the full-magnitude update. An earlier absolute-scale formulation required shrinkage (α = 0.05) because an unshrunk full-step update on that scale diverged under honest out-of-fold residual prediction: static district covariates alone made held-out-district extrapolation imperfect, so adding full-magnitude prediction error back into Risk compounded iteration over iteration. Once own-district relative-residual lags gave the model a genuine dynamic anchor even for a held-out district, this instability resolved. The loop is still checked against a dual criterion on risk-value change and residual Moran’s I significance each run, with a small iteration cap as a safeguard. Retraining within the loop uses the same spatial folds so that predicted residuals remain out of fold for held-out districts rather than memorising in-sample targets.
 
 ### 6.6.4 Converged Risk Map and Visualisation
 
 The converged Risk surface is exported as the hybrid risk map for dashboard and report visualisation. Continuous map rendering interpolates the twenty-five district Risk scores onto a land-clipped grid using k-nearest-neighbour inverse-distance weighting with k = 4 and power = 4. IDW is a visualisation-layer technique only; it is not an additional modelling stage and does not alter Stage 1 or Stage 2 estimates. Choropleth maps and generic heatmap blur were judged insufficient to communicate neighbourhood blending already implied by the KDE geometry, whereas IDW with a limited neighbour set and steeper distance decay better preserves local hotspot contrast without colouring ocean cells.
 
-Importantly, Stage 2 is not claimed to improve aggregate case-fit relative to the rescaled Stage 1 baseline. The implemented correction prioritises stable spatial residual adjustment and covariate-informed explanation of burden deviations; any aggregate fit comparison belongs in Chapter 7 and must be reported honestly rather than reframed around a more flattering secondary metric. Figure 6.4 summarises the Module 3 implementation stack.
+In its final promoted form, Stage 2 does improve aggregate case-fit relative to the rescaled Stage 1 baseline, and — unlike an earlier absolute-residual iteration — also improves on a naive persistence baseline, confirmed through a week-level bootstrap rather than an aggregate table alone. This should not be overstated: the improvement is not uniform across every spatial fold or week, and the model is noticeably weaker at the one representative week already identified in Stage 1 as lacking significant spatial clustering. Any aggregate fit comparison and its caveats belong in Chapter 7 and must be reported honestly rather than reframed around a more flattering secondary metric. Figure 6.4 summarises the Module 3 implementation stack.
 
 [Insert Figure 6.4 here]
 
-**Figure 6.4: Module 3 implementation workflow from master-table construction through KDE/Moran’s I, Random Forest residual adjustment, iterative α-update, and IDW visualisation**
+**Figure 6.4: Module 3 implementation workflow from master-table construction through KDE/Moran’s I, Random Forest relative-residual adjustment, iterative α-update, and IDW visualisation**
 
 Figure 6.4 should be interpreted as a district-level spatial residual-compensation pipeline grounded in Open-Meteo and GADM Level-1 inputs, not as a CHIRPS/WorldPop/DS-division production system.
 
-**Approx. word count:** 920 words
+**Approx. word count:** 1080 words
 *(Standalone paste-ready file: `research_context/report_drafts/chapter6_6.6_module3.md`)*
 
 ---
@@ -296,7 +296,7 @@ Figure 6.5 reinforces the soft decision-support framing introduced in Section 6.
 
 ## 6.8 Summary
 
-This chapter documented the implementation of the Residual Compensation Modeling Framework, from dataset incorporation through shared preprocessing, three module pipelines, and a Streamlit early-warning dashboard. Epidemiological WER cases, Open-Meteo climate, GADM Level-1 geometry, census population, and Open-Meteo elevation formed the production data stack. Decision 013 separated shared factual cleaning from module-specific modelling assumptions, allowing Module 1 to merge week 53 for SARIMA, Module 2 to retain week 53 for threshold integrity, and Module 3 to build a spatial master table without inheriting SARIMA constraints. Module 1 was implemented as per-district SARIMA followed by pooled XGBoost residual compensation; Module 2 as pooled Random Forest classification followed by isotonic calibration and fixed-threshold alerts; and Module 3 as case-weighted KDE with Moran’s I validation, followed by Random Forest residual adjustment under an iterative α = 0.05 update, with IDW used only for visualisation. The dashboard consumes these outputs as a soft decision-support prototype with explicit research versus operational evidence tiers. Chapter 7 evaluates the quantitative performance of these implemented pipelines using the holdout-validated metrics and spatial diagnostics reserved for that purpose.
+This chapter documented the implementation of the Residual Compensation Modeling Framework, from dataset incorporation through shared preprocessing, three module pipelines, and a Streamlit early-warning dashboard. Epidemiological WER cases, Open-Meteo climate, GADM Level-1 geometry, census population, and Open-Meteo elevation formed the production data stack. Decision 013 separated shared factual cleaning from module-specific modelling assumptions, allowing Module 1 to merge week 53 for SARIMA, Module 2 to retain week 53 for threshold integrity, and Module 3 to build a spatial master table without inheriting SARIMA constraints. Module 1 was implemented as per-district SARIMA followed by pooled XGBoost residual compensation; Module 2 as pooled Random Forest classification followed by isotonic calibration and fixed-threshold alerts; and Module 3 as case-weighted KDE with Moran’s I validation, followed by Random Forest relative-residual adjustment under a full-magnitude (α = 1) iterative update, with IDW used only for visualisation. The dashboard consumes these outputs as a soft decision-support prototype with explicit research versus operational evidence tiers. Chapter 7 evaluates the quantitative performance of these implemented pipelines using the holdout-validated metrics and spatial diagnostics reserved for that purpose.
 
 **Approx. word count:** 175 words
 *(Standalone paste-ready file: `research_context/report_drafts/chapter6_6.8_summary.md`)*
@@ -316,10 +316,10 @@ This chapter documented the implementation of the Residual Compensation Modeling
 | 6.3 Shared preprocessing | 405 |
 | 6.4 Module 1 (6.4.1–6.4.4) | 850 |
 | 6.5 Module 2 (6.5.1–6.5.4) | 855 |
-| 6.6 Module 3 (6.6.1–6.6.4) | 920 |
+| 6.6 Module 3 (6.6.1–6.6.4) | 1080 |
 | 6.7 Dashboard | 430 |
 | 6.8 Summary | 175 |
-| **Chapter 6 total (body)** | **~4,873** |
+| **Chapter 6 total (body)** | **~5,033** |
 
 ---
 
@@ -328,6 +328,6 @@ This chapter documented the implementation of the Residual Compensation Modeling
 - NASA POWER wording from interim drafts must not re-enter this chapter; production climate is Open-Meteo only.
 - CHIRPS / WorldPop / SRTM-grid / GADM Level-2 / DS-division production claims are explicitly rejected for Module 3; keep GADM L1 + census population + Open-Meteo elevation/climate.
 - Module 2 alert_threshold and high_confidence_threshold numeric values belong in Chapter 7, not in the Implementation body.
-- Module 3 honesty requirement: do not claim Stage 2 improves aggregate case-fit; IDW is visualisation only; α = 0.05 is a stability choice.
+- UPDATED 2026-08-08 (M3-015): Module 3 Stage 2, in its final form, DOES improve aggregate case-fit (over Stage 1 and naive persistence) — do not keep the old "does not improve" wording. IDW remains visualisation only. α = 1 (full-magnitude) is now the official value; α = 0.05 was an earlier, now-superseded stability choice.
 - Insert/export Figures 6.1–6.5 before Word paste; captions are ready above.
 - No invented RMSE/MAE/PR-AUC/BSS/MASE numbers were included in this chapter.

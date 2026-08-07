@@ -201,8 +201,8 @@ Notes:
 
 - Must show shared vs module-specific preprocessing, not one undifferentiated preprocessing block.
 - Modules are largely parallel peers; optional dashed M1→M2 for operational forward only.
-- Correct models: M1 SARIMA→XGBoost; M2 tuned RF→Platt scaling (Decision 047 — was isotonic before Stage 1 tuning); M3 KDE/Moran→RF α=0.05.
-- **Verified current (2026-08-07)**: PNG regenerated from `generate_figure_5_1_architecture.py` — Module 2 column now reads "Random Forest (tuned)" → "Platt scaling".
+- Correct models: M1 SARIMA→XGBoost; M2 tuned RF→Platt scaling (Decision 047 — was isotonic before Stage 1 tuning); M3 KDE/Moran→RF relative residual, α=1 (UPDATED 2026-08-08, M3-015 — was α=0.05).
+- **Verified current (2026-08-08)**: PNG regenerated from `generate_figure_5_1_architecture.py` — Module 2 column reads "Random Forest (tuned)" → "Platt scaling"; Module 3 column now reads "RF relative residual (α=1)".
 
 ---
 
@@ -321,7 +321,7 @@ Status: Planned (draft text ready)
 ## Figure 5.5: Module 3 High-Level Architecture
 
 Chapter: Chapter 5 - Analysis and Design
-Status: **Created (2026-07-30)** — editable draw.io + PNG ready for Word
+Status: **STALE PNG (2026-08-08, M3-015)** — `.drawio` source text corrected (relative-residual formula, α = 1, own-district lags noted as primary), but the `.png` export was NOT regenerated (no draw.io CLI available in this environment — same constraint already documented for Figures 5.4/5.6). Re-export the PNG from the corrected `.drawio` in the draw.io app before final submission.
 
 Purpose:
 
@@ -342,14 +342,14 @@ Source / file:
 Key design facts on the figure:
 
 - Stage 1 = **KDE + Moran’s I** (district centroids; queen contiguity)
-- Stage 2 = **Random Forest** residual learner + iterative loop `Risk_t = Risk_(t-1) + α · Δ̂` with **α = 0.05**
+- Stage 2 = **Random Forest** relative-residual learner (own-district lags primary; climate/demographic secondary) + iterative loop `Risk_t = Risk_(t-1) + α · Δ̂ · (Risk_(t-1)+1)` with **α = 1**
 - IDW continuous surface = **visualization only**, not a modelling stage
 - Scope = GADM Level-1 (25 districts), not DS-division
 
 Notes:
 
 - Keep numeric Moran’s I / MAE / RMSE for Chapter 7.
-- Do not claim Stage 2 improves aggregate case-fit on the figure.
+- UPDATED 2026-08-08 (M3-015): Stage 2, in its final form, DOES improve aggregate case-fit — the figure/caption must not carry the old "does not improve" wording.
 
 ---
 
@@ -451,7 +451,7 @@ Figure 6.3: Implementation pipeline of Module 2 — Hybrid Outbreak Risk Classif
 ## Figure 6.4: Module 3 Implementation Pipeline
 
 Chapter: Chapter 6 - Implementation
-Status: **Created (2026-07-30)** — PNG adapted from Figure 5.5 (`figure_6_4_module3_implementation.png`)
+Status: **STALE (2026-08-08, M3-015)** — adapted from Figure 5.5, so it inherits that figure's stale `α = 0.05`/absolute-residual labelling (`figure_6_4_module3_implementation.png`). Re-adapt from the corrected Figure 5.5 `.drawio` once that is re-exported.
 
 Purpose:
 
@@ -787,23 +787,19 @@ Source: `outputs/metrics/module3/morans_i_validation.csv`; M3-001
 
 ---
 
-## Table 7.6: Module 3 Stage 1 vs Stage 2 Aggregate Fit
+## Table 7.6: Module 3 Stage 1, Naive Persistence, and Stage 2 Aggregate Fit
 
 Chapter: Chapter 7 - Evaluation and Results
-Status: Planned
-
-Purpose:
-
-Honest null/negative comparison of rescaled KDE baseline vs converged Risk surface against actual cases.
+Status: **UPDATED 2026-08-08 (M3-015)** — supersedes the original M3-005 null/negative framing. Comparison of the rescaled KDE baseline, a naive persistence baseline (no model), and the final promoted Stage 2 Risk surface against actual cases. The final Stage 2 model now genuinely improves on both other rows, confirmed via a week-level bootstrap (`outputs/metrics/module3/relative_residual_bootstrap_ci.csv`), not just this aggregate table — cite the bootstrap CIs alongside this table, not the table alone, per the M3-013 lesson that an aggregate table can overstate a result that doesn't survive week-level scrutiny.
 
 Suggested columns:
 
-- Stage
+- Model (Stage 1 alone / Naive persistence / Stage 2 final)
 - Correlation
 - MAE
 - RMSE
 
-Source: `outputs/metrics/module3/stage1_vs_stage2_comparison.csv`; M3-005
+Source: `outputs/metrics/module3/stage1_vs_stage2_comparison.csv`, `persistence_baseline_comparison.csv`; M3-010/M3-015
 
 ---
 

@@ -6,37 +6,38 @@ MODULE 3 - STAGE 1 & STAGE 2 RESULTS SUMMARY
 Global Moran's I (queen contiguity, aggregated across all weeks): I = 0.7024, p_sim = 0.0010, significant = True
 
 -- Stage 1 alone vs Stage 2 final: fit to actual case counts --
-(Stage 2's correction (own-district residual lag features, M3-008) substantially IMPROVES aggregate fit over Stage 1 alone - ~51% MAE reduction; see EXPERIMENT_LOG.md M3-008, superseding the original 16-feature/alpha=0.05 null result, M3-005. See the naive-persistence check directly below, though: most of that reduction is achievable with no model at all - M3-010/M3-011.)
+(UPDATED 2026-08-08, M3-015: Stage 2 now predicts the RELATIVE residual ((Number_of_Cases - Risk_0) / (Risk_0 + 1)), not the absolute one - a direct diagnostic found the absolute residual strongly heteroscedastic. This beats BOTH Stage 1 alone AND the naive-persistence baseline below on every metric (~61% MAE reduction over Stage 1, and a real, bootstrap-confirmed win over persistence - see EXPERIMENT_LOG.md M3-015), superseding the M3-008 absolute-residual model, which lost to persistence on MAE (M3-010/M3-011). Two honest caveats remain, documented in M3-015: the RMSE improvement concentrates in the highest-case-volume spatial fold, and the model underperforms at the NE-monsoon representative week.)
                                         stage   corr      mae     rmse
 Stage 1 alone (Risk_0, rescaled KDE_baseline) 0.8241  20.5363  48.1989
-    Stage 2 final (Risk, post iterative loop) 0.9554   9.9621  25.0601
-                   Change (Stage 2 - Stage 1) 0.1313 -10.5741 -23.1388
+    Stage 2 final (Risk, post iterative loop) 0.9592   8.0304  24.0157
+                   Change (Stage 2 - Stage 1) 0.1351 -12.5058 -24.1832
 No rows have a negative final Risk value.
 
--- Naive persistence baseline check (EXPERIMENT_LOG.md M3-010/M3-011) --
-(residual_rescaled_lag_1/lag_2 = 89.8% of RF feature importance, so this checks whether the RF beats simply carrying last week's own residual forward with NO model. It does not beat it on MAE - only on corr/RMSE/ outlier control (clipping rate). A stacked RF-predicts-correction-beyond- persistence variant was also tried and was worse than both on every metric - see M3-011. Kept as the honest context for the MAE-reduction figure above, not a replacement for it.)
+-- Naive persistence baseline check (EXPERIMENT_LOG.md M3-010/011/015) --
+(M3-010 found the pre-M3-015 absolute-residual RF lost to naive persistence on MAE. M3-015's relative-residual reformulation reverses this: the official RF below now beats persistence on every metric, confirmed via a week-level paired bootstrap (not just this raw aggregate table, which M3-013 already showed can overstate a result) - see EXPERIMENT_LOG.md M3-015 for the full bootstrap CIs and fold breakdown.)
                                                           model   corr     mae    rmse
                   Stage 1 alone (Risk_0, rescaled KDE_baseline) 0.8241 20.5363 48.1989
 Naive persistence (Risk_0 + last week's own residual, no model) 0.9493  9.4386 26.6343
-        Stage 2 RF, official (Risk_0 + out-of-fold RF residual) 0.9554  9.9621 25.0601
+        Stage 2 RF, official (Risk_0 + out-of-fold RF residual) 0.9592  8.0304 24.0157
 
 -- Stage 2 RF: out-of-fold residual prediction accuracy (spatial CV) --
-MAE = 9.87 +/- 5.18, RMSE = 23.07 +/- 9.18 (mean +/- std across 5 spatial folds)
+(UPDATED 2026-08-08, M3-015: MAE/RMSE below are on the RELATIVE residual scale - target = (Number_of_Cases - Risk_0) / (Risk_0 + 1) - not the absolute case-count scale reported here before this date; not directly comparable to pre-M3-015 figures.)
+MAE = 0.2735 +/- 0.0342, RMSE = 0.3692 +/- 0.0446 (mean +/- std across 5 spatial folds)
 
 -- Iterative Loop Convergence --
  iteration  risk_min  risk_max  max_delta  epsilon  morans_I  morans_p_sim  morans_significant  stopped
-         1 -112.8677 1764.0474   578.1044  12.9846   -0.0640        0.3710               False    False
+         1   -0.7648 2311.4416  1012.9854  12.9846   -0.0569        0.4490               False    False
 
 -- Top 10 Feature Importance (final RF model) --
-                  feature  importance
-  residual_rescaled_lag_1      0.6394
-  residual_rescaled_lag_2      0.2591
-  residual_rescaled_lag_3      0.0178
-  residual_rescaled_lag_4      0.0105
-           rainfall_lag_4      0.0093
-           rainfall_lag_3      0.0074
-      temperature_anomaly      0.0066
-         rainfall_anomaly      0.0060
-mahalanobis_anomaly_score      0.0054
- temperature_2m_mean (°C)      0.0053
+                feature  importance
+relative_residual_lag_1      0.6724
+relative_residual_lag_2      0.1353
+relative_residual_lag_3      0.0302
+relative_residual_lag_4      0.0219
+residual_rescaled_lag_2      0.0136
+residual_rescaled_lag_1      0.0135
+residual_rescaled_lag_3      0.0121
+residual_rescaled_lag_4      0.0112
+     population_density      0.0088
+   Estimated_Population      0.0087
 ==============================================================================

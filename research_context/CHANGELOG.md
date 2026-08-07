@@ -6,6 +6,86 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-08-08 - Module 3: four compensation mechanisms tested against the naive-persistence gap; relative-residual reformulation found as a genuine, stress-tested improvement (M3-012 through M3-015)
+
+### Module
+Module 3
+
+### Change
+Following M3-010/M3-011's finding that the official Stage 2 RF loses to a
+naive "carry last week's own error forward" baseline on MAE and rank
+metrics, four genuinely different compensation mechanisms were tested in
+sequence:
+
+1. **M3-012**: added Spearman rank correlation / precision@k as a companion
+   evaluation lens (matches Module 3's actual hotspot-detection purpose
+   better than MAE/RMSE) - persistence wins on this lens too, confirming
+   rather than overturning M3-010.
+2. **M3-013**: blended the RF's and persistence's final predictions
+   (output-level, not stacking - M3-011 already rejected stacking). A
+   week-level paired bootstrap (added specifically to stress-test what
+   initially looked like a clean win in the raw aggregate table) showed the
+   blend is a real, robust improvement over the RF alone, but only a
+   statistical tie with persistence on MAE/precision@5 and a real loss on
+   Spearman rho. Not adopted.
+3. **M3-014**: adapted Module 2's own compensation mechanism (isotonic
+   calibration of a raw score against outcomes, zero covariates) to Module
+   3. Failed cleanly - root-caused to a structural mismatch: Module 3's
+   geographically-clustered spatial CV folds put the highest-magnitude
+   district cluster (Colombo/Gampaha) entirely out of range of the training
+   folds' calibration curve, which has no covariates to extrapolate with
+   (unlike the RF). Rejected.
+4. **M3-015**: a direct diagnostic (not assumed) found Stage 1's raw error
+   strongly heteroscedastic (error magnitude scales with predicted
+   magnitude) - modeling the RELATIVE residual instead of the absolute one
+   produces an RF that beats both naive persistence and the official RF on
+   every metric, confirmed via a week-level bootstrap and broad across 4 of
+   5 spatial folds (two honest caveats: RMSE's win concentrates in the
+   highest-volume fold, and the model underperforms at the already-flagged
+   structurally-different NE-monsoon week). Candidate for promotion to
+   official Stage 2, pending explicit confirmation.
+
+### Reason
+User asked to keep searching for a genuine, defensible improvement over the
+naive baseline after M3-010/M3-011's honest null result, explicitly steering
+away from environmental/demographic-only feature engineering (already tried
+and null, M3-005) toward mechanisms different in kind - output blending, a
+calibration-based mechanism borrowed from Module 2, and finally a direct
+diagnostic of the residual's own structure.
+
+### Impact
+- New files: `src/module3_spatial/hotspot_ranking_evaluation.py`,
+  `blended_persistence_rf.py`, `isotonic_calibration.py`,
+  `relative_residual_compensation.py` - all additive, exploratory scripts;
+  none modify the official pipeline (`compensation_model.py`,
+  `iterative_loop.py`, `evaluate.py`) yet.
+- New `src/config.py` path constants for each script's metrics outputs
+  (comparison tables, bootstrap CIs, fold breakdowns, decile bias tables).
+- No production model, feature set, or default artifact changed - M3-015's
+  relative-residual RF is documented as a candidate only.
+
+### Documentation Updated
+`module_3_spatial/EXPERIMENT_LOG.md` (M3-012 through M3-015),
+`module_3_spatial/MODULE_CONTEXT.md` (new section + Evaluation Direction
+update), `research_context/QUESTIONS_FOR_DEFENSE.md`,
+`research_context/CHANGELOG.md` (this entry).
+
+### Status
+M3-012/013/014: investigated and resolved (two rejected, one partial).
+M3-015: **promoted to official Stage 2 (2026-08-08), user-confirmed.**
+`compensation_model.py`/`iterative_loop.py`/`evaluate.py`/`forecast_future.py`
+updated to the relative-residual target and reconstruction formula and
+rerun end-to-end; regenerated `hybrid_risk_map.csv`,
+`future_hotspot_forecast.csv`, `results_summary.txt`, and related metrics/
+figures verified to reproduce M3-015's own validated numbers. Frozen
+scripts (`alpha_sweep.py`/M3-006, `stacked_persistence_experiment.py`/
+M3-011) re-verified unaffected - the latter rerun post-promotion and
+confirmed to reproduce its exact original numbers (only `n_jobs=-1` float
+noise at the 13th significant digit, the same class M3-009 already
+documented; reverted, not committed).
+
+---
+
 ## 2026-08-07 - Module 2 case-anomaly-lag carry-forward substitution tested and rejected (M2-016/Decision 049)
 
 ### Module

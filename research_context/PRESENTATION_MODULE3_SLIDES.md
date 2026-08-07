@@ -2,10 +2,12 @@
 
 **Owner:** Karunarathna R.M.D.R.R. (214099D)  
 **Audience:** FYP presentation (sample-style module pack)  
-**Status:** Presentation-safe outline (2026-07-31, revised)  
+**Status:** Presentation-safe outline (2026-07-31; UPDATED 2026-08-08 after M3-015 promotion)  
 **Evidence base:** `MODULE_CONTEXT.md`, Chapter 7.5, `REPORT_DIAGRAM_PLAN.md`
 
-**Presentation policy:** This pack includes **supporting results and design strengths only**. Null aggregate-fit results, alpha-divergence stories, non-significant Moran’s weeks, and grain limitations stay in the report and viva prep — see **Excluded from slides** at the end.
+**UPDATE 2026-08-08 (M3-015):** Stage 2's final formulation now genuinely improves aggregate case-fit AND hotspot-ranking accuracy over both Stage 1 and a naive persistence baseline, confirmed via a week-level bootstrap — this reverses the deck's original "don't claim case-fit improvement" policy for Table 7.6/aggregate fit specifically. The dominant driver is also no longer population density — it is now the district's own recent case history. Non-significant Moran's weeks, the earlier alpha-divergence story, and grain limitations remain excluded per the original policy below.
+
+**Presentation policy:** This pack includes **supporting results and design strengths only**. Non-significant Moran’s weeks, the retired alpha-divergence story, the NE-monsoon ranking weakness, and grain limitations stay in the report and viva prep — see **Excluded from slides** at the end.
 
 Use **6–7 core slides** in the main deck.
 
@@ -33,8 +35,9 @@ Use **6–7 core slides** in the main deck.
 **Content:**
 ```text
 Stage 1: Case-weighted Gaussian KDE + Moran’s I validation
-Stage 2: RF predicts spatial residual (Actual intensity − Current_Risk)
-         Risk_t = Risk_(t−1) + α · predicted_residual_t   (α = 0.05)
+Stage 2: RF predicts a RELATIVE spatial residual
+         (Actual intensity − Current_Risk) / (Current_Risk + 1)
+         Risk_t = Risk_(t−1) + α · predicted_residual_t · (Risk_(t−1)+1)   (α = 1)
 ```
 - Spatial validation: **5-fold K-means CV** on district centroids
 - Queen-contiguity Moran’s I confirms genuine spatial clustering
@@ -91,28 +94,28 @@ Stage 2: RF predicts spatial residual (Actual intensity − Current_Risk)
 
 ## Slide M3-5 — Stage 2: Residual Model & Drivers
 
-**Title:** Stage 2 — Demographic and Environmental Correction
+**Title:** Stage 2 — Relative-Residual Correction Driven by Case Persistence
 
 **Content:**
-- Residual target: observed case intensity minus current risk surface
+- Residual target: a RELATIVE measure — observed case intensity minus current risk, divided by current risk — not the raw difference
 - Random Forest regressor under spatial cross-validation
-- **Population density** and **estimated population** are the dominant correction drivers
-- Climate lag and anomaly features provide additional contextual adjustment
-- Shrinkage update (**α = 0.05**) ensures stable iterative convergence
+- **A district's own recent case history (1–2 weeks back)** is the dominant correction driver, not climate or demographics
+- Population density, elevation, and climate lag/anomaly terms play a supporting, secondary role
+- Full-magnitude update (**α = 1**) — an earlier version needed shrinkage (α = 0.05) before this feature/target change stabilised it
 
 **Suggested figure:**
-- `outputs/figures/module3/feature_importance.png`  
-  Caption: *Stage 2 feature importance — population density leads correction*
+- `outputs/figures/module3/feature_importance.png` (regenerated 2026-08-08)  
+  Caption: *Stage 2 feature importance — own-district relative-residual lags lead correction*
 
 **Suggested table:**
 
 | Rank | Feature | Importance |
 |---|---|---|
-| 1 | population_density | ≈ 0.41 |
-| 2 | estimated population | ≈ 0.18 |
-| 3+ | temperature / rainfall terms | supporting |
+| 1 | relative_residual_lag_1 | ≈ 0.67 |
+| 2 | relative_residual_lag_2 | ≈ 0.14 |
+| 3+ | population density / climate terms | supporting (each <2%) |
 
-**Do not put on slide:** OOF MAE/RMSE with wide fold variance; KDE rescale technical rationale unless asked briefly.
+**Do not put on slide:** KDE rescale technical rationale unless asked briefly.
 
 ---
 
@@ -124,15 +127,23 @@ Stage 2: RF predicts spatial residual (Actual intensity − Current_Risk)
 - Converged district Risk surface visualised for **2017 Week 29** (national outbreak peak)
 - Elevated risk concentrates in the **south-western coastal corridor** (Colombo, Gampaha, Kalutara)
 - Map supports geographic prioritisation alongside Module 1 forecasts and Module 2 alerts
-- `corr(Risk, Number_of_Cases) ≈ 0.82` — strong association with observed burden pattern
+- `corr(Risk, Number_of_Cases) ≈ 0.96` — strong association with observed burden pattern, and a genuine, bootstrap-confirmed improvement over both Stage 1 alone (≈0.82) and a naive "no-model" baseline (≈0.95)
 
 **Suggested figure (required):**
-- **Figure 7.5** — `research_context/report_drafts/diagrams/figure_7_5_module3_risk_surface.png`  
+- **Figure 7.5** — `research_context/report_drafts/diagrams/figure_7_5_module3_risk_surface.png` (regenerated 2026-08-08)  
   Caption: *Hybrid spatial risk surface — 2017 Week 29 (IDW visualisation of district Risk scores)*
 
-**Optional positive callout:** peak-week map aligns with known 2017 epidemic geography.
+**Suggested table (now safe to present — Table 7.6, positive result):**
 
-**Do not put on slide:** Table 7.6 null aggregate-fit; “Stage 2 does not improve MAE/RMSE”.
+| Model | MAE | RMSE |
+|---|---|---|
+| Stage 1 alone | 20.5 | 48.2 |
+| Naive persistence (no model) | 9.4 | 26.6 |
+| **Stage 2 final** | **8.0** | **24.0** |
+
+**Optional positive callout:** peak-week map aligns with known 2017 epidemic geography; Stage 2 beats a naive "just copy last week" baseline, not only Stage 1.
+
+**Do not put on slide:** the NE-monsoon week's weaker ranking result; per-fold RMSE variability.
 
 ---
 
@@ -142,7 +153,7 @@ Stage 2: RF predicts spatial residual (Actual intensity − Current_Risk)
 
 **Content:**
 - Delivered a **district-level spatial hotspot pipeline** with validated KDE baseline
-- Stage 2 adds **interpretable demographic and climate-driven** residual adjustment
+- Stage 2 adds a **relative-residual correction, driven mainly by case persistence**, that genuinely improves on both the spatial baseline and a naive "no model" check
 - Provides the framework’s **spatial axis**: where burden concentrates, not just how many cases or outbreak probability
 - Integrated risk maps in the Streamlit dashboard alongside Modules 1 and 2
 
@@ -182,13 +193,13 @@ Stage 2: RF predicts spatial residual (Actual intensity − Current_Risk)
 
 | Asset | Slide | Priority |
 |---|---|---|
-| Fig 6.4 implementation pipeline | M3-2 | High |
+| Fig 6.4 implementation pipeline | M3-2 | High (re-adapt from corrected Fig 5.5 before use) |
 | Table 7.5 (aggregated + peak + low rows only) | M3-4 | High |
 | feature_importance.png | M3-5 | High |
 | Fig 7.5 peak-week risk surface | M3-6 | High |
-| convergence_plot.png | — | **Excluded** (alpha story) |
-| risk_surface_2021_wk01.png | — | **Excluded** (non-cluster week) |
-| Table 7.6 aggregate fit | — | **Excluded** (null result) |
+| Table 7.6 aggregate fit (Stage 1 / persistence / Stage 2) | M3-6 | **High — now a positive result, include it** |
+| convergence_plot.png | — | Excluded (technical convergence detail, not needed for the headline story) |
+| risk_surface_2021_wk01.png | — | **Excluded** (non-cluster week; also Stage 2's weakest week) |
 
 ---
 
@@ -198,12 +209,11 @@ Do **not** present these in the main deck:
 
 | Topic | Why excluded |
 |---|---|
-| Table 7.6 — Stage 2 worse MAE/RMSE/corr | Null / negative aggregate-fit result |
+| NE-monsoon week: Stage 2 ranking accuracy notably weaker than baselines | Genuine, still-open limitation — save for viva questions |
 | NE-monsoon week Moran’s I not significant | Weakens universal clustering claim |
-| α = 1.0 diverges; α = 0.3/0.15 unstable | Failed tuning narrative |
-| Loop converges at iteration 1 only | Suggests Stage 2 adds little |
-| RF does not remove residual spatial autocorrelation | Weakens Stage 2 mechanism story |
-| OOF MAE 33.12 ± 23.57 (high variance) | Noisy error headline |
+| Two earlier design iterations were null (covariates-only) or lost to persistence (absolute-residual) | Design history, not needed for the headline result — mention only if asked how the final design was reached |
+| RMSE improvement is proportionally larger in the highest-volume spatial fold | Fold-level nuance, not needed for the headline aggregate number |
+| RF does not remove residual spatial autocorrelation (Stage 1 already does) | Mechanism nuance, not needed for the headline story |
 | District grain only / no DS-division | Scope limitation |
 | LISA / Gi* not implemented | Incomplete stretch goal |
 | IDW is not a modelling stage | Methodological caveat |
@@ -215,22 +225,23 @@ Do **not** present these in the main deck:
 
 **Say:**
 - Moran’s I ≈ 0.70 confirms significant spatial clustering
-- Population density drives Stage 2 spatial correction
+- Stage 2's correction is driven mainly by each district's own recent case history, with climate/demographics as secondary context
+- Stage 2 genuinely improves case-fit and hotspot ranking over both Stage 1 and a naive "no model" baseline, confirmed with a bootstrap test, not just an aggregate table
 - Peak-week map shows SW corridor hotspot pattern
 - Module 3 completes the framework’s spatial decision-support view
 
 **Avoid in the presentation:**
-- Claiming Stage 2 improves national case-fit metrics
 - Showing non-significant Moran’s weeks
-- Discussing alpha divergence unless asked
+- Discussing the two earlier (null) design iterations unless asked how the final design was reached
 - Promising sub-district operational targeting
+- Claiming the improvement is uniform everywhere (it is not — save the NE-monsoon caveat for viva questions)
 
 ---
 
 # Notes for Team
 
 - **Lead with the map (Figure 7.5)** — strongest visual asset
-- Report Chapter 7.5 retains M3-005 null-fit honesty; slides focus on clustering validation + interpretable correction + map output
+- UPDATED 2026-08-08 (M3-015): the M3-005 null-fit result is superseded — Chapter 7.5 now reports a genuine, bootstrap-confirmed improvement (with the NE-monsoon caveat kept honest). Slides can now show Table 7.6 as a positive result.
 - All three module packs now use the same presentation-safe policy:
   - `PRESENTATION_MODULE1_SLIDES.md`
   - `PRESENTATION_MODULE2_SLIDES.md`

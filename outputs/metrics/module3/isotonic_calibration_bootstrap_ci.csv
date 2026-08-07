@@ -1,0 +1,8 @@
+metric,comparison,point_diff (a - b),ci_low,ci_high,pct_weeks_a_better
+MAE,"Calibrated RF output (isotonic, no covariates) vs. Stage 2 RF, official",1.1014695507078471,0.7878814418116118,1.4846152273598947,20.0
+MAE,"Calibrated RF output (isotonic, no covariates) vs. Naive persistence (no model)",1.6246836654851595,1.1251157195881276,2.1729149907696725,24.8
+MAE,"Calibrated Risk_0 (isotonic, no covariates) vs. Naive persistence (no model)",12.970781330749414,11.769892613894903,14.311108048461493,7.4
+precision_at_5,"Calibrated RF output (isotonic, no covariates) vs. Stage 2 RF, official",-0.013930348258706537,-0.01830845771144285,-0.009353233830845742,2.7
+precision_at_5,"Calibrated RF output (isotonic, no covariates) vs. Naive persistence (no model)",-0.0388059701492538,-0.04736318407960194,-0.029452736318407943,14.3
+spearman_rho,"Calibrated RF output (isotonic, no covariates) vs. Stage 2 RF, official",-0.03719669499774558,-0.04200515208374269,-0.03275555427282681,16.1
+spearman_rho,"Calibrated RF output (isotonic, no covariates) vs. Naive persistence (no model)",-0.07340971328608248,-0.0806605111781684,-0.06646450708485006,17.5

@@ -1487,3 +1487,398 @@ just marginally.
 - Added `src/module3_spatial/stacked_persistence_experiment.py` (frozen
   exploratory record, not modified after this finding).
 - Added `outputs/metrics/module3/stacked_persistence_experiment.csv`.
+
+---
+
+## Experiment ID: M3-012
+
+### Date
+2026-08-08
+
+### Research Question
+M3-010/M3-011 evaluated the "does the RF beat naive persistence" question
+only on MAE/RMSE/corr against actual case counts. Module 3's own stated
+purpose is spatial HOTSPOT DETECTION, not case-count regression (that is
+Module 1's job) - does re-evaluating with a rank-based metric that matches
+that purpose (does the model correctly identify the highest-risk districts
+each week) change the conclusion?
+
+### Spatial Unit
+District-week, same 25,123-row table as M3-008 onward. Per-week ranking
+computed across all 25 districts.
+
+### Baseline Spatial Method
+Unchanged - compares the same three models M3-010 already established
+(Stage 1 alone, naive persistence, the official RF).
+
+### Stage 2 Model
+No new model - `src/module3_spatial/hotspot_ranking_evaluation.py` adds two
+new metrics (Spearman rank correlation, precision@k for k in {3, 5}) on top
+of already-computed predictions, per (Year, Week).
+
+### Spatial Features Used
+None new.
+
+### Validation Method
+Per-(Year, Week) Spearman rho and precision@3/precision@5 (overlap between a
+model's top-k highest-risk districts and the actual top-k highest-case
+districts, divided by k), aggregated across all 1,005 weeks (zero excluded
+as zero-variance - none of Module 3's 1,005 weeks are degenerate). A
+representative-week breakout (peak/low/SW monsoon/NE monsoon, reusing
+`kde_baseline.select_representative_weeks()`) is also reported alongside the
+aggregate, per this module's own established practice (M3-001) of not
+trusting an aggregate number alone.
+
+### Results
+- **Aggregate (1,005 weeks)**:
+
+  | Model | Spearman rho | Precision@3 | Precision@5 |
+  |---|---|---|---|
+  | Naive persistence | **0.849** | **0.772** | **0.784** |
+  | Stage 2 RF, official | 0.813 | 0.752 | 0.759 |
+  | Stage 1 alone | 0.708 | 0.623 | 0.599 |
+
+  Naive persistence wins on every rank metric too, not just MAE - the
+  ranking lens does not rescue the RF; if anything the relative gap looks
+  slightly wider in proportional terms than the MAE gap did.
+- **Representative-week breakout**: RF and persistence tie at the peak/SW
+  monsoon week (2017 Wk29, precision@3=1.0 for both). At the low-case week
+  (2007 Wk13), persistence's rho actually drops BELOW Stage 1's while the
+  RF stays mid-pack - a minor, opposite-direction wrinkle that does not
+  change the aggregate picture.
+
+### Interpretation
+Reframing the evaluation to match Module 3's actual hotspot-detection
+purpose was the single most promising untried lever identified after
+M3-010/M3-011 - and it came back negative too. This is useful, not wasted,
+information: it means the RF's shortfall against persistence is not an
+artifact of using the "wrong" metric for the job: two independent,
+well-motivated metrics now agree.
+
+### Decision
+**Keep** as a permanent companion evaluation lens in `results_summary.txt`,
+alongside (not replacing) the MAE/RMSE comparison. **Proceed** to testing
+untried compensation mechanisms (M3-013 onward) rather than further metric
+reframings, since this angle is now exhausted.
+
+### Documentation Updated
+- `module_3_spatial/EXPERIMENT_LOG.md` (this entry).
+- `src/config.py` (added `MODULE3_HOTSPOT_RANKING_PATH`).
+- Added `src/module3_spatial/hotspot_ranking_evaluation.py`.
+- Added `outputs/metrics/module3/hotspot_ranking_evaluation.csv`.
+
+---
+
+## Experiment ID: M3-013
+
+### Date
+2026-08-08
+
+### Research Question
+M3-011 rejected a STACKED formulation (RF predicts the correction beyond
+persistence, i.e. changes the RF's training target) - worse than everything
+on every metric. Is a mechanically different idea - blending the two
+models' already-computed FINAL predictions, leaving both exactly as already
+validated - able to combine persistence's typical-case accuracy with the
+RF's RMSE/outlier-control advantage (M3-010), where stacking could not?
+
+### Spatial Unit
+District-week, identical 25,123-row table and 5 spatial K-means CV folds as
+M3-008 onward.
+
+### Baseline Spatial Method
+Same Risk_0 as every prior Stage 2 experiment - unchanged.
+
+### Stage 2 Model
+`Risk_blend = w * Risk_RF + (1 - w) * Risk_persistence` - no retraining of
+either component. `w` selected by grid search (step 0.025) to minimize MAE,
+kept genuinely OUT-OF-FOLD: for each of the 5 spatial folds, `w` is chosen on
+the OTHER 4 folds' rows only, then applied to the held-out fold - the same
+out-of-fold discipline the RF itself uses, not a single global weight fit
+and reported on the same data it is evaluated on
+(`src/module3_spatial/blended_persistence_rf.py`).
+
+### Spatial Features Used
+None new - blends two already-computed outputs.
+
+### Validation Method
+Same corr/MAE/RMSE (vs. actual cases) plus M3-012's Spearman/precision@k, on
+the same table. Stress-tested three ways before trusting the aggregate: (1)
+per-fold MAE/RMSE breakdown, (2) a paired week-level bootstrap (2,000
+resamples) on the blend's difference from persistence and from the RF, for
+MAE, precision@5, and Spearman rho, (3) the M3-012 representative-week
+breakout re-run with the blend included.
+
+### Results
+- **Aggregate**: corr 0.9541, MAE 9.46, RMSE 25.26, Spearman 0.841,
+  precision@3 0.780, precision@5 0.788 - between persistence and the RF on
+  most metrics, beating both on precision@3/5 in the raw aggregate.
+- **Per-fold MAE/RMSE breakdown - NOT uniform**: fold 2 (Ampara/Badulla/
+  Hambantota/Monaragala/Nuwara Eliya) is a striking outlier where
+  persistence dominates badly (MAE 5.93 vs. RF's 9.45 vs. blend's 7.39 - the
+  per-fold weight, 0.55, could not fully recover it). Folds 0/3 favor the
+  blend; fold 4 favors the pure RF.
+- **Week-level paired bootstrap (95% CI, blend minus other)** - this is what
+  actually decides the question, not the raw aggregate:
+
+  | Metric | vs. Naive persistence | vs. Stage 2 RF (official) |
+  |---|---|---|
+  | MAE | +0.02, CI [-0.08, +0.10] - tie (blend wins only 44% of weeks) | -0.50, CI [-0.74, -0.25] - real win |
+  | Precision@5 | +0.003, CI [-0.001, +0.008] - tie (blend wins only 6% outright) | +0.028, CI [0.020, 0.036] - real win |
+  | Spearman rho | -0.008, CI [-0.011, -0.006] - real LOSS | +0.028, CI [0.024, 0.031] - real win |
+
+### Interpretation
+The raw aggregate table overstated the case against persistence - once
+bootstrapped at the week level, the blend is a genuine, statistically robust
+improvement over the RF alone (all three CIs entirely favorable), but it
+does NOT beat naive persistence: MAE and precision@5 are statistical ties,
+and Spearman rho is a real, significant LOSS relative to persistence. This
+is the same discipline every prior Module 3 finding has required (M3-009's
+reproducibility check, M3-010/011's honest nulls) applied to a result that
+looked, on first glance, like a clean win.
+
+### Decision
+**Not adopted as a replacement for either baseline.** Documented as a real
+but narrower finding: the blend genuinely improves on the RF-only version of
+Stage 2, which is meaningful for iterating the hybrid design itself, but it
+does not clear the bar of "beats the simplest possible baseline" that
+motivated this whole investigation arc. **Superseded in practical terms by
+M3-015** (below), which does clear that bar.
+
+### Documentation Updated
+- `module_3_spatial/EXPERIMENT_LOG.md` (this entry).
+- `src/config.py` (added `MODULE3_BLENDED_PERSISTENCE_RF_PATH` and 4 related
+  stress-test output paths).
+- Added `src/module3_spatial/blended_persistence_rf.py`.
+- Added `outputs/metrics/module3/blended_persistence_rf_comparison.csv`,
+  `blended_persistence_rf_fold_weights.csv`,
+  `blended_persistence_rf_fold_breakdown.csv`,
+  `blended_persistence_rf_bootstrap_ci.csv`,
+  `blended_persistence_rf_representative_weeks.csv`.
+
+---
+
+## Experiment ID: M3-014
+
+### Date
+2026-08-08
+
+### Research Question
+Module 2's Stage 2 compensates via CALIBRATION (Platt/isotonic - recalibrate
+Stage 1's raw score against actual outcomes, no covariates at all), a
+mechanism completely different from Module 3's covariate-regression RF. A
+decile-binned diagnostic of each model's score vs. actual case counts showed
+a real, systematic low-end bias (actual cases run 57% (RF) to 139%
+(persistence) higher than predicted in the lowest-predicted-risk decile) -
+can an isotonic calibration layer, adapted from Module 2's exact mechanism,
+fix this without needing any climate/demographic covariate?
+
+### Spatial Unit
+District-week, same table as M3-008 onward.
+
+### Baseline Spatial Method
+Two calibration targets tested: Risk_0 directly (closest structural analogue
+to Module 2's Stage 1->Stage 2 pipeline), and the official RF's own output
+(tests whether the RF's REMAINING bias can be fixed on top).
+
+### Stage 2 Model
+`sklearn.isotonic.IsotonicRegression` (the same primitive Module 2's own
+isotonic Stage 2 calibrator uses), fit OUT-OF-FOLD via the same 5 spatial
+K-means CV folds - a district's calibrated prediction always comes from a
+curve fit on the other 4 folds, never on itself
+(`src/module3_spatial/isotonic_calibration.py`).
+
+### Spatial Features Used
+None - by design, this mechanism uses zero covariates, only the score being
+calibrated and the actual case count.
+
+### Validation Method
+Same corr/MAE/RMSE + Spearman/precision@k comparison table as M3-012/013,
+plus a per-fold MAE/RMSE breakdown to diagnose the result (not just report
+the aggregate).
+
+### Results
+- **Both calibrated variants got WORSE on every metric, not better**:
+  Calibrated Risk_0 corr 0.71/MAE 22.41/RMSE 59.41 (worse than Risk_0's own
+  0.82/20.54/48.20); Calibrated RF corr 0.90/MAE 11.06/RMSE 36.59 (worse
+  than the RF's own 0.9554/9.96/25.06).
+- **Root-caused, not left as an unexplained failure**: per-fold breakdown of
+  the calibrated RF showed the degradation is almost entirely concentrated
+  in fold 0 (Colombo/Gampaha/Kandy/Kegalle/Kurunegala/Puttalam, max case
+  count 2,631 - more than double any other fold's peak of 889-1,430): RMSE
+  37.4 -> 65.9 (+76%) in that fold alone; folds 1-4 show no meaningful
+  change. The isotonic curve is fit on the OTHER 4 folds and clips
+  (`out_of_bounds="clip"`) any score above what it saw in training - since
+  fold 0 is a fundamentally different, higher magnitude-regime than every
+  other fold, the curve has nothing to extrapolate with and clips exactly
+  the biggest, most important outbreak weeks to a severe underprediction.
+
+### Interpretation
+This is a genuine, structural mismatch, not a coding bug or "no signal"
+result: isotonic calibration implicitly assumes training and held-out data
+share a similar score range - true for Module 2's RANDOM folds (same
+population, random split), false for Module 3's GEOGRAPHICALLY CLUSTERED
+folds, where one fold (Colombo/Gampaha) is a categorically different
+magnitude regime than the rest. The RF does not have this failure mode
+because its covariates (population, elevation) give it a genuine basis to
+extrapolate to an unseen high-magnitude district; a pure score-calibration
+curve has no such basis - it is a lookup table, and Colombo's range falls
+off the end of the table.
+
+### Decision
+**Rejected.** Module 2's calibration mechanism does not transfer to Module
+3's validation structure as-is. Not pursued further without a genuinely
+different validation split for calibration specifically (e.g. a per-district
+temporal split, which would introduce a new validation axis not currently
+used anywhere else in Module 3, and was not attempted here).
+
+### Documentation Updated
+- `module_3_spatial/EXPERIMENT_LOG.md` (this entry).
+- `src/config.py` (added `MODULE3_ISOTONIC_CALIBRATION_PATH` and 2 related
+  output paths).
+- Added `src/module3_spatial/isotonic_calibration.py`.
+- Added `outputs/metrics/module3/isotonic_calibration_comparison.csv`,
+  `isotonic_calibration_bootstrap_ci.csv`, `isotonic_calibration_decile_bias.csv`.
+
+---
+
+## Experiment ID: M3-015
+
+### Date
+2026-08-08
+
+### Research Question
+Every prior compensation mechanism (RF on covariates, M3-008's own-lag RF,
+M3-011's stacking, M3-013's blending, M3-014's calibration) modeled the
+ABSOLUTE residual (`Number_of_Cases - Risk_0`) as the target or calibration
+input. A direct diagnostic of that raw residual (not assumed, checked)
+found it strongly HETEROSCEDASTIC - error magnitude scales with predicted
+magnitude (corr(Risk_0, |residual|) = 0.78; corr(log(Risk_0),
+log(|residual|+1)) = 0.81) - meaning every prior absolute-residual model let
+the handful of huge outbreak weeks dominate the learning signal. Does
+modeling the RELATIVE residual instead
+(`(Number_of_Cases - Risk_0) / (Risk_0 + 1)`) fix this and produce a
+genuine improvement?
+
+A second diagnostic, run alongside the first, ruled OUT a spatial-spillover
+angle before any model was built: does a Queen-contiguous NEIGHBOR's
+residual lagged one week predict a district's own current residual, beyond
+what the district's own lag already says? Raw correlation was -0.30, but
+dropped to a negligible partial correlation of 0.03 once the district's own
+`residual_lag_1` was regressed out - neighboring districts' errors add
+essentially nothing new; no neighbor-lag feature was built.
+
+### Spatial Unit
+District-week, same 5 spatial K-means CV folds as every prior Stage 2
+experiment (25,023 rows after an additional drop for the new relative lag
+columns' series-start NaN, 100 fewer than M3-008's 25,123 - the same
+per-district-first-4-weeks pattern, applied to the new lag columns).
+
+### Baseline Spatial Method
+Same Risk_0 - unchanged. Reconstruction from a relative-residual prediction
+back to an absolute Risk value is EXACT, not approximate:
+`Risk_reconstructed = Risk_0 + predicted_relative_residual * (Risk_0 + 1)`,
+clipped at 0.
+
+### Stage 2 Model
+Two candidates (`src/module3_spatial/relative_residual_compensation.py`):
+1. "Relative persistence" (no model): `predicted_relative_residual =
+   relative_residual_lag_1` - the relative-scale analogue of
+   `persistence_baseline.py`'s naive predictor.
+2. "RF on relative residual": identical `RF_PARAMS`/`STAGE2_FEATURE_COLUMNS`
+   plus 4 new relative-residual lag columns, same 5-fold spatial CV,
+   out-of-fold - the ONLY change from the official model is the TARGET
+   (relative, not absolute), isolating whether the heteroscedasticity fix
+   itself is what matters.
+
+### Spatial Features Used
+Same `STAGE2_FEATURE_COLUMNS` plus `relative_residual_lag_1/2/3/4`.
+
+### Validation Method
+Same corr/MAE/RMSE + Spearman/precision@k table as M3-012/013/014, plus the
+same three-part stress test as M3-013 (per-fold breakdown, week-level paired
+bootstrap, representative-week breakout) before trusting the result.
+
+### Results
+- **Aggregate - beats every established benchmark on every metric**:
+
+  | Model | corr | MAE | RMSE | Spearman | P@3 | P@5 |
+  |---|---|---|---|---|---|---|
+  | Naive persistence | 0.9493 | 9.47 | 26.69 | 0.849 | 0.773 | 0.784 |
+  | Stage 2 RF, official | 0.9553 | 10.00 | 25.11 | 0.813 | 0.752 | 0.760 |
+  | Relative persistence (no model) | 0.9434 | 8.17 | 28.24 | 0.870 | 0.796 | 0.795 |
+  | **RF on relative residual** | **0.9593** | **8.07** | **24.01** | **0.889** | **0.809** | **0.818** |
+
+  Relative persistence alone (zero modeling, same mechanism as
+  `persistence_baseline.py` but on the relative target) already beats
+  absolute persistence's MAE (8.17 vs. 9.47) - strong evidence the
+  improvement is the reformulation itself, not an RF-specific artifact. The
+  RF still improves further on top of it (unlike in the absolute-residual
+  world, where the RF and persistence were essentially trading places).
+- **Week-level paired bootstrap (95% CI, RF-on-relative minus other)**:
+  MAE vs. persistence -1.40 CI[-1.80,-1.05] (wins 74% of weeks); vs. official
+  RF -1.93 CI[-2.14,-1.69] (wins 90%). Precision@5 vs. persistence +0.034
+  CI[0.025,0.042]; vs. official RF +0.058 CI[0.051,0.066]. Spearman rho vs.
+  persistence +0.040 CI[0.034,0.045]; vs. official RF +0.076
+  CI[0.071,0.081]. Every CI is entirely on the favorable side - not noise.
+- **Per-fold MAE breakdown - broad, not one-fold-driven**: RF-on-relative
+  has the best or tied-best MAE in 4 of 5 folds, including fold 2 (the fold
+  where M3-013's blend and the official RF both lost badly to persistence).
+- **Two honest caveats, not hidden**: (1) RMSE's aggregate win is
+  concentrated in fold 0 (the highest-volume Colombo/Gampaha cluster,
+  32.3 vs. official RF's 37.5) - in 3 of the other 4 folds, the OFFICIAL RF
+  actually has better RMSE than RF-on-relative. (2) At the NE-monsoon
+  representative week (2021 Wk1 - already flagged in M3-001 as the one week
+  with NO significant spatial clustering, a structurally different regime),
+  RF-on-relative does notably WORSE than both baselines (Spearman 0.36 vs.
+  persistence's 0.74 and the official RF's 0.76).
+
+### Interpretation
+This is the strongest, most broadly-supported result in the entire M3-010
+through M3-015 investigation arc: it is not a metric artifact (confirmed via
+per-fold breakdown and week-level bootstrap, the same scrutiny that deflated
+M3-013's initial aggregate), and it has a clear causal mechanism (fixing a
+directly-measured heteroscedasticity, not a post-hoc tuned parameter). The
+two caveats are real limitations, not disqualifying: the RMSE nuance means
+"the RF's outlier control" and "the relative reformulation's typical-case
+accuracy" are not the same advantage stacking cleanly everywhere, and the
+NE-monsoon weakness suggests the relative-residual RF may be leaning on
+dynamics specific to the dominant (SW monsoon / western-district) regime
+that do not transfer to the one already-documented structurally different
+week.
+
+### Decision
+**Promoted to official Stage 2 (2026-08-08), user-confirmed.**
+`compensation_model.py` (`TARGET_COL="relative_residual"`, new
+`STAGE2_FEATURE_COLUMNS_V2` = the old 20-column set + `RELATIVE_LAG_COLUMNS`),
+`iterative_loop.py` (relative reconstruction, `Risk_t = Risk_(t-1) + alpha *
+predicted_relative_residual * (Risk_(t-1) + 1)`), `evaluate.py`
+(relative-scale metric labels), and `forecast_future.py` (relative lags +
+reconstruction in the forward forecast) all updated and rerun end-to-end.
+Verified, not assumed: the regenerated `results_summary.txt` reproduces
+M3-015's own validated numbers (corr 0.9592 vs. 0.9593, MAE 8.03 vs. 8.07,
+RMSE 24.02 vs. 24.01 - the tiny difference is the row-count subset
+difference already noted in M3-015, not a promotion error), and the
+regenerated `hotspot_ranking_evaluation.csv` reproduces M3-015's rank
+metrics and its NE-monsoon weakness exactly. `STAGE2_FEATURE_COLUMNS` (20,
+frozen) and `TARGET_COL`'s old value are NOT reused elsewhere, protecting
+`stacked_persistence_experiment.py` (M3-011) and `alpha_sweep.py` (M3-006)'s
+reproducibility - re-verified directly: `stacked_persistence_experiment.py`
+was rerun post-promotion and reproduced its exact M3-011 numbers (MAE/RMSE
+byte-identical; `corr` differed only at the 13th significant digit, the
+same `n_jobs=-1` float-noise class M3-009 already documented and accepted -
+reverted as noise, not a legitimate change). `future_hotspot_forecast.csv`
+regenerated cleanly (zero NaN, zero negative Risk, Gampaha/Colombo/Kandy
+highest for 2026 Wk26).
+
+### Documentation Updated (promotion)
+`module_3_spatial/MODULE_CONTEXT.md` (Stage 2 spec + this section marked
+promoted), `module_3_spatial/EXPERIMENT_LOG.md` (this entry).
+
+### Documentation Updated
+- `module_3_spatial/EXPERIMENT_LOG.md` (this entry).
+- `src/config.py` (added `MODULE3_RELATIVE_RESIDUAL_COMPARISON_PATH`,
+  `MODULE3_RELATIVE_RESIDUAL_BOOTSTRAP_PATH`).
+- Added `src/module3_spatial/relative_residual_compensation.py`.
+- Added `outputs/metrics/module3/relative_residual_comparison.csv`,
+  `relative_residual_bootstrap_ci.csv`.

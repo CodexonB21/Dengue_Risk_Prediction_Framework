@@ -55,7 +55,7 @@ from src.config import (  # noqa: E402
     MODULE3_RESULTS_SUMMARY_PATH,
     MODULE3_STAGE_COMPARISON_PATH,
 )
-from src.module3_spatial.compensation_model import STAGE2_FEATURE_COLUMNS, prepare_training_table
+from src.module3_spatial.compensation_model import STAGE2_FEATURE_COLUMNS_V2, prepare_training_table
 from src.module3_spatial.persistence_baseline import run_persistence_baseline
 
 logger = logging.getLogger(__name__)
@@ -162,7 +162,7 @@ def plot_population_density_pdp(path: Path) -> pd.DataFrame:
     model = joblib.load(MODULE3_RF_FINAL_MODEL_PATH)
 
     pdp = partial_dependence(
-        model, df[STAGE2_FEATURE_COLUMNS], features=["population_density"], kind="average", grid_resolution=50,
+        model, df[STAGE2_FEATURE_COLUMNS_V2], features=["population_density"], kind="average", grid_resolution=50,
     )
     grid = pdp["grid_values"][0]
     avg_effect = pdp["average"][0]
@@ -276,26 +276,29 @@ def build_summary_text(
     lines.append("")
     lines.append("-- Stage 1 alone vs Stage 2 final: fit to actual case counts --")
     lines.append(
-        "(Stage 2's correction (own-district residual lag features, M3-008) "
-        "substantially IMPROVES aggregate fit over Stage 1 alone - ~51% MAE "
-        "reduction; see EXPERIMENT_LOG.md M3-008, superseding the original "
-        "16-feature/alpha=0.05 null result, M3-005. See the naive-persistence "
-        "check directly below, though: most of that reduction is achievable "
-        "with no model at all - M3-010/M3-011.)"
+        "(UPDATED 2026-08-08, M3-015: Stage 2 now predicts the RELATIVE residual "
+        "((Number_of_Cases - Risk_0) / (Risk_0 + 1)), not the absolute one - a "
+        "direct diagnostic found the absolute residual strongly heteroscedastic. "
+        "This beats BOTH Stage 1 alone AND the naive-persistence baseline below on "
+        "every metric (~61% MAE reduction over Stage 1, and a real, bootstrap-"
+        "confirmed win over persistence - see EXPERIMENT_LOG.md M3-015), "
+        "superseding the M3-008 absolute-residual model, which lost to persistence "
+        "on MAE (M3-010/M3-011). Two honest caveats remain, documented in M3-015: "
+        "the RMSE improvement concentrates in the highest-case-volume spatial "
+        "fold, and the model underperforms at the NE-monsoon representative week.)"
     )
     lines.append(comparison_df.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
     lines.append(negative_risk_note(hybrid_df))
 
     lines.append("")
-    lines.append("-- Naive persistence baseline check (EXPERIMENT_LOG.md M3-010/M3-011) --")
+    lines.append("-- Naive persistence baseline check (EXPERIMENT_LOG.md M3-010/011/015) --")
     lines.append(
-        "(residual_rescaled_lag_1/lag_2 = 89.8% of RF feature importance, so this "
-        "checks whether the RF beats simply carrying last week's own residual "
-        "forward with NO model. It does not beat it on MAE - only on corr/RMSE/ "
-        "outlier control (clipping rate). A stacked RF-predicts-correction-beyond- "
-        "persistence variant was also tried and was worse than both on every "
-        "metric - see M3-011. Kept as the honest context for the MAE-reduction "
-        "figure above, not a replacement for it.)"
+        "(M3-010 found the pre-M3-015 absolute-residual RF lost to naive "
+        "persistence on MAE. M3-015's relative-residual reformulation reverses "
+        "this: the official RF below now beats persistence on every metric, "
+        "confirmed via a week-level paired bootstrap (not just this raw aggregate "
+        "table, which M3-013 already showed can overstate a result) - see "
+        "EXPERIMENT_LOG.md M3-015 for the full bootstrap CIs and fold breakdown.)"
     )
     lines.append(persistence_df.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
 
@@ -303,8 +306,14 @@ def build_summary_text(
     lines.append("")
     lines.append("-- Stage 2 RF: out-of-fold residual prediction accuracy (spatial CV) --")
     lines.append(
-        f"MAE = {rf_agg['mae']:.2f} +/- {rf_agg['mae_std']:.2f}, "
-        f"RMSE = {rf_agg['rmse']:.2f} +/- {rf_agg['rmse_std']:.2f} "
+        "(UPDATED 2026-08-08, M3-015: MAE/RMSE below are on the RELATIVE residual "
+        "scale - target = (Number_of_Cases - Risk_0) / (Risk_0 + 1) - not the "
+        "absolute case-count scale reported here before this date; not directly "
+        "comparable to pre-M3-015 figures.)"
+    )
+    lines.append(
+        f"MAE = {rf_agg['mae']:.4f} +/- {rf_agg['mae_std']:.4f}, "
+        f"RMSE = {rf_agg['rmse']:.4f} +/- {rf_agg['rmse_std']:.4f} "
         f"(mean +/- std across 5 spatial folds)"
     )
 

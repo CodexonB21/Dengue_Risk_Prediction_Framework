@@ -123,8 +123,9 @@ from src.config import (  # noqa: E402
     SHARED_EPI_WEEK_CALENDAR_PATH,
 )
 from src.module3_spatial.compensation_model import (
+    RELATIVE_LAG_COLUMNS,
     RESIDUAL_LAG_COLUMNS,
-    STAGE2_FEATURE_COLUMNS,
+    STAGE2_FEATURE_COLUMNS_V2,
     add_residual_lag_features,
     rescale_kde_baseline,
 )
@@ -309,15 +310,17 @@ def build_forecast_feature_table(calendar_row: pd.Series) -> pd.DataFrame:
         baseline_hist, on=["District", "Year", "Week"], how="inner"
     )
     residual_hist = rescale_kde_baseline(residual_hist)[
-        ["District", "Year", "Week", "Week_Start_Date", "residual_rescaled"]
+        ["District", "Year", "Week", "Week_Start_Date", "residual_rescaled", "kde_baseline_rescaled"]
     ]
 
     forecast_resid_row = forecast_row[["District", "Year", "Week", "Week_Start_Date"]].copy()
     forecast_resid_row["residual_rescaled"] = np.nan
+    forecast_resid_row["kde_baseline_rescaled"] = np.nan
     combined_resid = pd.concat([residual_hist, forecast_resid_row], ignore_index=True)
     combined_resid = add_residual_lag_features(combined_resid)
     forecast_resid_lags = combined_resid.loc[
-        combined_resid["Week_Start_Date"] == week_start, ["District"] + RESIDUAL_LAG_COLUMNS
+        combined_resid["Week_Start_Date"] == week_start,
+        ["District"] + RESIDUAL_LAG_COLUMNS + RELATIVE_LAG_COLUMNS,
     ]
     result = result.merge(forecast_resid_lags, on="District", how="left")
 
@@ -336,7 +339,7 @@ def build_forecast_feature_table(calendar_row: pd.Series) -> pd.DataFrame:
     mahalanobis_stats = joblib.load(MODULE3_MAHALANOBIS_STATS_PATH)
     result = apply_mahalanobis_scores(result, mahalanobis_stats["mean"], mahalanobis_stats["cov"])
 
-    nan_features = result[STAGE2_FEATURE_COLUMNS].isna().any(axis=0)
+    nan_features = result[STAGE2_FEATURE_COLUMNS_V2].isna().any(axis=0)
     if nan_features.any():
         bad_cols = nan_features[nan_features].index.tolist()
         raise ValueError(
@@ -436,8 +439,11 @@ def run_forecast_future(horizon: int = DEFAULT_HORIZON_WEEKS) -> pd.DataFrame:
         features = build_forecast_feature_table(calendar_row)
         features = features.set_index("District").reindex(DISTRICTS).reset_index()
 
-        X = features[STAGE2_FEATURE_COLUMNS]
-        predicted_residual = rf_model.predict(X)
+        X = features[STAGE2_FEATURE_COLUMNS_V2]
+        # UPDATED 2026-08-08 (EXPERIMENT_LOG.md M3-015): the frozen final RF
+        # now predicts the RELATIVE residual, not the absolute one -
+        # reconstruction back to Risk is exact, not approximate.
+        predicted_relative_residual = rf_model.predict(X)
 
         kde_vector = forecast_week_kde(case_count_weights)
         risk_0 = rescale_forecast_kde(kde_vector, case_count_weights.sum())
@@ -446,7 +452,10 @@ def run_forecast_future(horizon: int = DEFAULT_HORIZON_WEEKS) -> pd.DataFrame:
         # iterative_loop.py's M3-008 clipping decision; alpha=1.0's
         # unshrunk correction can otherwise overshoot below 0 for
         # near-zero-risk districts.
-        risk_forecast = np.clip(risk_0.to_numpy() + SHRINKAGE_ALPHA * predicted_residual, 0.0, None)
+        risk_0_values = risk_0.to_numpy()
+        risk_forecast = np.clip(
+            risk_0_values + SHRINKAGE_ALPHA * predicted_relative_residual * (risk_0_values + 1), 0.0, None,
+        )
 
         out = pd.DataFrame(
             {
@@ -456,7 +465,7 @@ def run_forecast_future(horizon: int = DEFAULT_HORIZON_WEEKS) -> pd.DataFrame:
                 "Week_Start_Date": calendar_row["Week_Start_Date"],
                 "horizon_step": step,
                 "Risk_0_forecast": risk_0.to_numpy(),
-                "predicted_residual": predicted_residual,
+                "predicted_relative_residual": predicted_relative_residual,
                 "Risk_forecast": risk_forecast,
                 "cases_forecast": case_count_weights.to_numpy(),
                 "cases_source": "module1_forecast",

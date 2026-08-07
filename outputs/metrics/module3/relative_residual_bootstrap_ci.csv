@@ -1,0 +1,8 @@
+metric,comparison,point_diff (a - b),ci_low,ci_high,pct_weeks_a_better
+MAE,RF on relative residual vs. Naive persistence (no model),-1.4007240523929472,-1.800237247616852,-1.0543422761671617,73.9
+MAE,"RF on relative residual vs. Stage 2 RF, official",-1.9251154963081731,-2.1374397267294993,-1.6849803902110279,89.5
+MAE,Relative persistence (no model) vs. Naive persistence (no model),-1.3051359467332482,-1.621421389803537,-0.9441649827032796,82.7
+precision_at_5,RF on relative residual vs. Naive persistence (no model),0.03356643356643363,0.024975024975025018,0.04195804195804198,26.3
+precision_at_5,"RF on relative residual vs. Stage 2 RF, official",0.0583416583416585,0.0505494505494507,0.06633366633366633,32.9
+spearman_rho,RF on relative residual vs. Naive persistence (no model),0.03973903944828905,0.034320623978699116,0.04533621214212317,67.9
+spearman_rho,"RF on relative residual vs. Stage 2 RF, official",0.07575699534812452,0.0707787302921294,0.08051196027132328,87.8

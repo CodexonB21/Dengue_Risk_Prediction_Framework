@@ -89,7 +89,7 @@ from src.config import (  # noqa: E402
 from src.module3_spatial.compensation_model import (  # noqa: E402
     FEATURE_COLUMNS,
     RF_PARAMS,
-    STAGE2_FEATURE_COLUMNS,
+    STAGE2_FEATURE_COLUMNS_V2,
     build_spatial_folds,
     prepare_training_table,
 )
@@ -150,11 +150,14 @@ def out_of_fold_predict(
     feature_cols: list[str] = FEATURE_COLUMNS,
 ) -> np.ndarray:
     """`feature_cols` defaults to the ORIGINAL 16-column `FEATURE_COLUMNS`
-    (not `STAGE2_FEATURE_COLUMNS`) so that `alpha_sweep.py` (M3-006), which
-    imports this function directly with 3 positional args, stays
-    byte-for-byte reproducible if ever rerun. `run_iterative_loop()` below
-    explicitly passes `feature_cols=STAGE2_FEATURE_COLUMNS` for the
-    OFFICIAL, post-M3-008 model.
+    (not `STAGE2_FEATURE_COLUMNS_V2`) so that `alpha_sweep.py` (M3-006),
+    which imports this function directly relying on this default, stays
+    byte-for-byte reproducible if ever rerun. `stacked_persistence_
+    experiment.py` (M3-011) explicitly overrides this default with the
+    frozen `STAGE2_FEATURE_COLUMNS` (20-column, still unchanged) every call,
+    so it is unaffected either way. `run_iterative_loop()` below explicitly
+    passes `feature_cols=STAGE2_FEATURE_COLUMNS_V2` for the OFFICIAL,
+    post-M3-015 model.
     """
     fold_assignment = df[["District"]].merge(folds_df, on="District", how="left")["spatial_fold"]
     if fold_assignment.isna().any():
@@ -214,7 +217,12 @@ def run_iterative_loop() -> tuple[pd.DataFrame, pd.DataFrame]:
         risk_prev.min(), risk_prev.max(), epsilon, CONVERGENCE_EPSILON_FRACTION * 100,
     )
 
-    residual_target = number_of_cases - risk_prev  # Residual_1
+    # UPDATED 2026-08-08 (EXPERIMENT_LOG.md M3-015): the RF's target is now
+    # the RELATIVE residual (Residual_1 / (Risk_0 + 1)), not the absolute
+    # one - fixes a directly-diagnosed heteroscedasticity in the absolute
+    # residual. Reconstruction back to Risk is exact, not approximate:
+    # Risk_t = Risk_(t-1) + alpha * predicted_relative_residual * (Risk_(t-1) + 1).
+    relative_residual_target = (number_of_cases - risk_prev) / (risk_prev + 1)  # relative Residual_1
 
     log_rows = []
     converged = False
@@ -222,8 +230,10 @@ def run_iterative_loop() -> tuple[pd.DataFrame, pd.DataFrame]:
     risk_final = risk_prev
 
     for t in range(1, MAX_ITERATIONS + 1):
-        predicted_residual = out_of_fold_predict(df, folds_df, residual_target, feature_cols=STAGE2_FEATURE_COLUMNS)
-        risk_t = risk_prev + SHRINKAGE_ALPHA * predicted_residual
+        predicted_relative_residual = out_of_fold_predict(
+            df, folds_df, relative_residual_target, feature_cols=STAGE2_FEATURE_COLUMNS_V2,
+        )
+        risk_t = risk_prev + SHRINKAGE_ALPHA * predicted_relative_residual * (risk_prev + 1)
 
         max_delta = float(np.max(np.abs(risk_t - risk_prev)))
         risk_converged = max_delta < epsilon
@@ -259,7 +269,7 @@ def run_iterative_loop() -> tuple[pd.DataFrame, pd.DataFrame]:
         n_iterations_run = t
         risk_final = risk_t
         risk_prev = risk_t
-        residual_target = new_residual
+        relative_residual_target = new_residual / (risk_t + 1)
 
         if stop:
             converged = True
