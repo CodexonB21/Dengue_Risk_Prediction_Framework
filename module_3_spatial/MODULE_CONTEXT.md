@@ -430,6 +430,64 @@ Stage 2 as primarily an environmental correction step.
 
 ---
 
+## Stage 2 vs. Naive Persistence Baseline (2026-08-04, M3-010/M3-011)
+
+**Important caveat on the "51% MAE reduction" headline above.** With
+`residual_rescaled_lag_1` + `lag_2` at 89.8% combined feature importance,
+the obvious next check is whether the RF actually beats the trivial
+arithmetic of carrying last week's own residual forward with no model at
+all (`predicted_residual_t = residual_rescaled_lag_1`, combined with
+`Risk_0` via the same alpha/clipping formula the official model uses -
+`src/module3_spatial/persistence_baseline.py`, M3-010). It does not, on
+every metric:
+
+| Model | corr | MAE | RMSE | rows clipped at 0 |
+|---|---|---|---|---|
+| Stage 1 alone (Risk_0) | 0.8241 | 20.5363 | 48.1989 | - |
+| Naive persistence (no model) | 0.9493 | **9.4386** | 26.6343 | 2,296 (9.1%) |
+| Stage 2 RF, official | **0.9554** | 9.9621 | **25.0601** | 1,211 (4.8%) |
+
+Naive persistence alone recovers about 93% of the total MAE reduction over
+Stage 1 (20.54 -> 9.44 vs. the RF's 20.54 -> 9.96) - **the RF is
+marginally WORSE than a zero-modeling baseline on MAE.** It remains better
+on correlation and RMSE, and clips roughly half as many rows to zero
+(4.8% vs. 9.1%), which is direct evidence it dampens the naive predictor's
+more frequent and more severe overshoots by using climate/demographic/
+monsoon context persistence cannot see.
+
+**Corrected framing**: Stage 2's genuine, defensible contribution is
+controlling the severity of large errors/overshoots (RMSE, clipping rate),
+NOT beating a naive baseline on typical-case accuracy - report language
+should present the naive-persistence comparison alongside the MAE
+reduction, not let the 51% figure stand alone as if the RF were the sole
+source of it.
+
+**A stacked fix was tried and rejected (M3-011), not just accepted as a
+limitation.** Hypothesis: have the RF predict only the correction beyond
+persistence (`target = residual_rescaled - residual_rescaled_lag_1`) so it
+spends its split budget on the remaining signal instead of implicitly
+reconstructing persistence through splits on lag_1 - motivated by RFs not
+being linear (unlike a linear model, pre-subtracting a dominant feature's
+effect is not mathematically equivalent to including it as a plain input).
+Tested directly: the stacked version is worse than BOTH naive persistence
+AND the official RF on every metric (corr 0.9487, MAE 11.0088, RMSE
+26.9565) - rejected cleanly, not pursued further without a new, specific
+reason to expect a different variant to behave differently.
+
+**Decision: keep the official Stage 2 RF (predicts the raw residual
+directly) as Module 3's sole reported model** - neither naive persistence
+nor the stacked correction is a strict improvement over it once RMSE and
+outlier control are weighed alongside MAE, and for an outbreak-hotspot use
+case, damping severe over/undershoot is arguably more operationally
+relevant than shaving typical-case error.
+
+### Documentation Updated
+`EXPERIMENT_LOG.md` (M3-010, M3-011), `QUESTIONS_FOR_DEFENSE.md`,
+`CHANGELOG.md`. `results_summary.txt` now includes the persistence-baseline
+comparison table (`evaluate.py`).
+
+---
+
 ## Visualization: Continuous Risk Surface (implemented 2026-07-29)
 
 **Rendering-layer technique only — not a new modeling stage.** Neither the

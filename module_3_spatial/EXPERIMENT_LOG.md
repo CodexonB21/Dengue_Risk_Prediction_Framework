@@ -1192,3 +1192,298 @@ originally stated, for the feature set tested at the time.
   population_density_pdp}.png`, `data/processed/module3/
   future_hotspot_forecast.csv`, `outputs/figures/module3/
   risk_surface_forecast_2026_wk26.png`.
+
+---
+
+## Experiment ID: M3-009
+
+### Date
+2026-08-04
+
+### Research Question
+Does the full Module 3 pipeline (preprocessing -> Stage 1 KDE/Moran's I ->
+feature engineering -> Stage 2 RF + spatial CV -> iterative loop ->
+evaluate) actually reproduce its own committed, documented M3-008 results
+when rerun end-to-end from scratch, or are the committed metrics files
+trusted without ever being re-derived?
+
+### Spatial Unit
+District-week, same grain as M3-001 through M3-008. No new spatial method.
+
+### Baseline Spatial Method
+Unchanged - reran the existing Stage 1 KDE + Moran's I exactly as
+implemented, no code changes.
+
+### Stage 2 Model
+Unchanged - reran `compensation_model.py` (`STAGE2_FEATURE_COLUMNS`,
+`RF_PARAMS`) and `iterative_loop.py` (`alpha=1.0`, `MAX_ITERATIONS=1`,
+0-clipping) exactly as implemented, no code changes.
+
+### Spatial Features Used
+Unchanged - same `STAGE2_FEATURE_COLUMNS` as M3-008.
+
+### Validation Method
+Full pipeline rerun (`python -m src.preprocessing.module3_preprocessing`,
+`kde_baseline`, `feature_engineering`, `compensation_model`,
+`iterative_loop`, `evaluate`), then every regenerated, git-tracked output
+file (`master_table.csv`, `baseline_risk.csv`, `stage2_feature_table.csv`,
+`rf_stage2_metrics.csv`, `rf_feature_importance.csv`,
+`spatial_cv_folds.csv`, `hybrid_risk_map.csv`,
+`iterative_convergence_log.csv`, `results_summary.txt`) diffed against the
+already-committed versions via `git status`/`git diff` - the direct test of
+whether "rerun the pipeline" and "trust the file on disk" give the same
+answer, not an assumption that they do.
+
+### Results
+- **Every reported/rounded metric reproduced exactly**: Moran's I = 0.7024
+  (p=0.001), spatial-CV MAE = 9.869 +/- 5.175 / RMSE = 23.067 +/- 9.180,
+  feature importance (`residual_rescaled_lag_1` 0.6394,
+  `residual_rescaled_lag_2` 0.2591, ...), final Stage 1 vs. Stage 2
+  comparison (corr 0.8241 -> 0.9554, MAE 20.5363 -> 9.9621, RMSE 48.1989 ->
+  25.0601), and `results_summary.txt` all matched the committed versions to
+  every displayed digit. `master_table.csv`, `baseline_risk.csv`,
+  `stage2_feature_table.csv`, `rf_stage2_metrics.csv`,
+  `rf_feature_importance.csv`, `spatial_cv_folds.csv`, and
+  `results_summary.txt` came back byte-for-byte identical (`git status`
+  clean on all of them).
+- **Two files showed non-zero diffs**: `hybrid_risk_map.csv` and
+  `iterative_convergence_log.csv`. Inspected directly (not assumed
+  cosmetic): every differing value agreed to ~13-15 significant figures
+  (e.g. `risk_min` `-112.86768029164287` vs. `-112.8676802916429`,
+  `morans_I` `-0.06403523229332307` vs. `-0.06403523229332309`) - float64
+  last-bit noise, not a value change. Traced to
+  `compensation_model.py::RF_PARAMS`'s `n_jobs=-1`:
+  `RandomForestRegressor` parallelizes per-tree prediction averaging across
+  threads, and float addition is not associative, so summation order (and
+  therefore the least-significant bits of the aggregated prediction) can
+  vary run-to-run even with `random_state=42` fixed (which controls tree
+  structure, not thread scheduling). Confirmed harmless: no metric rounded
+  to the precision anything is reported at (results_summary.txt,
+  MODULE_CONTEXT.md, the report) changed by even one unit in the last
+  reported digit. Reverted via `git checkout` (pure noise, not a
+  legitimate update to commit).
+
+### Interpretation
+The pipeline is genuinely reproducible for every number that is ever
+reported or cited - the committed metrics files are not being trusted
+blind, they were independently re-derived and matched. The float-noise
+caveat on the two raw per-row CSVs is worth recording explicitly rather
+than silently reverting and saying nothing: a defense panel asking "if I
+reran this, would I get your numbers" now has a directly verified answer
+("yes, to reported precision; two raw output files have inconsequential
+last-digit floating-point noise from parallelized RF prediction, not a
+seed or methodology issue"), rather than an assumed one.
+
+### Decision
+**Keep** `n_jobs=-1` as-is - the speed benefit is worth it and the noise
+is confirmed inconsequential; forcing `n_jobs=1` for byte-exact reproducibility
+was considered and rejected as unnecessary effort for zero practical
+benefit. **Keep** this as the module's first end-to-end reproducibility
+verification, worth repeating after any future Stage 1/Stage 2 change
+before it's promoted, following M3-008's own precedent of verifying before
+trusting.
+
+### Documentation Updated
+- `module_3_spatial/EXPERIMENT_LOG.md` (this entry).
+- `research_context/CHANGELOG.md`.
+
+---
+
+## Experiment ID: M3-010
+
+### Date
+2026-08-04
+
+### Research Question
+M3-008 promoted own-district residual lags and found
+`residual_rescaled_lag_1` + `residual_rescaled_lag_2` = 89.8% combined
+feature importance in the official Stage 2 RF. That is a strong signal the
+RF's headline "51% MAE reduction over Stage 1" is mostly driven by two lag
+columns rather than the model's use of climate/demographic covariates -
+but M3-008 never directly tested the obvious next question: does the RF's
+out-of-fold spatial-CV prediction actually beat the trivial arithmetic of
+just carrying last week's own residual forward, with no model at all?
+
+### Spatial Unit
+District-week, same grain and same 25,123-row training table
+(`compensation_model.py::prepare_training_table()`) as M3-008/M3-009.
+
+### Baseline Spatial Method
+Same `Risk_0` (rescaled `KDE_baseline`) as every prior Stage 2 experiment -
+unchanged.
+
+### Stage 2 Model
+No RF for the new baseline itself - `predicted_residual_t =
+residual_rescaled_lag_1` (a district's own real residual from exactly one
+week prior), combined with `Risk_0` via the SAME formula and alpha the
+official model uses (`Risk_t = Risk_0 + 1.0 * predicted_residual`, then
+clipped at 0 - `src/module3_spatial/persistence_baseline.py`), so only "RF
+vs. arithmetic copy" is being isolated, not a different combination
+formula. The official Stage 2 RF (`compensation_model.py`/
+`iterative_loop.py`, unchanged) is the comparison point.
+
+### Spatial Features Used
+None for the naive baseline (uses only the district's own history - no
+covariates at all). Official RF: `STAGE2_FEATURE_COLUMNS`, unchanged.
+
+### Validation Method
+Same fit-to-actual-`Number_of_Cases` metrics (corr/MAE/RMSE) used
+throughout Module 3's evaluation, on the identical 25,123-row table both
+models are scored against. The naive predictor needs no train/test split
+at all - it uses only a district's own already-known past, so there is no
+leakage question to resolve before trusting it, unlike the RF, which
+specifically requires the spatial CV structure to avoid overfitting.
+
+### Results
+| Model | corr | MAE | RMSE | rows clipped at 0 |
+|---|---|---|---|---|
+| Stage 1 alone (Risk_0) | 0.8241 | 20.5363 | 48.1989 | - |
+| **Naive persistence (no model)** | 0.9493 | **9.4386** | 26.6343 | 2,296 (9.1%) |
+| **Stage 2 RF, official** | **0.9554** | 9.9621 | **25.0601** | 1,211 (4.8%) |
+
+**The official RF does NOT beat naive persistence on MAE** - it is
+slightly worse (9.96 vs. 9.44). The RF DOES win on correlation and RMSE,
+and clips roughly half as many rows to zero (4.8% vs. 9.1%) - RMSE
+penalizes large errors more than MAE does, and the clipping-frequency gap
+is direct evidence the RF is damping the naive predictor's more frequent,
+more severe overshoots into negative territory, using the other features
+persistence has no access to.
+
+### Interpretation
+The headline "51% MAE reduction over Stage 1" (M3-008) is overwhelmingly
+achievable with ZERO modeling - naive persistence alone recovers about 93%
+of that reduction (20.54 -> 9.44 vs. the RF's 20.54 -> 9.96). This
+materially changes how Stage 2's contribution should be framed: the RF's
+own genuine, defensible value is not "beats a naive baseline on average
+accuracy" (it does not), it is **damping the naive predictor's more
+frequent and more severe overshoots** (better RMSE, half the clipping
+rate) by using climate/demographic/monsoon context the naive predictor
+cannot see. For an outbreak-hotspot use case, controlling severe
+overshoot/undershoot is arguably more operationally relevant than shaving
+typical-case MAE, but that argument needs to be made explicitly in the
+report rather than let the MAE-reduction headline imply the RF wins
+outright, which the numbers do not support.
+
+This is exactly the kind of check M3-005/M3-006 already established as
+this module's standard discipline (verify before reporting an improvement
+as real) - applied here to M3-008's own result, not just to the original
+16-feature model.
+
+### Decision
+**Keep** the official Stage 2 RF as the primary reported model (still best
+on corr/RMSE/outlier control), but **revise** the report-facing framing:
+do not state "51% MAE reduction" without the naive-persistence context
+alongside it. **Add** the naive-persistence comparison to
+`results_summary.txt` permanently, not as a one-off finding that could be
+silently dropped. **Proceed** to testing whether a stacked
+persistence+RF-correction formulation can close the MAE gap while keeping
+the RF's RMSE/outlier advantage - see M3-011.
+
+### Documentation Updated
+- `module_3_spatial/EXPERIMENT_LOG.md` (this entry).
+- `module_3_spatial/MODULE_CONTEXT.md` (Stage 2 framing revised).
+- `research_context/QUESTIONS_FOR_DEFENSE.md` (new entry).
+- `research_context/CHANGELOG.md`.
+- `src/config.py` (added `MODULE3_PERSISTENCE_BASELINE_PATH`).
+- Added `src/module3_spatial/persistence_baseline.py`.
+- Added `outputs/metrics/module3/persistence_baseline_comparison.csv`.
+- `src/module3_spatial/evaluate.py` (results_summary.txt now includes this
+  comparison).
+
+---
+
+## Experiment ID: M3-011
+
+### Date
+2026-08-04
+
+### Research Question
+M3-010 found the official Stage 2 RF loses to naive persistence on MAE but
+wins on corr/RMSE/outlier control. Can a STACKED formulation - have the RF
+predict only the correction beyond persistence
+(`target = residual_rescaled - residual_rescaled_lag_1`), then add that
+correction back onto the naive persistence prediction - combine
+persistence's MAE advantage with the RF's RMSE/outlier advantage, beating
+both on every metric? Motivation: pre-subtracting the dominant, high-
+variance lag_1 effect before training changes where an RF's tree splits
+spend their budget (not mathematically identical to giving the RF lag_1 as
+just one of 20 input features, unlike for a linear model) - a real,
+testable hypothesis, not assumed to help.
+
+### Spatial Unit
+District-week, identical 25,123-row table and identical 5 spatial K-means
+CV folds as M3-008/M3-009/M3-010 - no change to spatial method.
+
+### Baseline Spatial Method
+Same `Risk_0` - unchanged.
+
+### Stage 2 Model
+`RandomForestRegressor`, identical `RF_PARAMS`/`STAGE2_FEATURE_COLUMNS` as
+the official model - the ONLY difference is the training target
+(`residual_rescaled - residual_rescaled_lag_1` instead of
+`residual_rescaled` directly), via the same `out_of_fold_predict` spatial
+CV machinery reused unchanged from `iterative_loop.py`
+(`src/module3_spatial/stacked_persistence_experiment.py`, exploratory,
+does not modify the official pipeline).
+
+### Spatial Features Used
+Same `STAGE2_FEATURE_COLUMNS` as the official model (including
+`residual_rescaled_lag_1` itself, left in as a feature even though it is
+now also subtracted out of the target - tests whether the RF still finds a
+nonlinear use for it, e.g. mean-reversion after an unusually high lag_1).
+
+### Validation Method
+Same corr/MAE/RMSE fit-to-`Number_of_Cases` metrics, same table, computed
+for all 4 models side by side in one script run for direct comparability
+(`stacked_persistence_experiment.py`).
+
+### Results
+| Model | corr | MAE | RMSE |
+|---|---|---|---|
+| Stage 1 alone (Risk_0) | 0.8241 | 20.5363 | 48.1989 |
+| Naive persistence (no model) | 0.9493 | 9.4386 | 26.6343 |
+| Stage 2 RF, official (predicts raw residual) | **0.9554** | 9.9621 | **25.0601** |
+| **Stacked: RF predicts correction beyond persistence** | 0.9487 | 11.0088 | 26.9565 |
+
+**Rejected - the stacked formulation is worse than BOTH the official RF
+AND naive persistence on every single metric.** The hypothesis that
+pre-subtracting persistence would let the RF spend its split budget more
+effectively on the remaining signal was wrong for this dataset - checked
+directly, not left as an untested assumption once it looked plausible.
+
+### Interpretation
+A plausible-sounding architectural idea failing outright is itself useful,
+verified information, not a wasted experiment - it rules out one specific
+"easy win" and leaves the M3-010 framing (official RF's real value is
+outlier/RMSE control, not average-case MAE) as the best-supported
+description of what Stage 2 actually contributes, rather than something
+still worth chasing further. A plausible reason the stacking failed rather
+than helped: subtracting `residual_rescaled_lag_1` from the target removes
+the RF's ability to use lag_1's own MAGNITUDE as a split feature in the
+same way it could when predicting the raw residual (e.g. "when lag_1 is
+very large, trust it less and pull toward the climate-driven estimate more
+than the correction target's own scale allows for") - the correction
+target's distribution is a genuinely different, and here harder, learning
+problem, not simply the original one with a constant shift removed.
+
+### Decision
+**Keep** the official Stage 2 RF (predicts the raw residual directly,
+`residual_rescaled_lag_1` as one of 20 features) as Module 3's sole
+reported Stage 2 model - neither naive persistence nor the stacked
+correction is a strict improvement over it. **Reject** the stacked
+formulation - do not promote, do not report as an alternative "better"
+result. **Do not** pursue further stacking variants without a new,
+specific hypothesis for why one would behave differently - this was a
+genuine, motivated attempt, and it failed cleanly across every metric, not
+just marginally.
+
+### Documentation Updated
+- `module_3_spatial/EXPERIMENT_LOG.md` (this entry).
+- `module_3_spatial/MODULE_CONTEXT.md` (Stage 2 framing notes the rejected
+  stacking attempt).
+- `research_context/QUESTIONS_FOR_DEFENSE.md`.
+- `research_context/CHANGELOG.md`.
+- `src/config.py` (added `MODULE3_STACKED_PERSISTENCE_PATH`).
+- Added `src/module3_spatial/stacked_persistence_experiment.py` (frozen
+  exploratory record, not modified after this finding).
+- Added `outputs/metrics/module3/stacked_persistence_experiment.csv`.

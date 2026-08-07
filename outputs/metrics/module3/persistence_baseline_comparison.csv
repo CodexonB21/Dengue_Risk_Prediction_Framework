@@ -1,0 +1,4 @@
+model,corr,mae,rmse
+"Stage 1 alone (Risk_0, rescaled KDE_baseline)",0.8240780593493945,20.536261650151634,48.198885662692376
+"Naive persistence (Risk_0 + last week's own residual, no model)",0.9493050726011075,9.438645499414722,26.634276306825114
+"Stage 2 RF, official (Risk_0 + out-of-fold RF residual)",0.9553590824709077,9.962115256935748,25.060059208013204

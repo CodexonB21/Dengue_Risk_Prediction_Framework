@@ -6,12 +6,19 @@ MODULE 3 - STAGE 1 & STAGE 2 RESULTS SUMMARY
 Global Moran's I (queen contiguity, aggregated across all weeks): I = 0.7024, p_sim = 0.0010, significant = True
 
 -- Stage 1 alone vs Stage 2 final: fit to actual case counts --
-(Stage 2's correction (own-district residual lag features, M3-008) substantially IMPROVES aggregate fit - ~51% MAE reduction over Stage 1 alone; see EXPERIMENT_LOG.md M3-008. Superseded the original 16-feature/alpha=0.05 null result, M3-005.)
+(Stage 2's correction (own-district residual lag features, M3-008) substantially IMPROVES aggregate fit over Stage 1 alone - ~51% MAE reduction; see EXPERIMENT_LOG.md M3-008, superseding the original 16-feature/alpha=0.05 null result, M3-005. See the naive-persistence check directly below, though: most of that reduction is achievable with no model at all - M3-010/M3-011.)
                                         stage   corr      mae     rmse
 Stage 1 alone (Risk_0, rescaled KDE_baseline) 0.8241  20.5363  48.1989
     Stage 2 final (Risk, post iterative loop) 0.9554   9.9621  25.0601
                    Change (Stage 2 - Stage 1) 0.1313 -10.5741 -23.1388
 No rows have a negative final Risk value.
+
+-- Naive persistence baseline check (EXPERIMENT_LOG.md M3-010/M3-011) --
+(residual_rescaled_lag_1/lag_2 = 89.8% of RF feature importance, so this checks whether the RF beats simply carrying last week's own residual forward with NO model. It does not beat it on MAE - only on corr/RMSE/ outlier control (clipping rate). A stacked RF-predicts-correction-beyond- persistence variant was also tried and was worse than both on every metric - see M3-011. Kept as the honest context for the MAE-reduction figure above, not a replacement for it.)
+                                                          model   corr     mae    rmse
+                  Stage 1 alone (Risk_0, rescaled KDE_baseline) 0.8241 20.5363 48.1989
+Naive persistence (Risk_0 + last week's own residual, no model) 0.9493  9.4386 26.6343
+        Stage 2 RF, official (Risk_0 + out-of-fold RF residual) 0.9554  9.9621 25.0601
 
 -- Stage 2 RF: out-of-fold residual prediction accuracy (spatial CV) --
 MAE = 9.87 +/- 5.18, RMSE = 23.07 +/- 9.18 (mean +/- std across 5 spatial folds)

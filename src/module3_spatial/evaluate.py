@@ -56,6 +56,7 @@ from src.config import (  # noqa: E402
     MODULE3_STAGE_COMPARISON_PATH,
 )
 from src.module3_spatial.compensation_model import STAGE2_FEATURE_COLUMNS, prepare_training_table
+from src.module3_spatial.persistence_baseline import run_persistence_baseline
 
 logger = logging.getLogger(__name__)
 
@@ -256,6 +257,7 @@ def build_summary_text(
     convergence_df: pd.DataFrame,
     importance_df: pd.DataFrame,
     hybrid_df: pd.DataFrame,
+    persistence_df: pd.DataFrame,
 ) -> str:
     lines: list[str] = []
     lines.append("=" * 78)
@@ -275,12 +277,27 @@ def build_summary_text(
     lines.append("-- Stage 1 alone vs Stage 2 final: fit to actual case counts --")
     lines.append(
         "(Stage 2's correction (own-district residual lag features, M3-008) "
-        "substantially IMPROVES aggregate fit - ~51% MAE reduction over "
-        "Stage 1 alone; see EXPERIMENT_LOG.md M3-008. Superseded the "
-        "original 16-feature/alpha=0.05 null result, M3-005.)"
+        "substantially IMPROVES aggregate fit over Stage 1 alone - ~51% MAE "
+        "reduction; see EXPERIMENT_LOG.md M3-008, superseding the original "
+        "16-feature/alpha=0.05 null result, M3-005. See the naive-persistence "
+        "check directly below, though: most of that reduction is achievable "
+        "with no model at all - M3-010/M3-011.)"
     )
     lines.append(comparison_df.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
     lines.append(negative_risk_note(hybrid_df))
+
+    lines.append("")
+    lines.append("-- Naive persistence baseline check (EXPERIMENT_LOG.md M3-010/M3-011) --")
+    lines.append(
+        "(residual_rescaled_lag_1/lag_2 = 89.8% of RF feature importance, so this "
+        "checks whether the RF beats simply carrying last week's own residual "
+        "forward with NO model. It does not beat it on MAE - only on corr/RMSE/ "
+        "outlier control (clipping rate). A stacked RF-predicts-correction-beyond- "
+        "persistence variant was also tried and was worse than both on every "
+        "metric - see M3-011. Kept as the honest context for the MAE-reduction "
+        "figure above, not a replacement for it.)"
+    )
+    lines.append(persistence_df.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
 
     rf_agg = rf_metrics_df[rf_metrics_df["fold"] == "mean_std"].iloc[0]
     lines.append("")
@@ -326,12 +343,15 @@ def run_evaluation() -> str:
     importance_df = pd.read_csv(MODULE3_RF_FEATURE_IMPORTANCE_PATH)
 
     hybrid_df = pd.read_csv(MODULE3_HYBRID_RISK_MAP_PATH)
+    persistence_df = run_persistence_baseline()
 
     plot_convergence(convergence_df, MODULE3_CONVERGENCE_PLOT_PATH)
     plot_feature_importance(importance_df, MODULE3_FEATURE_IMPORTANCE_PLOT_PATH)
     plot_population_density_pdp(MODULE3_POPULATION_DENSITY_PDP_PLOT_PATH)
 
-    summary = build_summary_text(comparison_df, moransI_df, rf_metrics_df, convergence_df, importance_df, hybrid_df)
+    summary = build_summary_text(
+        comparison_df, moransI_df, rf_metrics_df, convergence_df, importance_df, hybrid_df, persistence_df,
+    )
     print(summary)
 
     MODULE3_RESULTS_SUMMARY_PATH.write_text(summary, encoding="utf-8")

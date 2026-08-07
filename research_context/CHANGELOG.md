@@ -6,6 +6,71 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-08-04 - Module 3 Full Pipeline Reproducibility Verified
+
+### Module
+Module 3
+
+### Change
+No code or model change. Reran the entire Module 3 pipeline from scratch (preprocessing
+through Stage 1, feature engineering, Stage 2 RF + spatial CV, iterative loop, evaluate)
+and diffed every regenerated, git-tracked output against the already-committed files.
+
+### Reason
+The M3-008 promotion's headline numbers (MAE 20.54 -> 9.96) had never been independently
+re-derived after being committed - this closes that gap before the result is written into
+the report as a confirmed finding.
+
+### Impact
+All reported metrics (Moran's I, spatial-CV MAE/RMSE, feature importance, Stage 1 vs.
+Stage 2 comparison, `results_summary.txt`) reproduced exactly. Two raw per-row files
+(`hybrid_risk_map.csv`, `iterative_convergence_log.csv`) showed float64 last-digit noise
+from `RandomForestRegressor(n_jobs=-1)`'s parallel prediction aggregation - confirmed
+inconsequential (no reported figure changed) and reverted. Full detail:
+`module_3_spatial/EXPERIMENT_LOG.md` M3-009.
+
+---
+
+## 2026-08-04 - Module 3 Stage 2 Checked Against a Naive Persistence Baseline; Stacking Fix Rejected
+
+### Module
+Module 3
+
+### Change
+Added a naive-persistence baseline check (`src/module3_spatial/persistence_baseline.py`,
+M3-010): does the official Stage 2 RF beat simply carrying a district's own last-week
+residual forward with no model, given `residual_rescaled_lag_1/lag_2` = 89.8% of its
+feature importance? It does not, on MAE (naive 9.44 vs. RF 9.96) - naive persistence alone
+recovers ~93% of the total MAE reduction over Stage 1. The RF does win on corr (0.9554 vs.
+0.9493) and RMSE (25.06 vs. 26.63), and clips about half as many rows to zero (4.8% vs.
+9.1%), i.e. its real value is damping severe overshoots, not average-case accuracy.
+
+A follow-up fix was tried and rejected (`src/module3_spatial/stacked_persistence_experiment.py`,
+M3-011): having the RF predict only the correction beyond persistence, instead of the raw
+residual, was worse than both naive persistence and the official RF on every metric. The
+official Stage 2 RF (predicts the raw residual directly) remains Module 3's sole reported
+model - unchanged, no code in the official pipeline was modified.
+
+### Reason
+M3-008's headline "51% MAE reduction" had never been checked against the obvious
+zero-modeling baseline implied by its own feature-importance numbers - closing that gap
+before it becomes an unqualified claim in the report.
+
+### Impact
+- `results_summary.txt` (`evaluate.py`) now permanently includes the naive-persistence
+  comparison table alongside the Stage 1 vs. Stage 2 comparison, so the MAE-reduction
+  figure is never reported without this context.
+- `module_3_spatial/MODULE_CONTEXT.md`: new "Stage 2 vs. Naive Persistence Baseline"
+  section; reframes Stage 2's real contribution as outlier/RMSE control, not average-case
+  MAE improvement.
+- `research_context/QUESTIONS_FOR_DEFENSE.md`: new entry.
+- `src/config.py`: added `MODULE3_PERSISTENCE_BASELINE_PATH`, `MODULE3_STACKED_PERSISTENCE_PATH`.
+- Added `outputs/metrics/module3/persistence_baseline_comparison.csv`,
+  `outputs/metrics/module3/stacked_persistence_experiment.csv`.
+- Full detail: `module_3_spatial/EXPERIMENT_LOG.md` M3-010, M3-011.
+
+---
+
 ## 2026-08-05 - Module 3 Stage 2 Promoted to Own-District Residual Lag Features
 
 ### Module

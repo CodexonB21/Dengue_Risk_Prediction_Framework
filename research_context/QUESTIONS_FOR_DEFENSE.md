@@ -216,6 +216,20 @@ This progression is itself worth stating plainly in a defense: the null result w
 
 ---
 
+## If lag_1/lag_2 are 89.8% of feature importance, is Stage 2's RF actually doing anything beyond copying last week's value?
+
+**Short answer:** Partially, yes — but not on the metric usually led with. The RF does NOT beat a zero-modeling "naive persistence" baseline (just carry last week's own residual forward) on MAE; it only wins on correlation and RMSE, via better control of large overshoots/undershoots.
+
+This was checked directly (M3-010), not left as an assumption once the feature-importance number made it look suspicious: naive persistence (`predicted_residual_t = residual_rescaled_lag_1`, combined with `Risk_0` via the exact same formula/alpha the official model uses) achieves MAE 9.44 — slightly BETTER than the official RF's 9.96. Naive persistence alone recovers about 93% of the total MAE reduction over Stage 1 (20.54 → 9.44 vs. the RF's 20.54 → 9.96). The RF does win on correlation (0.9554 vs. 0.9493) and RMSE (25.06 vs. 26.63), and clips roughly half as many rows to zero for negative Risk (4.8% vs. 9.1%) — evidence it dampens the naive predictor's more frequent, more severe overshoots using climate/demographic/monsoon context persistence has no access to.
+
+A follow-up attempt to get the best of both — have the RF predict only the correction beyond persistence, rather than the raw residual — was tried and rejected (M3-011): it was worse than BOTH naive persistence and the official RF on every metric (corr 0.9487, MAE 11.0088, RMSE 26.9565), ruling out that specific "easy win" rather than leaving it untested.
+
+**Honest framing for the report:** state the naive-persistence comparison alongside the "51% MAE reduction" headline, not instead of it. The RF's real, defensible value is controlling the severity of large prediction errors (RMSE, clipping rate) — arguably more operationally relevant for an outbreak-hotspot alerting use case than shaving typical-case MAE — not beating a trivial baseline on average accuracy outright.
+
+**Evidence:** `outputs/metrics/module3/persistence_baseline_comparison.csv`, `outputs/metrics/module3/stacked_persistence_experiment.csv`, `outputs/metrics/module3/results_summary.txt`, `EXPERIMENT_LOG.md` M3-010/M3-011.
+
+---
+
 ## Does Module 3 predict a genuine future hotspot map?
 
 **Short answer:** Yes, as of Decision 031 (2026-08-04) — but only the CASE COUNT is a forecast; the CLIMATE is real observed data, and the output is explicitly `evidence_tier=operational`, not a holdout-validated result.
