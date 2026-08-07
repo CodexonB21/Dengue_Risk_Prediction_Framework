@@ -8,7 +8,7 @@
         <mxCell id="title" value="Integration and Early-Warning Dashboard" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontStyle=1;fontSize=18;fontColor=#1F2937;" vertex="1" parent="1">
           <mxGeometry x="280" y="10" width="600" height="28" as="geometry" />
         </mxCell>
-        <mxCell id="subtitle" value="Figure 5.6 — Module outputs feed one Streamlit decision-support interface (research vs operational evidence tiers)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#4B5563;" vertex="1" parent="1">
+        <mxCell id="subtitle" value="Figure 5.6 — Module outputs feed a 4-page Streamlit decision-support app (research, operational, and prospective evidence tiers)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#4B5563;" vertex="1" parent="1">
           <mxGeometry x="160" y="38" width="840" height="22" as="geometry" />
         </mxCell>
 
@@ -53,7 +53,7 @@
         </mxCell>
 
         <!-- INTEGRATION -->
-        <mxCell id="app" value="&lt;b&gt;Streamlit Decision-Support App&lt;/b&gt;&lt;br&gt;Read-only consumer of&lt;br&gt;versioned analytical artifacts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1E3A8A;strokeColor=#1E3A8A;fontColor=#FFFFFF;fontSize=11;align=center;" vertex="1" parent="1">
+        <mxCell id="app" value="&lt;b&gt;Streamlit Multipage App&lt;/b&gt;&lt;br&gt;Sidebar + st.navigation&lt;br&gt;Read-only consumer of&lt;br&gt;versioned analytical artifacts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1E3A8A;strokeColor=#1E3A8A;fontColor=#FFFFFF;fontSize=11;align=center;" vertex="1" parent="1">
           <mxGeometry x="325" y="200" width="220" height="80" as="geometry" />
         </mxCell>
         <mxCell id="int_note" value="Not a fourth&lt;br&gt;modelling stage" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#FEE2E2;strokeColor=#DC2626;fontColor=#991B1B;fontSize=10;size=12;align=center;" vertex="1" parent="1">
@@ -63,32 +63,35 @@
           <mxGeometry x="325" y="400" width="220" height="50" as="geometry" />
         </mxCell>
 
-        <!-- DASHBOARD VIEWS -->
-        <mxCell id="v1" value="Forecast charts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E5E7EB;strokeColor=#4B5563;fontColor=#111827;fontSize=11;align=center;" vertex="1" parent="1">
-          <mxGeometry x="610" y="120" width="220" height="45" as="geometry" />
+        <!-- DASHBOARD VIEWS (four file-based st.Page entries, fixed order) -->
+        <mxCell id="v1" value="&lt;b&gt;1. Overview&lt;/b&gt;&lt;br&gt;Cold-open story" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E5E7EB;strokeColor=#4B5563;fontColor=#111827;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="610" y="115" width="220" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="v2" value="Risk / alert indicators" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E5E7EB;strokeColor=#4B5563;fontColor=#111827;fontSize=11;align=center;" vertex="1" parent="1">
-          <mxGeometry x="610" y="185" width="220" height="45" as="geometry" />
+        <mxCell id="v2" value="&lt;b&gt;2. Research Evidence&lt;/b&gt;&lt;br&gt;Holdout-validated metrics" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E5E7EB;strokeColor=#4B5563;fontColor=#111827;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="610" y="180" width="220" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="v3" value="Spatial hotspot maps" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E5E7EB;strokeColor=#4B5563;fontColor=#111827;fontSize=11;align=center;" vertex="1" parent="1">
-          <mxGeometry x="610" y="250" width="220" height="45" as="geometry" />
+        <mxCell id="v3" value="&lt;b&gt;3. Operational Monitoring&lt;/b&gt;&lt;br&gt;Live / forward outputs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E5E7EB;strokeColor=#4B5563;fontColor=#111827;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="610" y="245" width="220" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="v4" value="District drill-down" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E5E7EB;strokeColor=#4B5563;fontColor=#111827;fontSize=11;align=center;" vertex="1" parent="1">
-          <mxGeometry x="610" y="315" width="220" height="45" as="geometry" />
+        <mxCell id="v4" value="&lt;b&gt;4. Prospective Tracking&lt;/b&gt;&lt;br&gt;Self-checking accuracy trackers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E5E7EB;strokeColor=#4B5563;fontColor=#111827;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="610" y="310" width="220" height="50" as="geometry" />
         </mxCell>
         <mxCell id="v_note" value="No scenario simulation&lt;br&gt;/ Command Centre stack" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#FEE2E2;strokeColor=#DC2626;fontColor=#991B1B;fontSize=10;size=12;align=center;" vertex="1" parent="1">
-          <mxGeometry x="625" y="400" width="190" height="50" as="geometry" />
+          <mxGeometry x="625" y="385" width="190" height="50" as="geometry" />
         </mxCell>
 
-        <!-- EVIDENCE TIERS -->
+        <!-- EVIDENCE TIERS (three, never conflated in reporting) -->
         <mxCell id="e_res" value="&lt;b&gt;Research Evidence&lt;/b&gt;&lt;br&gt;Holdout-validated metrics&lt;br&gt;(basis for thesis claims)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#86EFAC;strokeColor=#15803D;fontColor=#14532D;fontSize=11;align=center;" vertex="1" parent="1">
-          <mxGeometry x="895" y="140" width="220" height="75" as="geometry" />
+          <mxGeometry x="895" y="120" width="220" height="70" as="geometry" />
         </mxCell>
         <mxCell id="e_ops" value="&lt;b&gt;Operational Prototype&lt;/b&gt;&lt;br&gt;Forward forecasts / live risk&lt;br&gt;(labeled separately)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FDE68A;strokeColor=#B45309;fontColor=#78350F;fontSize=11;align=center;" vertex="1" parent="1">
-          <mxGeometry x="895" y="250" width="220" height="75" as="geometry" />
+          <mxGeometry x="895" y="220" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="e_prosp" value="&lt;b&gt;Prospective Tracking&lt;/b&gt;&lt;br&gt;Logged forward predictions&lt;br&gt;reconciled once real weeks resolve" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="895" y="320" width="220" height="70" as="geometry" />
         </mxCell>
         <mxCell id="e_users" value="&lt;b&gt;Intended users&lt;/b&gt;&lt;br&gt;Public health analysts&lt;br&gt;(decision support)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6B7280;fontColor=#374151;fontSize=11;align=center;" vertex="1" parent="1">
-          <mxGeometry x="895" y="360" width="220" height="70" as="geometry" />
+          <mxGeometry x="895" y="420" width="220" height="65" as="geometry" />
         </mxCell>
 
         <!-- Edges -->
@@ -117,6 +120,9 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#B45309;strokeWidth=2;dashed=1;endArrow=block;endFill=1;" edge="1" parent="1" source="app" target="e_ops">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2563EB;strokeWidth=2;dashed=1;endArrow=block;endFill=1;" edge="1" parent="1" source="app" target="e_prosp">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>

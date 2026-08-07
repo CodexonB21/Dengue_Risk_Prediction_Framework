@@ -7,6 +7,23 @@ Stage 1's probability distribution enough to flip Stage 2's architecture selecti
 Figure 7.4's generator script was also fixed to label the calibrated curve dynamically
 from the data rather than a hardcoded name, so this cannot silently go stale again.
 
+**Updated 2026-08-07 (poster-prep audit):** the 2026-08-06 correction above updated this
+plan's *text* but the actual Figure 5.1/5.4 diagram files were never regenerated — both
+still rendered "Isotonic Regression" until now. Fixed and regenerated (Isotonic → Platt
+scaling, "Random Forest" → "Random Forest (tuned)"): `figure_5_1_system_architecture.png`
+(via `generate_figure_5_1_architecture.py`) and `figure_5_4_module2_architecture.png`/
+`.drawio` (new companion generator `generate_figure_5_4_module2_architecture.py`, so the
+PNG can be regenerated after any future drawio text edit instead of drifting again).
+Figure 5.6 was also stale on an unrelated axis — it predated the 2026-08-07 dashboard
+redesign (Decision — 4-page multipage app) and showed only two evidence tiers, missing
+the Prospective Tracking tier added by Decisions 041/048. Corrected: dashboard views now
+list the actual four pages (Overview / Research Evidence / Operational Monitoring /
+Prospective Tracking) and evidence tiers now show three (Research Evidence / Operational
+Prototype / Prospective Tracking). New companion generator:
+`generate_figure_5_6_integration_dashboard.py`. Figures 5.3 (Module 1) and 5.5 (Module 3)
+were checked against their current `MODULE_CONTEXT.md` files and found already accurate —
+not touched.
+
 ## Purpose
 
 This file tracks diagrams, figures, charts, and tables planned for the final report.
@@ -185,6 +202,7 @@ Notes:
 - Must show shared vs module-specific preprocessing, not one undifferentiated preprocessing block.
 - Modules are largely parallel peers; optional dashed M1→M2 for operational forward only.
 - Correct models: M1 SARIMA→XGBoost; M2 tuned RF→Platt scaling (Decision 047 — was isotonic before Stage 1 tuning); M3 KDE/Moran→RF α=0.05.
+- **Verified current (2026-08-07)**: PNG regenerated from `generate_figure_5_1_architecture.py` — Module 2 column now reads "Random Forest (tuned)" → "Platt scaling".
 
 ---
 
@@ -269,9 +287,13 @@ Figure 5.4: High-level architecture of Module 2 — Hybrid Outbreak Risk Classif
 Source / file:
 
 - **Primary (new 4-column layout):** `research_context/report_drafts/diagrams/figure_5_4_module2_architecture.drawio`
-- **PNG export:** `research_context/report_drafts/diagrams/figure_5_4_module2_architecture.png`
-- Legacy vertical flow: `figure_5_5_module2_architecture.drawio` (superseded layout; keep for reference)
+- **PNG export:** `research_context/report_drafts/diagrams/figure_5_4_module2_architecture.png` — regenerate via the new
+  companion `generate_figure_5_4_module2_architecture.py` after any further drawio text edit.
+- Legacy vertical flow: `figure_5_5_module2_architecture.drawio` (superseded layout; still says "isotonic" — kept for
+  reference only, not corrected, since it predates the 4-column layout and is not the figure actually used)
 - Referenced from: `research_context/report_drafts/chapter5_5.4.2_module2.md`
+- **Corrected 2026-08-07**: was still rendering "Isotonic Regression" despite this plan's 2026-08-06 text update —
+  drawio + PNG now both say "Platt Scaling" / "Random Forest (tuned)".
 
 Key design facts on the figure:
 
@@ -349,8 +371,13 @@ Figure 5.6: Integration of module outputs into the early-warning dashboard (Stre
 Source / file:
 
 - **Primary:** `research_context/report_drafts/diagrams/figure_5_6_integration_dashboard.drawio`
-- **PNG export:** `research_context/report_drafts/diagrams/figure_5_6_integration_dashboard.png`
+- **PNG export:** `research_context/report_drafts/diagrams/figure_5_6_integration_dashboard.png` — regenerate via the
+  new companion `generate_figure_5_6_integration_dashboard.py` after any further drawio text edit.
 - Referenced from: `research_context/report_drafts/chapter5_5.5_integration.md`
+- **Corrected 2026-08-07**: predated the 2026-08-07 dashboard redesign (4-page multipage app) and the Prospective
+  Tracking evidence tier (Decisions 041/048). Dashboard Views column now lists the actual four pages (Overview /
+  Research Evidence / Operational Monitoring / Prospective Tracking); Evidence Tiers column now shows three tiers
+  (added Prospective Tracking alongside Research Evidence / Operational Prototype).
 
 Key design facts on the figure:
 

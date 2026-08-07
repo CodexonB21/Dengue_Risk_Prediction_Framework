@@ -1,0 +1,58 @@
+<mxfile host="app.diagrams.net" agent="Codexon FYP Poster" version="22.1.0" type="device">
+  <diagram id="poster_figure_module3" name="Module 3">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1500" pageHeight="1060" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="c2" value="Input: Weekly cases + climate + spatial/demographic covariates (GADM Level-1, 25 districts)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;fontColor=#78350F;fontSize=14;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="75.0" y="169.6" width="1350.0" height="84.8" as="geometry" />
+        </mxCell>
+        <mxCell id="c3" style="endArrow=block;endFill=1;html=1;strokeColor=#D97706;strokeWidth=3;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="750.0" y="254.4" as="sourcePoint" />
+            <mxPoint x="750.0" y="307.4" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c4" value="Stage 1 — KDE + Moran's I&lt;br&gt;Case-weighted kernel density&lt;br&gt;over district centroids,&lt;br&gt;validated by spatial clustering" style="rounded=1;whiteSpace=wrap;html=1;fillColor=white;strokeColor=#D97706;fontColor=#78350F;fontSize=13;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="120.0" y="312.7" width="600.0" height="132.5" as="geometry" />
+        </mxCell>
+        <mxCell id="c5" value="Stage 2 — Random Forest&lt;br&gt;Iterative update:&lt;br&gt;Riskₜ = Riskₜ₋₁ + α·Δ̂&lt;br&gt;(α = 0.05, converges in 1 pass)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D97706;strokeColor=#D97706;fontColor=white;fontSize=13;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="780.0" y="312.7" width="600.0" height="132.5" as="geometry" />
+        </mxCell>
+        <mxCell id="c6" style="endArrow=block;endFill=1;html=1;strokeColor=#374151;strokeWidth=3;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="720.0" y="379.5" as="sourcePoint" />
+            <mxPoint x="780.0" y="379.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c7" value="Residual = Actual case intensity − Current risk" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=14.5;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="300.0" y="524.7" width="900.0" height="90.1" as="geometry" />
+        </mxCell>
+        <mxCell id="c8" style="endArrow=block;endFill=1;html=1;strokeColor=#D97706;strokeWidth=2.6;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="420.0" y="445.2" as="sourcePoint" />
+            <mxPoint x="525.0" y="524.7" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c9" style="endArrow=block;endFill=1;html=1;strokeColor=#D97706;strokeWidth=2.6;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1080.0" y="445.2" as="sourcePoint" />
+            <mxPoint x="975.0" y="524.7" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c10" style="endArrow=block;endFill=1;html=1;strokeColor=#374151;strokeWidth=3;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="750.0" y="614.8" as="sourcePoint" />
+            <mxPoint x="750.0" y="673.1" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c11" value="Output: Hybrid Risk / Hotspot Map (district-week; IDW surface for visualization only)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;fontColor=#78350F;fontSize=13;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="225.0" y="689.0" width="1050.0" height="84.8" as="geometry" />
+        </mxCell>
+        <mxCell id="c12" value="Validated result (spatial K-means cross-validation, 5 folds):&lt;br&gt;Global Moran's I = 0.70 (p = 0.001) — genuine spatial clustering confirmed&lt;br&gt;Stage 2 adds explanatory value (population density + climate timing)&lt;br&gt;though the small, stability-tuned α leaves aggregate case-fit unchanged" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FDE68A;strokeColor=#B45309;fontColor=#111827;fontSize=13.5;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="150.0" y="837.4" width="1200.0" height="159.0" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

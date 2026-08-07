@@ -6,6 +6,57 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-08-07 - Report diagrams (Figures 5.1, 5.4, 5.6) corrected ahead of poster redesign
+
+### Module
+Report / Diagrams
+
+### Change
+Auditing the report's architecture diagrams before redesigning them for the final-evaluation
+poster surfaced two staleness issues the 2026-08-06 text-only correction had missed. Fixed both:
+
+1. **Figure 5.1** (top-level architecture) and **Figure 5.4** (Module 2 architecture) still
+   rendered "Isotonic Regression" for Module 2 Stage 2 and plain "Random Forest" for Stage 1 —
+   `REPORT_DIAGRAM_PLAN.md`'s prose had already been corrected for Decision 047/M2-013 on
+   2026-08-06, but the actual diagram files were never regenerated to match. Both now read
+   "Random Forest (tuned)" → "Platt scaling".
+2. **Figure 5.6** (integration/dashboard) predated the same day's dashboard redesign (4-page
+   multipage app) and the Prospective Tracking evidence tier (Decisions 041/048) — it showed a
+   generic single dashboard box and only two evidence tiers. Corrected to list the actual four
+   pages (Overview / Research Evidence / Operational Monitoring / Prospective Tracking) and
+   three evidence tiers (added Prospective Tracking).
+
+Figures 5.3 (Module 1) and 5.5 (Module 3) were checked against their current `MODULE_CONTEXT.md`
+files and found already accurate — not modified.
+
+### Reason
+User requested a poster-presentation redesign of the architecture diagrams; per the Diagram and
+Figure Rules, the latest architecture documentation must be checked before proposing/redrawing
+any diagram. That check found the report's own source-of-truth figures had drifted from the
+decisions they were supposed to reflect.
+
+### Impact
+- `figure_5_1_system_architecture.png`/`figure_high_level_system_architecture.png` regenerated
+  via (edited) `generate_figure_5_1_architecture.py`.
+- `figure_5_4_module2_architecture.drawio` text corrected; new companion
+  `generate_figure_5_4_module2_architecture.py` added so the PNG renders directly from the
+  drawio's content and cannot drift out of sync again (no draw.io CLI available in this
+  environment to export the edited XML directly).
+- `figure_5_6_integration_dashboard.drawio` text corrected (dashboard pages + evidence tiers);
+  new companion `generate_figure_5_6_integration_dashboard.py` added, same rationale.
+- `figure_5_5_module2_architecture.drawio` (explicitly superseded legacy layout, kept for
+  reference only) was left unchanged — it is not the figure referenced by the report.
+- `research_context/REPORT_DIAGRAM_PLAN.md` updated with the correction notes above.
+
+### Status
+Complete. Poster-specific diagrams (separate from these report figures) follow in the same
+session.
+
+### Documentation Updated
+`research_context/REPORT_DIAGRAM_PLAN.md`, `research_context/CHANGELOG.md` (this entry).
+
+---
+
 ## 2026-08-07 - Dashboard redesigned into a 4-page multipage app for evaluator self-explanatoriness
 
 ### Module

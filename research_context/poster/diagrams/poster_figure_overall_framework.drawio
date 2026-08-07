@@ -1,0 +1,196 @@
+<mxfile host="app.diagrams.net" agent="Codexon FYP Poster" version="22.1.0" type="device">
+  <diagram id="poster_figure_overall_framework" name="Overall Framework">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="c2" value="Weekly Dengue Cases&lt;br&gt;MoH, 25 districts, 2007–2026" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;fontColor=#0C4A6E;fontSize=12.5;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="51.0" y="121.0" width="442.0" height="77.0" as="geometry" />
+        </mxCell>
+        <mxCell id="c3" value="Climate Data&lt;br&gt;Open-Meteo: rainfall, temperature, humidity" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;fontColor=#0C4A6E;fontSize=12.5;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="629.0" y="121.0" width="442.0" height="77.0" as="geometry" />
+        </mxCell>
+        <mxCell id="c4" value="Spatial &amp; Demographic&lt;br&gt;GADM districts, census population, elevation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;fontColor=#0C4A6E;fontSize=12.5;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="1207.0" y="121.0" width="442.0" height="77.0" as="geometry" />
+        </mxCell>
+        <mxCell id="c5" style="endArrow=block;endFill=1;html=1;strokeColor=#0284C7;strokeWidth=2.2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="272.0" y="198.0" as="sourcePoint" />
+            <mxPoint x="850.0" y="236.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c6" style="endArrow=block;endFill=1;html=1;strokeColor=#0284C7;strokeWidth=2.2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="850.0" y="198.0" as="sourcePoint" />
+            <mxPoint x="850.0" y="236.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c7" style="endArrow=block;endFill=1;html=1;strokeColor=#0284C7;strokeWidth=2.2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1428.0" y="198.0" as="sourcePoint" />
+            <mxPoint x="850.0" y="236.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c8" value="Shared Preprocessing  —  district merge · epi-week calendar · climate aggregation · population interpolation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1E3A8A;strokeColor=#1E3A8A;fontColor=white;fontSize=13;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="255.0" y="242.0" width="1190.0" height="71.5" as="geometry" />
+        </mxCell>
+        <mxCell id="c9" value="MODULE 1&lt;br&gt;Case Forecasting" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;fontColor=#14532D;fontSize=13.5;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="34.0" y="346.5" width="510.0" height="60.5" as="geometry" />
+        </mxCell>
+        <mxCell id="c10" style="endArrow=block;endFill=1;html=1;strokeColor=#16A34A;strokeWidth=2.4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="289.0" y="313.5" as="sourcePoint" />
+            <mxPoint x="289.0" y="346.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c11" value="Stage 1&lt;br&gt;SARIMA&lt;br&gt;(per district)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=white;strokeColor=#16A34A;fontColor=#14532D;fontSize=12.5;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="34.0" y="423.5" width="510.0" height="88.0" as="geometry" />
+        </mxCell>
+        <mxCell id="c12" style="endArrow=block;endFill=1;html=1;strokeColor=#16A34A;strokeWidth=2.4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="289.0" y="407.0" as="sourcePoint" />
+            <mxPoint x="289.0" y="423.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c13" value="Stage 2&lt;br&gt;XGBoost&lt;br&gt;(residual compensation)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#16A34A;strokeColor=#16A34A;fontColor=white;fontSize=12.5;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="34.0" y="533.5" width="510.0" height="93.5" as="geometry" />
+        </mxCell>
+        <mxCell id="c14" style="endArrow=block;endFill=1;html=1;strokeColor=#16A34A;strokeWidth=2.4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="289.0" y="511.5" as="sourcePoint" />
+            <mxPoint x="289.0" y="533.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c15" value="Weekly Case&lt;br&gt;Forecast" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;fontColor=#14532D;fontSize=13;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="34.0" y="643.5" width="510.0" height="66.0" as="geometry" />
+        </mxCell>
+        <mxCell id="c16" style="endArrow=block;endFill=1;html=1;strokeColor=#16A34A;strokeWidth=2.4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="289.0" y="627.0" as="sourcePoint" />
+            <mxPoint x="289.0" y="643.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c17" value="Median MASE&lt;br&gt;↓ 43.5% (validation)&lt;br&gt;↓ 32.7% (holdout)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FDE68A;strokeColor=#B45309;fontColor=#111827;fontSize=13.5;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="59.5" y="731.5" width="459.0" height="71.5" as="geometry" />
+        </mxCell>
+        <mxCell id="c18" style="endArrow=block;endFill=1;html=1;strokeColor=#16A34A;strokeWidth=1.8;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="289.0" y="709.5" as="sourcePoint" />
+            <mxPoint x="289.0" y="731.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c19" value="MODULE 2&lt;br&gt;Outbreak Risk Classification" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=13.5;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="595.0" y="346.5" width="510.0" height="60.5" as="geometry" />
+        </mxCell>
+        <mxCell id="c20" style="endArrow=block;endFill=1;html=1;strokeColor=#2563EB;strokeWidth=2.4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="850.0" y="313.5" as="sourcePoint" />
+            <mxPoint x="850.0" y="346.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c21" value="Stage 1&lt;br&gt;Random Forest&lt;br&gt;(tuned)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=white;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=12.5;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="595.0" y="423.5" width="510.0" height="88.0" as="geometry" />
+        </mxCell>
+        <mxCell id="c22" style="endArrow=block;endFill=1;html=1;strokeColor=#2563EB;strokeWidth=2.4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="850.0" y="407.0" as="sourcePoint" />
+            <mxPoint x="850.0" y="423.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c23" value="Stage 2&lt;br&gt;Platt Scaling&lt;br&gt;(probability calibration)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2563EB;strokeColor=#2563EB;fontColor=white;fontSize=12.5;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="595.0" y="533.5" width="510.0" height="93.5" as="geometry" />
+        </mxCell>
+        <mxCell id="c24" style="endArrow=block;endFill=1;html=1;strokeColor=#2563EB;strokeWidth=2.4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="850.0" y="511.5" as="sourcePoint" />
+            <mxPoint x="850.0" y="533.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c25" value="Alert Flag &amp;&lt;br&gt;Risk Tier" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=13;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="595.0" y="643.5" width="510.0" height="66.0" as="geometry" />
+        </mxCell>
+        <mxCell id="c26" style="endArrow=block;endFill=1;html=1;strokeColor=#2563EB;strokeWidth=2.4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="850.0" y="627.0" as="sourcePoint" />
+            <mxPoint x="850.0" y="643.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c27" value="Holdout&lt;br&gt;PR-AUC 0.42&lt;br&gt;ROC-AUC 0.91" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FDE68A;strokeColor=#B45309;fontColor=#111827;fontSize=13.5;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="620.5" y="731.5" width="459.0" height="71.5" as="geometry" />
+        </mxCell>
+        <mxCell id="c28" style="endArrow=block;endFill=1;html=1;strokeColor=#2563EB;strokeWidth=1.8;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="850.0" y="709.5" as="sourcePoint" />
+            <mxPoint x="850.0" y="731.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c29" value="MODULE 3&lt;br&gt;Spatial Hotspot Detection" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;fontColor=#78350F;fontSize=13.5;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="1156.0" y="346.5" width="510.0" height="60.5" as="geometry" />
+        </mxCell>
+        <mxCell id="c30" style="endArrow=block;endFill=1;html=1;strokeColor=#D97706;strokeWidth=2.4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1411.0" y="313.5" as="sourcePoint" />
+            <mxPoint x="1411.0" y="346.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c31" value="Stage 1&lt;br&gt;KDE + Moran's I&lt;br&gt;(spatial baseline)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=white;strokeColor=#D97706;fontColor=#78350F;fontSize=12.5;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="1156.0" y="423.5" width="510.0" height="88.0" as="geometry" />
+        </mxCell>
+        <mxCell id="c32" style="endArrow=block;endFill=1;html=1;strokeColor=#D97706;strokeWidth=2.4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1411.0" y="407.0" as="sourcePoint" />
+            <mxPoint x="1411.0" y="423.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c33" value="Stage 2&lt;br&gt;Random Forest&lt;br&gt;(α = 0.05, iterative)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D97706;strokeColor=#D97706;fontColor=white;fontSize=12.5;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="1156.0" y="533.5" width="510.0" height="93.5" as="geometry" />
+        </mxCell>
+        <mxCell id="c34" style="endArrow=block;endFill=1;html=1;strokeColor=#D97706;strokeWidth=2.4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1411.0" y="511.5" as="sourcePoint" />
+            <mxPoint x="1411.0" y="533.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c35" value="Hybrid Risk /&lt;br&gt;Hotspot Map" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;fontColor=#78350F;fontSize=13;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="1156.0" y="643.5" width="510.0" height="66.0" as="geometry" />
+        </mxCell>
+        <mxCell id="c36" style="endArrow=block;endFill=1;html=1;strokeColor=#D97706;strokeWidth=2.4;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1411.0" y="627.0" as="sourcePoint" />
+            <mxPoint x="1411.0" y="643.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c37" value="Moran's I&lt;br&gt;= 0.70 (p = 0.001)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FDE68A;strokeColor=#B45309;fontColor=#111827;fontSize=13.5;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="1181.5" y="731.5" width="459.0" height="71.5" as="geometry" />
+        </mxCell>
+        <mxCell id="c38" style="endArrow=block;endFill=1;html=1;strokeColor=#D97706;strokeWidth=1.8;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1411.0" y="709.5" as="sourcePoint" />
+            <mxPoint x="1411.0" y="731.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c39" value="Streamlit Early-Warning Dashboard  —  4 pages: Overview · Research Evidence · Operational Monitoring · Prospective Tracking" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#047857;fontColor=#065F46;fontSize=13;fontStyle=1;align=center;strokeWidth=2.2;" vertex="1" parent="1">
+          <mxGeometry x="255.0" y="847.0" width="1190.0" height="82.5" as="geometry" />
+        </mxCell>
+        <mxCell id="c40" style="endArrow=block;endFill=1;html=1;strokeColor=#16A34A;strokeWidth=2.0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="289.0" y="803.0" as="sourcePoint" />
+            <mxPoint x="850.0" y="841.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c41" style="endArrow=block;endFill=1;html=1;strokeColor=#2563EB;strokeWidth=2.0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="850.0" y="803.0" as="sourcePoint" />
+            <mxPoint x="850.0" y="841.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c42" style="endArrow=block;endFill=1;html=1;strokeColor=#D97706;strokeWidth=2.0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1411.0" y="803.0" as="sourcePoint" />
+            <mxPoint x="850.0" y="841.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
