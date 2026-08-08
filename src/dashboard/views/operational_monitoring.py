@@ -26,12 +26,16 @@ from src.config import (
     MODULE1_WEEKLY_MODELING_TABLE_PATH,
     MODULE2_FUTURE_RISK_PREDICTIONS_PATH,
     MODULE2_LIVE_RISK_PREDICTIONS_PATH,
-    MODULE3_FUTURE_HOTSPOT_FORECAST_PATH,
     MODULE3_HYBRID_RISK_MAP_PATH,
     SHARED_CLIMATE_WEEKLY_PATH,
 )
 from src.dashboard.components import column_help, evidence_badge, get_thresholds, module_badge
-from src.dashboard.data_loaders import load_csv, load_district_geometry, load_m1_nowcast
+from src.dashboard.data_loaders import (
+    load_csv,
+    load_district_geometry,
+    load_m1_nowcast,
+    load_m3_hotspot_forecast,
+)
 from src.module3_spatial.kde_baseline import (
     district_centroid_coords,
     load_district_boundaries,
@@ -296,156 +300,105 @@ def render_operational_page(
 
     st.divider()
     module_badge("m3")
-    st.subheader("Module 3 — spatial hotspot map (Hybrid Risk)")
+    st.subheader("Module 3 — spatial hotspot map")
     evidence_badge("operational_live")
-    st.caption(
-        "Hybrid Risk is Stage 2's output (KDE spatial baseline + RF residual correction), "
-        "not a validated forecast. See the **Research evidence** page for Stage 1/Stage 2 "
-        "validation numbers (Moran's I, convergence, fit comparison)."
+    st.caption("Hybrid Risk = KDE spatial baseline + Random Forest relative-residual correction.")
+    with st.expander("How this map is built"):
+        st.markdown(
+            "- **Colour** is the Hybrid Risk score (KDE spatial baseline + Stage 2 "
+            "correction), interpolated continuously via nearest-neighbour distance "
+            "weighting — risk blends across the border between two high-risk "
+            "neighbouring districts rather than stopping dead at a district line.\n"
+            "- **This week** uses real reported cases. **Next week (forecast)** uses "
+            "Module 1's case forecast plus real *observed* climate — Module 3's "
+            "reporting lag means the forecast week's weather has already happened. "
+            "See Decision 031 (`research_context/RESEARCH_DECISIONS.md`).\n"
+            "- Not a validated forecast — see the **Research evidence** page for "
+            "Stage 1/Stage 2 validation numbers (Moran's I, convergence, fit comparison)."
+        )
+
+    mode = st.segmented_control(
+        "Timeframe",
+        ["This week", "Next week (forecast)"],
+        default="This week",
+        required=True,
+        label_visibility="collapsed",
     )
 
-    if hybrid_risk.empty or district_geometry.empty:
-        st.info(
-            "Hybrid risk map or district geometry not found — run "
-            "`python -m src.module3_spatial.iterative_loop`."
-        )
-    else:
-        week_options_df = hybrid_risk[["Year", "Week"]].drop_duplicates().sort_values(["Year", "Week"])
-        week_options = [f"{int(r.Year)} Wk{int(r.Week)}" for r in week_options_df.itertuples()]
+    top5 = pd.DataFrame()
 
-        selected_label = st.select_slider(
-            "Week to display on the map (drag to scrub through history, e.g. to the 2017 outbreak peak)",
-            options=week_options,
-            value=week_options[-1],
-            key="module3_map_week",
-        )
-        selected_year_str, selected_week_str = selected_label.split(" Wk")
-        selected_year, selected_week = int(selected_year_str), int(selected_week_str)
-
-        latest = hybrid_risk.loc[
-            (hybrid_risk["Year"] == selected_year) & (hybrid_risk["Week"] == selected_week)
-        ]
-        latest_year, latest_week = selected_year, selected_week
-
-        if selected_label == week_options[-1]:
-            st.caption(f"Latest available district-week: **{selected_label}** (selected district **{district}** outlined in black).")
+    if mode == "This week":
+        if hybrid_risk.empty or district_geometry.empty:
+            st.info(
+                "Hybrid risk map or district geometry not found — run "
+                "`python -m src.module3_spatial.iterative_loop`."
+            )
         else:
-            st.caption(
-                f"Viewing **{selected_label}** — not the latest week (latest is **{week_options[-1]}**) "
-                f"(selected district **{district}** outlined in black)."
-            )
+            week_options_df = hybrid_risk[["Year", "Week"]].drop_duplicates().sort_values(["Year", "Week"])
+            week_options = [f"{int(r.Year)} Wk{int(r.Week)}" for r in week_options_df.itertuples()]
 
-        # A radio switcher, not st.tabs(): Streamlit mounts every st.tabs()
-        # panel's content on every script run and only CSS-hides the
-        # inactive ones - a Leaflet map mounted inside a display:none
-        # container sizes itself to zero and never recovers (this is
-        # exactly what made the Folium map render totally blank earlier,
-        # see MODULE_CONTEXT.md's root-cause note). A radio button instead
-        # means Python only ever constructs the ONE currently-selected
-        # map each run, so the other two are never mounted hidden at all.
-        view = st.radio(
-            "Module 3 map view",
-            [
-                "District boundaries (choropleth)",
-                "Heat cloud (Folium)",
-                "Hotspot markers (precise)",
-                "Heat glow (Uber-style)",
-            ],
-            horizontal=True,
-            label_visibility="collapsed",
-            key="module3_map_view",
-        )
+            with st.expander(f"Explore an earlier week (showing latest: {week_options[-1]})"):
+                selected_label = st.select_slider(
+                    "Week",
+                    options=week_options,
+                    value=week_options[-1],
+                    key="module3_map_week",
+                    label_visibility="collapsed",
+                )
+            selected_year_str, selected_week_str = selected_label.split(" Wk")
+            selected_year, selected_week = int(selected_year_str), int(selected_week_str)
 
-        if view == "District boundaries (choropleth)":
-            st.caption(
-                "Precise district polygons colored by Hybrid Risk (YlOrRd) - each district "
-                "reads as a single flat value, the exact number driving the other two views' "
-                "color/size but without their spatial blending or double-encoding."
-            )
-            fig = _hybrid_risk_choropleth(district_geometry, latest, district, latest_year, latest_week)
-            st.plotly_chart(fig, use_container_width=True)
-        elif view == "Heat cloud (Folium)":
-            st.caption(
-                "Continuous heat-cloud intensity weighted by Hybrid Risk, interpolated via "
-                "nearest-neighbour distance weighting — risk visibly concentrates toward the "
-                "border between two high-risk neighbouring districts rather than blobbing "
-                "solidly around each district's own centroid. Click a pin for that district's "
-                "exact values."
-            )
+            latest = hybrid_risk.loc[
+                (hybrid_risk["Year"] == selected_year) & (hybrid_risk["Week"] == selected_week)
+            ]
+
             heatmap = _hybrid_risk_folium_heatmap(district_geometry, latest, district)
-            st_folium(heatmap, use_container_width=True, height=600, returned_objects=[])
-        elif view == "Hotspot markers (precise)":
-            st.caption(
-                "One marker per district centroid, both SIZE and COLOR driven by that "
-                "district's Hybrid Risk (bigger and redder = higher risk) - a precise, "
-                "double-encoded complement to the heat-cloud's smoothed, border-blended view. "
-                "Click a marker for that district's exact values."
-            )
-            circle_map = _hybrid_risk_circle_map(district_geometry, latest, district)
-            st_folium(circle_map, use_container_width=True, height=600, returned_objects=[])
-        else:
-            st.caption(
-                "Uber Rider-app style heat glow: dark blue-tinted basemap, each district's "
-                "own real shape glowing green-to-red by Hybrid Risk (blurred edges, not a "
-                "generic circle). A stylistic view, not the fine-grained interpolation the "
-                "Heat cloud tab uses."
-            )
-            uber_map = _hybrid_risk_uber_heatmap(district_geometry, latest, district)
-            st_folium(uber_map, use_container_width=True, height=600, returned_objects=[])
+            st_folium(heatmap, width="stretch", height=600, returned_objects=[], key="module3_map")
 
-        district_row = latest.loc[latest["District"] == district]
-        if not district_row.empty:
-            row = district_row.iloc[0]
-            m1, m2 = st.columns(2)
-            m1.metric(f"{district}: Hybrid Risk", f"{row['Risk']:.1f}")
-            m2.metric(f"{district}: Actual cases (same week)", int(row["Number_of_Cases"]))
+            district_row = latest.loc[latest["District"] == district]
+            if not district_row.empty:
+                row = district_row.iloc[0]
+                c1, c2 = st.columns(2)
+                c1.metric(f"{district}: Hybrid Risk", f"{row['Risk']:.1f}")
+                c2.metric(f"{district}: actual cases (same week)", int(row["Number_of_Cases"]))
 
-        st.markdown(f"##### {district}: actual vs. predicted, full history")
-        st.caption(
-            "Predicted (Hybrid Risk) is out-of-fold (5-fold spatial K-means CV) — a model "
-            "that never trained on this district. The panel below shows Predicted minus "
-            "Actual: green above zero = over-predicted, red below zero = under-predicted. "
-            "Change the district in the sidebar to update both panels together."
-        )
-        history_fig = _hybrid_risk_actual_vs_predicted_chart(hybrid_risk, district)
-        st.plotly_chart(history_fig, use_container_width=True)
+            top5 = latest.sort_values("Risk", ascending=False).head(5)[["District", "Risk"]]
 
-    st.divider()
-    module_badge("m3")
-    st.subheader("Module 3 — next-week hotspot forecast")
-    evidence_badge("operational_live")
-    st.caption(
-        "The forecast week's CASE COUNT is Module 1's forward forecast "
-        "(`cases_source=module1_forecast`), not yet reported. Its CLIMATE is real "
-        "observed weather, not a meteorological forecast — Module 3's case-count "
-        "reporting lags real calendar time by several weeks, so the forecast week's "
-        "dates have already passed by the time this runs. See Decision 031 "
-        "(`research_context/RESEARCH_DECISIONS.md`) for the full reasoning."
-    )
-
-    if hotspot_forecast.empty or district_geometry.empty:
-        st.info(
-            "Forecast not found — run `python -m src.module3_spatial.forecast_future`."
-        )
     else:
-        fc_latest = hotspot_forecast.sort_values(["Year", "Week"]).groupby(["Year", "Week"]).tail(len(DISTRICTS))
-        fc_year = int(fc_latest["Year"].iloc[0])
-        fc_week = int(fc_latest["Week"].iloc[0])
-        st.caption(
-            f"Forecast district-week: **{fc_year} Wk{fc_week}** "
-            f"(selected district **{district}** outlined in black)."
-        )
+        if hotspot_forecast.empty or district_geometry.empty:
+            st.info("Forecast not found — run `python -m src.module3_spatial.forecast_future`.")
+        else:
+            fc_latest = hotspot_forecast.sort_values(["Year", "Week"]).groupby(["Year", "Week"]).tail(len(DISTRICTS))
+            fc_year, fc_week = int(fc_latest["Year"].iloc[0]), int(fc_latest["Week"].iloc[0])
+            st.caption(f"Forecast week: **{fc_year} Wk{fc_week}**.")
 
-        fc_adapter = fc_latest.rename(columns={"Risk_forecast": "Risk", "cases_forecast": "Number_of_Cases"})
-        fc_heatmap = _hybrid_risk_folium_heatmap(district_geometry, fc_adapter, district)
-        st_folium(fc_heatmap, use_container_width=True, height=600, returned_objects=[], key="module3_forecast_heatmap")
+            fc_adapter = fc_latest.rename(columns={"Risk_forecast": "Risk", "cases_forecast": "Number_of_Cases"})
+            heatmap = _hybrid_risk_folium_heatmap(district_geometry, fc_adapter, district)
+            st_folium(heatmap, width="stretch", height=600, returned_objects=[], key="module3_map")
 
-        fc_row = fc_adapter.loc[fc_adapter["District"] == district]
-        if not fc_row.empty:
-            row = fc_row.iloc[0]
-            m1, m2 = st.columns(2)
-            m1.metric(f"{district}: Forecast Hybrid Risk", f"{row['Risk']:.1f}")
-            m2.metric(f"{district}: Forecast cases (Module 1)", f"{row['Number_of_Cases']:.0f}")
+            fc_row = fc_adapter.loc[fc_adapter["District"] == district]
+            if not fc_row.empty:
+                row = fc_row.iloc[0]
+                c1, c2, c3 = st.columns(3)
+                c1.metric(f"{district}: forecast Hybrid Risk", f"{row['Risk']:.1f}")
+                c2.metric("Stage 1 baseline (Risk_0)", f"{row['Risk_0_forecast']:.1f}")
+                c3.metric("Relative correction", f"{row['predicted_relative_residual']:+.2f}")
+
+            top5 = fc_adapter.sort_values("Risk", ascending=False).head(5)[["District", "Risk"]]
+
+    if not top5.empty:
+        st.write("Top 5 districts by Hybrid Risk (national context)")
+        st.dataframe(top5, width="stretch", hide_index=True)
+
+    if not hybrid_risk.empty:
+        with st.expander(f"{district}: model accuracy detail (out-of-fold history)"):
+            st.caption(
+                "Predicted (Hybrid Risk) is out-of-fold (5-fold spatial K-means CV) — a "
+                "model that never trained on this district. Green above zero = "
+                "over-predicted, red below zero = under-predicted."
+            )
+            history_fig = _hybrid_risk_actual_vs_predicted_chart(hybrid_risk, district)
+            st.plotly_chart(history_fig, width="stretch")
 
 
 def _latest_hybrid_risk(hybrid_risk: pd.DataFrame) -> pd.DataFrame:
@@ -930,7 +883,7 @@ _m1_weekly = load_csv(MODULE1_WEEKLY_MODELING_TABLE_PATH)
 _climate = load_csv(SHARED_CLIMATE_WEEKLY_PATH)
 _manifest = load_csv(DASHBOARD_REFRESH_MANIFEST_PATH)
 _hybrid_risk = load_csv(MODULE3_HYBRID_RISK_MAP_PATH)
-_hotspot_forecast = load_csv(MODULE3_FUTURE_HOTSPOT_FORECAST_PATH)
+_hotspot_forecast = load_m3_hotspot_forecast()
 _district_geometry = load_district_geometry()
 
 _case_y, _case_w = _latest_case_week(_m1_weekly)

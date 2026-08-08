@@ -6,6 +6,59 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-08-08 - Module 3: M3-015 documentation/dashboard closeout - decision entries backfilled, dashboard text and next-week panel updated
+
+### Module
+Module 3 / Dashboard
+
+### Change
+Follow-up to the same-day M3-015 promotion (see the entry directly below): closed three
+remaining documentation/dashboard gaps found while auditing what else needed updating.
+
+1. **`RESEARCH_DECISIONS.md` gap closed**: added Decision 050 (M3-008's own-district
+   residual-lag promotion, documented retroactively - it never had a real entry) and
+   Decision 051 (M3-015's relative-residual promotion). Also corrected
+   `module_3_spatial/MODULE_CONTEXT.md`'s pre-existing mis-citation of "Decision 032" for
+   M3-008 - Decision 032 is actually an unrelated Module 1 entry (M1-011's rolling DM
+   test); the citation now points to the new Decision 050.
+2. **Dashboard `research_evidence.py` Module 3 panel was stale**: hardcoded prose still
+   described the pre-M3-015 absolute-residual model (MAE 20.54->9.96, "does NOT beat
+   naive baseline on MAE") - the same class of staleness already caught and fixed for
+   Module 2 after Decision 047 (2026-08-07 entry above). Updated to describe the
+   relative-residual mechanism and cite the correct, current numbers; the "beats naive
+   persistence" section flipped from `st.warning` to `st.success` since that's now true.
+3. **Module 3's next-week forecast panel refactored** to match Module 1's
+   `_render_nowcast_panel()` design (module/evidence badges, a 3-metric row, a national
+   top-5 table) instead of the previous ad hoc inline block - new
+   `_render_m3_forecast_panel()` in `operational_monitoring.py`. The 3 metrics now surface
+   the M3-015 mechanics directly (Forecast Hybrid Risk / Stage 1 baseline / relative
+   correction applied), replacing the old 2-metric version that only showed the final
+   Risk and case count. New `load_m3_hotspot_forecast()` in `data_loaders.py`, named to
+   match `load_m1_nowcast()`'s convention (previously loaded via the bare generic
+   `load_csv()`). Deliberately keeps using only ONE of Module 3's four map styles (the
+   Folium heat-cloud already in use) - not the full four-view switcher the historical
+   Hybrid Risk map section offers, since this is a compact summary panel.
+
+### Reason
+User asked to close out the three items flagged after the M3-015 promotion, and
+separately asked that Module 3's dashboard "next week" panel match the design already
+used for Modules 1/2, with exactly one map style chosen rather than all four.
+
+### Impact
+- No production model, metric, or default artifact changed - documentation and
+  dashboard-presentation-layer only.
+- Verified via `streamlit.testing.v1.AppTest`: `app.py`, `operational_monitoring.py`, and
+  `research_evidence.py` all load with zero exceptions; the new panel's metrics render
+  real values (spot-checked: Ampara forecast Hybrid Risk 69.6, Stage 1 baseline 49.3,
+  relative correction +0.40).
+
+### Documentation Updated
+`research_context/RESEARCH_DECISIONS.md` (Decisions 050, 051),
+`module_3_spatial/MODULE_CONTEXT.md` (citation fix; dashboard panel description),
+`research_context/CHANGELOG.md` (this entry).
+
+---
+
 ## 2026-08-08 - Module 3: four compensation mechanisms tested against the naive-persistence gap; relative-residual reformulation found as a genuine, stress-tested improvement (M3-012 through M3-015)
 
 ### Module

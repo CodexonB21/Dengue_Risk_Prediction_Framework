@@ -450,7 +450,9 @@ creep. Report language should reflect this rather than keep describing
 Stage 2 as primarily an environmental correction step.
 
 ### Documentation Updated
-`RESEARCH_DECISIONS.md` (Decision 032), `EXPERIMENT_LOG.md` (M3-008),
+`RESEARCH_DECISIONS.md` (Decision 050 — corrected 2026-08-08 from an
+erroneous "Decision 032" citation, which is actually an unrelated Module 1
+entry), `EXPERIMENT_LOG.md` (M3-008),
 `QUESTIONS_FOR_DEFENSE.md`, `CHANGELOG.md`.
 
 ---
@@ -889,7 +891,20 @@ tagged `evidence_tier="operational"` - never to be cited alongside Stage
 Also produces a static figure
 (`outputs/figures/module3/risk_surface_forecast_{year}_wk{week}.png`,
 reusing `risk_surface.py`'s grid/IDW functions unchanged) and a dashboard
-panel (`pages.py`, "Module 3 — next-week hotspot forecast").
+panel, **UPDATED 2026-08-08**: `_render_m3_forecast_panel()` in
+`src/dashboard/views/operational_monitoring.py` ("Module 3 — next-week
+hotspot forecast", `pages.py` was retired in the 2026-08-07 multipage
+redesign). Refactored into a dedicated function (previously inline code)
+to match Module 1's `_render_nowcast_panel()` structure - module/evidence
+badges, a 3-metric row (Forecast Hybrid Risk / Stage 1 baseline / relative
+correction applied, reflecting the M3-015 relative-residual mechanics),
+and a national top-5 table. Reuses exactly ONE of Module 3's four map
+styles (the Folium heat-cloud, `_hybrid_risk_folium_heatmap`) via a
+column-rename adapter - deliberately not the full four-view switcher used
+by the historical Hybrid Risk map section, since this is a compact
+forecast summary. Data loaded via the new `load_m3_hotspot_forecast()` in
+`src/dashboard/data_loaders.py`, named to match `load_m1_nowcast()`'s
+convention.
 
 Wired into `scripts/refresh_dashboard_data.py` (module3_preprocessing +
 module3_forecast_future, ordered right after module1_forecast_future -
