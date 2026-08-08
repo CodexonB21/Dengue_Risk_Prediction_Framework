@@ -191,15 +191,15 @@ Residual = Actual_case_intensity − Current_Risk
 
 is a meaningful Stage 2 target.
 
-Stage 2 trains a Random Forest regressor on lagged climate features, anomalies, monsoon indicators, elevation, population density, and a Mahalanobis anomaly score. Compensation is wrapped in an iterative refinement loop:
+Stage 2 trains a Random Forest regressor primarily on own-district lags of the residual, together with lagged climate features, anomalies, monsoon indicators, elevation, population density, and a Mahalanobis anomaly score as secondary context. The residual target is expressed on a relative scale — divided by the current baseline risk — after a diagnostic found the raw (absolute) residual strongly heteroscedastic. Compensation is wrapped in an iterative refinement loop:
 
 ```text
-Risk_t = Risk_(t-1) + α · predicted_residual_t
+Risk_t = Risk_(t-1) + α · predicted_relative_residual_t · (Risk_(t-1) + 1)
 ```
 
-with shrinkage `α = 0.05`. The loop stops when successive risk changes fall below a tolerance and residual Moran’s I is no longer significant, subject to a small iteration cap. The primary output is the converged hybrid spatial risk surface; continuous IDW rendering is visualisation only, not an additional modelling stage. Quantitative Moran’s I, spatial CV, and Stage 1 vs Stage 2 fit results are reserved for Chapter 7.
+with the full-magnitude factor `α = 1`. An earlier absolute-scale formulation required shrinkage (`α = 0.05`) because an unshrunk update on that scale diverged; the relative-scale reformulation removed this instability. The loop stops when successive risk changes fall below a tolerance and residual Moran’s I is no longer significant, subject to a small iteration cap. The primary output is the converged hybrid spatial risk surface; continuous IDW rendering is visualisation only, not an additional modelling stage. Quantitative Moran’s I, spatial CV, and Stage 1 vs Stage 2 fit results are reserved for Chapter 7.
 
-**Approx. word count:** 610 words
+**Approx. word count:** 670 words
 *(Standalone paste-ready file: `research_context/report_drafts/chapter5_5.4.3_module3.md`)*
 
 ---

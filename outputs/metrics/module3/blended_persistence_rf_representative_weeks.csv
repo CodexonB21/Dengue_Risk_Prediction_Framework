@@ -1,0 +1,13 @@
+representative_week,Year,Week,model,spearman_rho,precision_at_3,precision_at_5
+peak,2017,29,Naive persistence (no model),0.9846153846153846,1.0,0.8
+peak,2017,29,"Stage 2 RF, official",0.9592307692307691,1.0,0.8
+peak,2017,29,Blended (w*RF + (1-w)*persistence),0.9700000000000001,1.0,0.8
+low,2007,13,Naive persistence (no model),0.6024144966768742,0.3333333333333333,0.6
+low,2007,13,"Stage 2 RF, official",0.42174958813536895,0.6666666666666666,0.6
+low,2007,13,Blended (w*RF + (1-w)*persistence),0.6603846642296367,0.3333333333333333,0.6
+sw_monsoon,2017,29,Naive persistence (no model),0.9846153846153846,1.0,0.8
+sw_monsoon,2017,29,"Stage 2 RF, official",0.9592307692307691,1.0,0.8
+sw_monsoon,2017,29,Blended (w*RF + (1-w)*persistence),0.9700000000000001,1.0,0.8
+ne_monsoon,2021,1,Naive persistence (no model),0.7416811062375859,0.6666666666666666,0.6
+ne_monsoon,2021,1,"Stage 2 RF, official",0.7555299235739723,0.6666666666666666,0.6
+ne_monsoon,2021,1,Blended (w*RF + (1-w)*persistence),0.7439892424603168,0.6666666666666666,0.6

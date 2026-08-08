@@ -73,13 +73,13 @@
         </mxCell>
 
         <!-- STAGE 2 -->
-        <mxCell id="s2_rf" value="&lt;b&gt;Random Forest&lt;/b&gt;&lt;br&gt;Spatial residual learner&lt;br&gt;(env. + demographic features)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1E3A8A;strokeColor=#1E3A8A;fontColor=#FFFFFF;fontSize=11;align=center;" vertex="1" parent="1">
+        <mxCell id="s2_rf" value="&lt;b&gt;Random Forest&lt;/b&gt;&lt;br&gt;Spatial residual learner&lt;br&gt;(own-district lags primary; env. + demographic secondary)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1E3A8A;strokeColor=#1E3A8A;fontColor=#FFFFFF;fontSize=11;align=center;" vertex="1" parent="1">
           <mxGeometry x="610" y="130" width="220" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="s2_resid" value="&lt;b&gt;Residual&lt;/b&gt;&lt;br&gt;Actual − Current_Risk" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FECACA;strokeColor=#DC2626;fontColor=#7F1D1D;fontSize=12;align=center;" vertex="1" parent="1">
+        <mxCell id="s2_resid" value="&lt;b&gt;Relative Residual&lt;/b&gt;&lt;br&gt;(Actual − Current_Risk) / (Current_Risk+1)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FECACA;strokeColor=#DC2626;fontColor=#7F1D1D;fontSize=12;align=center;" vertex="1" parent="1">
           <mxGeometry x="610" y="240" width="220" height="55" as="geometry" />
         </mxCell>
-        <mxCell id="s2_loop" value="&lt;b&gt;Iterative Update&lt;/b&gt;&lt;br&gt;Risk&lt;sub&gt;t&lt;/sub&gt; = Risk&lt;sub&gt;t−1&lt;/sub&gt; + α · Δ̂&lt;br&gt;(α = 0.05 shrinkage)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E5E7EB;strokeColor=#4B5563;fontColor=#111827;fontSize=11;align=center;" vertex="1" parent="1">
+        <mxCell id="s2_loop" value="&lt;b&gt;Iterative Update&lt;/b&gt;&lt;br&gt;Risk&lt;sub&gt;t&lt;/sub&gt; = Risk&lt;sub&gt;t−1&lt;/sub&gt; + α · Δ̂ · (Risk&lt;sub&gt;t−1&lt;/sub&gt;+1)&lt;br&gt;(α = 1, relative residual Δ̂)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E5E7EB;strokeColor=#4B5563;fontColor=#111827;fontSize=11;align=center;" vertex="1" parent="1">
           <mxGeometry x="610" y="335" width="220" height="70" as="geometry" />
         </mxCell>
         <mxCell id="s2_note" value="Stop when risk change&lt;br&gt;&amp; residual Moran’s I converge" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#FEF3C7;strokeColor=#D97706;fontColor=#92400E;fontSize=10;size=12;align=center;" vertex="1" parent="1">

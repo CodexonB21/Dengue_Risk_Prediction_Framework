@@ -34,6 +34,7 @@ import logging
 import sys
 from pathlib import Path
 
+import joblib
 import numpy as np
 import pandas as pd
 
@@ -44,7 +45,9 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.config import (  # noqa: E402
     MODULE3_BASELINE_RISK_PATH,
     MODULE3_FEATURES_DIR,
+    MODULE3_MAHALANOBIS_STATS_PATH,
     MODULE3_MASTER_TABLE_PATH,
+    MODULE3_MODELS_DIR,
     MODULE3_STAGE2_FEATURE_TABLE_PATH,
     MONSOON_WEEKS_NE,
     MONSOON_WEEKS_SW,
@@ -170,22 +173,45 @@ def compute_population_density(df: pd.DataFrame) -> pd.DataFrame:
 # Step 3e: Mahalanobis multivariate anomaly score
 # ---------------------------------------------------------------------------
 
-def compute_mahalanobis_scores(df: pd.DataFrame) -> pd.DataFrame:
-    """Multivariate anomaly score across [rainfall, temperature, elevation,
-    population] per district-week, relative to the full dataset's own mean
-    and covariance (not per-district) - captures how unusual a given
-    district-week's COMBINATION of these 4 variables is, accounting for
-    correlation between them (unlike a plain per-variable z-score sum).
+def fit_mahalanobis_stats(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    """Fits the mean vector + covariance matrix of `MAHALANOBIS_COLUMNS` over
+    `df` (the full historical training table). Split out from
+    `apply_mahalanobis_scores` so the exact fitted stats can be persisted
+    (`MODULE3_MAHALANOBIS_STATS_PATH`) and reused unchanged when scoring a
+    forecast row (`forecast_future.py`) - recomputing mean/covariance over a
+    historical-data-plus-one-new-row sample would shift the fitted
+    distribution slightly and make the forecast row inconsistent with what
+    the RF was actually trained against.
     """
     X = df[MAHALANOBIS_COLUMNS].to_numpy()
     mean = X.mean(axis=0)
     cov = np.cov(X, rowvar=False)
-    inv_cov = np.linalg.inv(cov)
+    return mean, cov
 
+
+def apply_mahalanobis_scores(df: pd.DataFrame, mean: np.ndarray, cov: np.ndarray) -> pd.DataFrame:
+    """Multivariate anomaly score across [rainfall, temperature, elevation,
+    population] per district-week, relative to an already-fitted mean/
+    covariance (not per-district) - captures how unusual a given
+    district-week's COMBINATION of these 4 variables is, accounting for
+    correlation between them (unlike a plain per-variable z-score sum).
+    """
+    inv_cov = np.linalg.inv(cov)
+    X = df[MAHALANOBIS_COLUMNS].to_numpy()
     diff = X - mean
     d2 = np.einsum("ij,jk,ik->i", diff, inv_cov, diff)
     df["mahalanobis_anomaly_score"] = np.sqrt(d2)
     return df
+
+
+def compute_mahalanobis_scores(df: pd.DataFrame) -> pd.DataFrame:
+    """Fits mean/covariance on `df` itself and applies them in one step -
+    the historical training-table path. See `fit_mahalanobis_stats`/
+    `apply_mahalanobis_scores` for the split used when a forecast row must
+    reuse already-fitted stats instead of refitting.
+    """
+    mean, cov = fit_mahalanobis_stats(df)
+    return apply_mahalanobis_scores(df, mean, cov)
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +245,15 @@ def run_feature_engineering() -> pd.DataFrame:
     df = compute_climate_anomaly(df)
     df = compute_monsoon_dummies(df)
     df = compute_population_density(df)
-    df = compute_mahalanobis_scores(df)
+
+    mahalanobis_mean, mahalanobis_cov = fit_mahalanobis_stats(df)
+    df = apply_mahalanobis_scores(df, mahalanobis_mean, mahalanobis_cov)
+    MODULE3_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    joblib.dump(
+        {"mean": mahalanobis_mean, "cov": mahalanobis_cov, "columns": MAHALANOBIS_COLUMNS},
+        MODULE3_MAHALANOBIS_STATS_PATH,
+    )
+    logger.info("Mahalanobis fit stats (mean/covariance) saved to %s.", MODULE3_MAHALANOBIS_STATS_PATH)
 
     df = df[OUTPUT_COLUMNS]
     validate_feature_table(df)

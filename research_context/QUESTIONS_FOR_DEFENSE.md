@@ -290,4 +290,22 @@ Colombo at 200 cases may be normal; a low-incidence district at 30 may be an out
 
 **Defense one-liner:** "One bad data point, one week before, fooled both modules the same way — because both lean hardest on 'what just happened.' We can name the exact cause, we tried the obvious fixes for both modules, and we can show honestly why each fix was rejected rather than quietly assumed to work."
 
+---
+
+## Does Module 3's hybrid (spatial baseline + Random Forest) approach actually beat a simple, no-model baseline?
+
+**Short answer:** For a long time, no — and we can show the full, honest arc of why, and what finally changed that.
+
+**The original null result (M3-010/M3-011):** the official Stage 2 RF's headline "~51% MAE reduction over Stage 1" is mostly achievable with zero modeling — a naive "carry last week's own leftover error forward" baseline recovers about 93% of that reduction on its own, and actually beats the RF on MAE (9.44 vs. 9.96) and on rank-based hotspot metrics (M3-012: Spearman 0.849 vs. 0.813). A stacked correction-beyond-persistence formulation (M3-011) and an output-level blend of the two models (M3-013) were both tested; the blend genuinely improved on the RF alone but still only tied or lost to persistence.
+
+**A calibration-based mechanism, borrowed directly from Module 2's own Stage 2 (isotonic recalibration of a raw score, no covariates), was also tried (M3-014) and failed cleanly** — root-caused to a real structural mismatch: Module 3's spatially-clustered CV folds put the highest-case-magnitude district cluster (Colombo/Gampaha) entirely outside the range any training fold's calibration curve had seen, so it clipped and badly underpredicted exactly the biggest outbreak weeks. This is not a defect in the calibration idea in general — it is specific to Module 3's geographic fold structure, unlike Module 2's random folds where every fold shares a similar distribution.
+
+**What finally worked (M3-015):** a direct diagnostic of Stage 1's raw error (not assumed) found it strongly heteroscedastic — error magnitude scales with predicted magnitude, so every prior model, which targeted the *absolute* residual, let the largest outbreak weeks dominate the learning signal. Modeling the *relative* residual instead (`(actual − Risk_0)/(Risk_0+1)`, reconstructed back to an absolute prediction exactly, not approximately) produces a Random Forest that beats both naive persistence and the official RF on every reported metric — confirmed via a week-level bootstrap (not just a raw aggregate table, which M3-013 already showed can be misleading) and broad across 4 of 5 spatial folds, not concentrated in one.
+
+**Two honest caveats kept alongside this result, not hidden:** the RMSE improvement is concentrated in the highest-case-volume fold (the official RF still has better RMSE in 3 of the other 4 folds), and the model performs notably worse at the one week already flagged (M3-001) as having no significant spatial clustering — the NE-monsoon representative week.
+
+**Defense one-liner:** "We didn't stop at the first null result — we tested four mechanically different compensation ideas, including one borrowed directly from Module 2, rejected two honestly with a root cause each, and found a genuine, bootstrap-confirmed improvement by diagnosing WHY the residual was hard to learn (heteroscedasticity) rather than trying yet another feature set on the same wrong target scale."
+
+**Evidence:** `module_3_spatial/EXPERIMENT_LOG.md` M3-010 through M3-015; `outputs/metrics/module3/relative_residual_comparison.csv`, `relative_residual_bootstrap_ci.csv`.
+
 **Evidence:** Decisions 026/028/043/049, M1-019, M2-016 (`module_1_forecasting/MODULE_CONTEXT.md` Open Question #16; `module_2_classification/MODULE_CONTEXT.md` Open Question #11; both modules' `EXPERIMENT_LOG.md`); the previous question above for the Module 1-specific technical detail.

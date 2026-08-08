@@ -1,17 +1,27 @@
 """Stage 1 vs Stage 2 evaluation: fit comparison, convergence plot, feature
 importance chart, and a consolidated Results-chapter summary table.
 
-IMPORTANT - Stage 1 vs Stage 2 comparison result (verified, not assumed):
+IMPORTANT - Stage 1 vs Stage 2 comparison result, UPDATED 2026-08-05
+(EXPERIMENT_LOG.md M3-008; supersedes the original 2026-07-29 finding
+below, kept for historical context):
 `compare_stage1_vs_stage2()` compares Risk_0 (Stage 1 alone - the
 mass-conserving rescaled KDE_baseline, NOT the raw Stage 1 output; see
 `MODULE_CONTEXT.md`'s "KDE_baseline: Two Valid Uses") against the final
-Risk after the iterative loop (Stage 2). Checked directly before writing
-this module: Stage 2 is marginally WORSE on every standard metric (corr
--0.0037, MAE +1.74%, RMSE +0.87%), not better. This is reported as a
-plain, honest null/negative result, not dressed up - see EXPERIMENT_LOG.md
-M3-005 for the full reasoning (alpha=0.05 was chosen for strict
-convergence, not accuracy, so the correction is too small to move
-aggregate fit metrics either way).
+Risk after Stage 2 (now a single-pass correction using own-district
+residual lag features, M3-008 - see `compensation_model.py`'s
+STAGE2_FEATURE_COLUMNS). Stage 2 now IMPROVES substantially on every
+metric: corr 0.824 -> 0.955, MAE 20.54 -> 9.96 (~51% reduction), RMSE
+48.20 -> 25.06 - verified directly (`stage2_experiments.py`'s ablation)
+before promoting, not assumed.
+
+Original 2026-07-29 finding (M3-005, now superseded): with the ORIGINAL
+16-feature set and alpha=0.05, Stage 2 was marginally WORSE on every
+metric (corr -0.0037, MAE +1.74%, RMSE +0.87%) - alpha=0.05 had been
+chosen for strict convergence, not accuracy, so that correction was too
+small to move aggregate fit metrics either way. M3-006's exploratory
+alpha sweep then confirmed no alpha in {1.0, 0.3, 0.15, 0.05} beat Stage 1
+alone WITH THE ORIGINAL FEATURES - the missing ingredient was not alpha
+tuning, it was the own-district residual lag features added in M3-008.
 """
 
 from __future__ import annotations
@@ -20,9 +30,11 @@ import logging
 import sys
 from pathlib import Path
 
+import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from sklearn.inspection import partial_dependence
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -36,12 +48,15 @@ from src.config import (  # noqa: E402
     MODULE3_HYBRID_RISK_MAP_PATH,
     MODULE3_METRICS_DIR,
     MODULE3_MORANS_I_METRICS_PATH,
+    MODULE3_POPULATION_DENSITY_PDP_PLOT_PATH,
     MODULE3_RF_FEATURE_IMPORTANCE_PATH,
+    MODULE3_RF_FINAL_MODEL_PATH,
     MODULE3_RF_METRICS_PATH,
     MODULE3_RESULTS_SUMMARY_PATH,
     MODULE3_STAGE_COMPARISON_PATH,
 )
-from src.module3_spatial.compensation_model import load_training_table, rescale_kde_baseline
+from src.module3_spatial.compensation_model import STAGE2_FEATURE_COLUMNS_V2, prepare_training_table
+from src.module3_spatial.persistence_baseline import run_persistence_baseline
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +90,7 @@ def _style_axes(ax) -> None:
 # ---------------------------------------------------------------------------
 
 def compare_stage1_vs_stage2() -> pd.DataFrame:
-    df = load_training_table()
-    df = rescale_kde_baseline(df)
+    df = prepare_training_table()
     hybrid = pd.read_csv(MODULE3_HYBRID_RISK_MAP_PATH)[["District", "Year", "Week", "Risk"]]
     merged = df.merge(hybrid, on=["District", "Year", "Week"], how="inner")
 
@@ -108,6 +122,63 @@ def compare_stage1_vs_stage2() -> pd.DataFrame:
             {"stage": "Change (Stage 2 - Stage 1)", **change},
         ]
     )
+
+
+# ---------------------------------------------------------------------------
+# Step 1b: negative-Risk footnote (Critique Point 6 - already documented in
+# MODULE_CONTEXT.md, but was missing from the report-facing summary file)
+# ---------------------------------------------------------------------------
+
+def negative_risk_note(hybrid_df: pd.DataFrame) -> str:
+    negative = hybrid_df.loc[hybrid_df["Risk"] < 0, "Risk"]
+    if negative.empty:
+        return "No rows have a negative final Risk value."
+    pct = 100 * len(negative) / len(hybrid_df)
+    return (
+        f"Note: {len(negative)} rows ({pct:.2f}%) have a small negative final Risk "
+        f"(min {negative.min():.2f}) - a minor overshoot on near-zero-case "
+        f"district-weeks, NOT clipped (see MODULE_CONTEXT.md's Stage 2 "
+        f"Implementation Status)."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Step 1c: population_density partial dependence (Critique Point 4) -
+# checks whether the RF's dominant feature (population_density, 40.7%
+# importance) is genuinely learning a nuanced relationship, or effectively
+# just a population-size scaling that would make Estimated_Population's own
+# 17.8% importance partly redundant with it. Partial dependence (not a raw
+# residual-vs-feature scatter) holds every OTHER feature at its observed
+# distribution and isolates population_density's own marginal effect on the
+# predicted residual - the correct tool for this question, since
+# population_density and Estimated_Population are themselves correlated
+# (population_density is literally derived from Estimated_Population - see
+# feature_engineering.py::compute_population_density) and a raw scatter
+# would conflate the two.
+# ---------------------------------------------------------------------------
+
+def plot_population_density_pdp(path: Path) -> pd.DataFrame:
+    df = prepare_training_table()
+    model = joblib.load(MODULE3_RF_FINAL_MODEL_PATH)
+
+    pdp = partial_dependence(
+        model, df[STAGE2_FEATURE_COLUMNS_V2], features=["population_density"], kind="average", grid_resolution=50,
+    )
+    grid = pdp["grid_values"][0]
+    avg_effect = pdp["average"][0]
+
+    fig, ax = plt.subplots(figsize=(8, 5), facecolor=SURFACE)
+    ax.plot(grid, avg_effect, color=SERIES_BLUE, linewidth=2)
+    ax.set_xlabel("population_density (people / km^2)")
+    ax.set_ylabel("Partial dependence: predicted residual_rescaled")
+    ax.set_title("Stage 2 RF - Partial Dependence on population_density")
+    _style_axes(ax)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150, facecolor=SURFACE)
+    plt.close(fig)
+    logger.info("population_density partial-dependence plot saved to %s.", path)
+
+    return pd.DataFrame({"population_density": grid, "partial_dependence": avg_effect})
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +256,8 @@ def build_summary_text(
     rf_metrics_df: pd.DataFrame,
     convergence_df: pd.DataFrame,
     importance_df: pd.DataFrame,
+    hybrid_df: pd.DataFrame,
+    persistence_df: pd.DataFrame,
 ) -> str:
     lines: list[str] = []
     lines.append("=" * 78)
@@ -203,17 +276,44 @@ def build_summary_text(
     lines.append("")
     lines.append("-- Stage 1 alone vs Stage 2 final: fit to actual case counts --")
     lines.append(
-        "(Stage 2's correction does NOT improve aggregate fit - a plain, "
-        "verified null/negative result; see EXPERIMENT_LOG.md M3-005.)"
+        "(UPDATED 2026-08-08, M3-015: Stage 2 now predicts the RELATIVE residual "
+        "((Number_of_Cases - Risk_0) / (Risk_0 + 1)), not the absolute one - a "
+        "direct diagnostic found the absolute residual strongly heteroscedastic. "
+        "This beats BOTH Stage 1 alone AND the naive-persistence baseline below on "
+        "every metric (~61% MAE reduction over Stage 1, and a real, bootstrap-"
+        "confirmed win over persistence - see EXPERIMENT_LOG.md M3-015), "
+        "superseding the M3-008 absolute-residual model, which lost to persistence "
+        "on MAE (M3-010/M3-011). Two honest caveats remain, documented in M3-015: "
+        "the RMSE improvement concentrates in the highest-case-volume spatial "
+        "fold, and the model underperforms at the NE-monsoon representative week.)"
     )
     lines.append(comparison_df.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+    lines.append(negative_risk_note(hybrid_df))
+
+    lines.append("")
+    lines.append("-- Naive persistence baseline check (EXPERIMENT_LOG.md M3-010/011/015) --")
+    lines.append(
+        "(M3-010 found the pre-M3-015 absolute-residual RF lost to naive "
+        "persistence on MAE. M3-015's relative-residual reformulation reverses "
+        "this: the official RF below now beats persistence on every metric, "
+        "confirmed via a week-level paired bootstrap (not just this raw aggregate "
+        "table, which M3-013 already showed can overstate a result) - see "
+        "EXPERIMENT_LOG.md M3-015 for the full bootstrap CIs and fold breakdown.)"
+    )
+    lines.append(persistence_df.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
 
     rf_agg = rf_metrics_df[rf_metrics_df["fold"] == "mean_std"].iloc[0]
     lines.append("")
     lines.append("-- Stage 2 RF: out-of-fold residual prediction accuracy (spatial CV) --")
     lines.append(
-        f"MAE = {rf_agg['mae']:.2f} +/- {rf_agg['mae_std']:.2f}, "
-        f"RMSE = {rf_agg['rmse']:.2f} +/- {rf_agg['rmse_std']:.2f} "
+        "(UPDATED 2026-08-08, M3-015: MAE/RMSE below are on the RELATIVE residual "
+        "scale - target = (Number_of_Cases - Risk_0) / (Risk_0 + 1) - not the "
+        "absolute case-count scale reported here before this date; not directly "
+        "comparable to pre-M3-015 figures.)"
+    )
+    lines.append(
+        f"MAE = {rf_agg['mae']:.4f} +/- {rf_agg['mae_std']:.4f}, "
+        f"RMSE = {rf_agg['rmse']:.4f} +/- {rf_agg['rmse_std']:.4f} "
         f"(mean +/- std across 5 spatial folds)"
     )
 
@@ -251,10 +351,16 @@ def run_evaluation() -> str:
     convergence_df = pd.read_csv(MODULE3_CONVERGENCE_LOG_PATH)
     importance_df = pd.read_csv(MODULE3_RF_FEATURE_IMPORTANCE_PATH)
 
+    hybrid_df = pd.read_csv(MODULE3_HYBRID_RISK_MAP_PATH)
+    persistence_df = run_persistence_baseline()
+
     plot_convergence(convergence_df, MODULE3_CONVERGENCE_PLOT_PATH)
     plot_feature_importance(importance_df, MODULE3_FEATURE_IMPORTANCE_PLOT_PATH)
+    plot_population_density_pdp(MODULE3_POPULATION_DENSITY_PDP_PLOT_PATH)
 
-    summary = build_summary_text(comparison_df, moransI_df, rf_metrics_df, convergence_df, importance_df)
+    summary = build_summary_text(
+        comparison_df, moransI_df, rf_metrics_df, convergence_df, importance_df, hybrid_df, persistence_df,
+    )
     print(summary)
 
     MODULE3_RESULTS_SUMMARY_PATH.write_text(summary, encoding="utf-8")

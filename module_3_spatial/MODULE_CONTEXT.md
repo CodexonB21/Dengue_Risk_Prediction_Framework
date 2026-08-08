@@ -123,38 +123,80 @@ form as `Risk_0`, per this note.
 
 ---
 
-## Stage 2 — Residual Compensation (decided)
+## Stage 2 — Residual Compensation (decided; UPDATED 2026-08-08, M3-015)
 
-**Residual target:**
-```
-Residual = Actual_case_intensity − Current_Risk
-```
-(`Current_Risk` = `KDE_baseline` at iteration 0, then updated each loop pass)
+**UPDATED 2026-08-08 (M3-015, promoted):** the RF's target is now the
+RELATIVE residual, not the absolute one - see the dedicated M3-012 through
+M3-015 section below for the full motivation (a direct diagnostic found the
+absolute residual strongly heteroscedastic) and results (beats both naive
+persistence and the previous absolute-residual model on every metric,
+bootstrap-confirmed). The formula/feature-set text immediately below is
+kept largely as originally written for the M3-008 promotion (historical
+context for HOW the own-district lag mechanism was discovered), with the
+target/formula changes layered on top via the notes in this update, the
+same way M3-008 itself was layered onto the pre-M3-008 text.
 
-**Features:**
+**Residual target (UPDATED 2026-08-08, M3-015):**
+```
+relative_residual = (Actual_case_intensity − Current_Risk) / (Current_Risk + 1)
+```
+(`Current_Risk` = `KDE_baseline` at iteration 0, then updated each loop pass;
+the "+1" denominator guard matches `rescale_kde_baseline`'s own convention.
+Was the absolute `Residual = Actual_case_intensity − Current_Risk` before
+this date - kept as `residual_rescaled`/`RESIDUAL_LAG_COLUMNS` in
+`compensation_model.py`, still computed and still used as additional RF
+features, just no longer the TARGET.)
+
+**Features (`STAGE2_FEATURE_COLUMNS_V2`, `compensation_model.py`):**
+- **Own-district RELATIVE residual lags (1-4 weeks) — added 2026-08-08, M3-015, now the dominant features (~81% combined importance).** Supersedes the M3-008 absolute-residual lags (still present as additional features, ~5% combined importance) as the RF's primary source of dynamic, per-district memory.
 - Rainfall / temperature lags (2–4 weeks)
 - Climate anomaly (actual vs. historical weekly average)
 - Monsoon season dummy
 - Elevation, population density (static covariates)
 - Mahalanobis anomaly score across rainfall, temperature, elevation, population (captures multivariate anomalies while accounting for correlation between variables — added as an extra RF feature)
 
-**Model:** Random Forest Regression, `Residual` as target.
+Note: `FEATURE_COLUMNS` (original 16) and `STAGE2_FEATURE_COLUMNS` (those 16 + the M3-008 absolute lags, 20 total) are BOTH kept unchanged in `compensation_model.py` so the frozen exploratory scripts that reproduced pre-M3-015 findings (`alpha_sweep.py`/M3-006, `stage2_experiments.py`, `stacked_persistence_experiment.py`/M3-011) stay byte-for-byte reproducible if rerun - verified directly post-promotion, not assumed. The official model uses `STAGE2_FEATURE_COLUMNS_V2 = STAGE2_FEATURE_COLUMNS + RELATIVE_LAG_COLUMNS` (24 total) instead.
 
-**Iterative loop (novel contribution):**
+**Model:** Random Forest Regression, `relative_residual` as target (UPDATED 2026-08-08, M3-015; was `residual_rescaled`).
+
+**Iterative loop — UPDATED 2026-08-05 (M3-008): capped at `MAX_ITERATIONS=1` by design, not 4.**
 ```
-Risk_t = Risk_(t-1) + alpha * predicted_residual_t
+Risk_t = Risk_(t-1) + alpha * predicted_relative_residual_t * (Risk_(t-1) + 1)
 ```
-`alpha = 0.05` (shrinkage/learning-rate term, NOT in the original spec -
-discovered necessary during implementation; see "Stage 2 Implementation
-Status" below for why the un-shrunk `alpha=1.0` formula diverges).
+(UPDATED 2026-08-08, M3-015: the multiplicative reconstruction term is new;
+was `Risk_t = Risk_(t-1) + alpha * predicted_residual_t` before this date -
+the reconstruction from a relative-residual prediction back to an absolute
+Risk value is exact, not approximate, by construction.)
 
-Repeat until BOTH:
-1. `max(|Risk_t − Risk_(t-1)|) < ε` (≈1% of initial risk range), AND
-2. Moran's I of the new residual is not statistically significant
+`alpha = 1.0` (no shrinkage — UPDATED 2026-08-05, was 0.05; see "Stage 2
+Implementation Status" for the full M3-008 reasoning; unchanged by M3-015).
+The own-district residual lag features give the RF a genuine dynamic anchor
+even for a held-out district under spatial CV, which resolves the
+extrapolation instability that originally forced alpha down to 0.05
+(M3-004) — alpha=1.0 remains the best-performing choice. The relative-
+residual reformulation (M3-015) achieves a ~61% MAE reduction over Stage 1
+alone, AND (unlike the M3-008 absolute-residual version) a genuine,
+bootstrap-confirmed win over the naive-persistence baseline too - see the
+M3-012 through M3-015 section below.
 
-Cap at 4 iterations as a practical safeguard. Log risk values and Moran's I per iteration for the convergence plot.
+Critically, **the loop is capped at 1 iteration, not run to convergence**:
+the residual lag features are computed ONCE, fixed relative to `Risk_0`
+(a historical fact, not a moving target), so retraining on iteration t's
+evolving residual while those features still describe "relative to
+Risk_0" is theoretically incoherent past iteration 1 — verified empirically
+before capping (not assumed): running iterations 2-4 anyway produced an
+OSCILLATING, non-converging `max_delta` (578→240→167→190) that
+progressively degraded an already-excellent iteration-1 result. The strict
+numeric convergence check (`max(|Risk_t − Risk_(t-1)|) < ε`) and the
+Moran's I check are still computed and logged every run (diagnostic value
+— Moran's I stays non-significant, confirming Stage 1 alone still captures
+the spatial autocorrelation, per the original "Why the loop converges in 1
+iteration" finding below), they just no longer gate a second iteration.
 
-**Final output:** converged `Risk_t` = Hybrid Risk Map, exported as GeoJSON (merged with GADM shapefile) for the dashboard.
+**Final output:** `Risk_t` (iteration 1) = Hybrid Risk Map, **clipped at 0**
+(case counts cannot be negative — UPDATED 2026-08-05, was not clipped;
+see "Stage 2 Implementation Status" for why the decision changed),
+exported as CSV for the dashboard.
 
 ### Stage 2 Implementation Status
 
@@ -344,6 +386,210 @@ chapter.
 
 ---
 
+## Stage 2 Promotion: Own-District Residual Lags (2026-08-05, M3-008)
+
+**Supersedes the null/negative result above.** The above section (M3-005,
+2026-07-29) is kept as historical record, not deleted - it was a correct,
+honestly-verified finding at the time, using the original 16-feature set.
+This section documents what changed and why.
+
+**Finding**: none of the original 16 features gave the RF any information
+about a district's own recent case trajectory - every feature was either
+static per-district (population/elevation) or current-week climate. Added
+`residual_rescaled_lag_1/2/3/4` (own-district lags of the rescaled
+residual, same `.shift()` pattern already used for climate lags) and
+tested via a standalone ablation (`src/module3_spatial/
+stage2_experiments.py`) before promoting - checked, not assumed, per this
+module's own established discipline:
+
+| Config | Out-of-fold residual MAE | Best final MAE (Stage 1 alone: 20.54) | Best alpha |
+|---|---|---|---|
+| Original 16 features | 34.71 | 20.91 | 0.05 |
+| + winsorized target only | 32.87 | 20.89 | 0.05 |
+| + leave-one-district-out CV only | 34.86 | 20.83 | 0.05 |
+| **+ residual lags** | **10.08** | **10.08** | **1.0** |
+| + residual lags + winsorized + LOO | 9.96 | 9.96 | 1.0 |
+
+Winsorizing and leave-one-out CV alone changed almost nothing - the entire
+improvement is the residual lag features. Verified not a leakage artifact:
+`kde_baseline_rescaled[t]` only ever uses week *t*'s own case counts, never
+*t-1*'s, so the lag-1 correlation (raw `corr(residual_rescaled,
+residual_rescaled_lag_1) = 0.84`) reflects genuine week-to-week epidemic
+persistence, not shared computational lineage.
+
+**Promoted to the official pipeline**: `compensation_model.py` (feature
+set, `STAGE2_FEATURE_COLUMNS`), `iterative_loop.py` (`SHRINKAGE_ALPHA=1.0`,
+`MAX_ITERATIONS=1` - see the updated Stage 2 spec above for why the loop no
+longer runs to convergence), `evaluate.py`, `forecast_future.py` (needs the
+forecast week's own real historical residual lags too - computed from
+`baseline_risk.csv` + real reported `Number_of_Cases`, not a forecast
+value, since even the forecast week's lag_1..4 always look strictly
+backward into already-reported weeks).
+
+**Official result after promotion**: corr 0.8241 → 0.9554, MAE 20.54 →
+9.96 (~51% reduction), RMSE 48.20 → 25.06. Feature importance now
+dominated by `residual_rescaled_lag_1` (63.9%) + `lag_2` (25.9%) = 89.8%
+combined; `population_density`/`Estimated_Population` (previously 58.5%
+combined) drop out of the top 10 entirely.
+
+**Clipping decision changed**: alpha=1.0's unshrunk correction widens the
+negative-Risk tail from the old "minor overshoot" (216 rows, max magnitude
+2.32, not clipped) to 1,211 rows (4.82%, median still small at -0.94, but
+a genuine tail down to -112.87) - large enough to be a physically
+nonsensical "negative case count," not a rounding-scale artifact. Verified
+before clipping (not assumed): clipping at 0 is a strict improvement on
+every metric (not a trade-off), so `iterative_loop.py` and
+`forecast_future.py` now both clip `Risk`/`Risk_forecast` at 0.
+
+**What this changes about Stage 2's framing**: the module's Stage 2 was
+originally scoped as an "environmental/demographic residual correction"
+(see this file's Purpose section). This result means Stage 2's real power
+is short-term epidemic persistence, with climate/demographics now playing
+a secondary role - a genuine, deliberate reframing, not a silent scope
+creep. Report language should reflect this rather than keep describing
+Stage 2 as primarily an environmental correction step.
+
+### Documentation Updated
+`RESEARCH_DECISIONS.md` (Decision 050 — corrected 2026-08-08 from an
+erroneous "Decision 032" citation, which is actually an unrelated Module 1
+entry), `EXPERIMENT_LOG.md` (M3-008),
+`QUESTIONS_FOR_DEFENSE.md`, `CHANGELOG.md`.
+
+---
+
+## Stage 2 vs. Naive Persistence Baseline (2026-08-04, M3-010/M3-011)
+
+**Important caveat on the "51% MAE reduction" headline above.** With
+`residual_rescaled_lag_1` + `lag_2` at 89.8% combined feature importance,
+the obvious next check is whether the RF actually beats the trivial
+arithmetic of carrying last week's own residual forward with no model at
+all (`predicted_residual_t = residual_rescaled_lag_1`, combined with
+`Risk_0` via the same alpha/clipping formula the official model uses -
+`src/module3_spatial/persistence_baseline.py`, M3-010). It does not, on
+every metric:
+
+| Model | corr | MAE | RMSE | rows clipped at 0 |
+|---|---|---|---|---|
+| Stage 1 alone (Risk_0) | 0.8241 | 20.5363 | 48.1989 | - |
+| Naive persistence (no model) | 0.9493 | **9.4386** | 26.6343 | 2,296 (9.1%) |
+| Stage 2 RF, official | **0.9554** | 9.9621 | **25.0601** | 1,211 (4.8%) |
+
+Naive persistence alone recovers about 93% of the total MAE reduction over
+Stage 1 (20.54 -> 9.44 vs. the RF's 20.54 -> 9.96) - **the RF is
+marginally WORSE than a zero-modeling baseline on MAE.** It remains better
+on correlation and RMSE, and clips roughly half as many rows to zero
+(4.8% vs. 9.1%), which is direct evidence it dampens the naive predictor's
+more frequent and more severe overshoots by using climate/demographic/
+monsoon context persistence cannot see.
+
+**Corrected framing**: Stage 2's genuine, defensible contribution is
+controlling the severity of large errors/overshoots (RMSE, clipping rate),
+NOT beating a naive baseline on typical-case accuracy - report language
+should present the naive-persistence comparison alongside the MAE
+reduction, not let the 51% figure stand alone as if the RF were the sole
+source of it.
+
+**A stacked fix was tried and rejected (M3-011), not just accepted as a
+limitation.** Hypothesis: have the RF predict only the correction beyond
+persistence (`target = residual_rescaled - residual_rescaled_lag_1`) so it
+spends its split budget on the remaining signal instead of implicitly
+reconstructing persistence through splits on lag_1 - motivated by RFs not
+being linear (unlike a linear model, pre-subtracting a dominant feature's
+effect is not mathematically equivalent to including it as a plain input).
+Tested directly: the stacked version is worse than BOTH naive persistence
+AND the official RF on every metric (corr 0.9487, MAE 11.0088, RMSE
+26.9565) - rejected cleanly, not pursued further without a new, specific
+reason to expect a different variant to behave differently.
+
+**Decision: keep the official Stage 2 RF (predicts the raw residual
+directly) as Module 3's sole reported model** - neither naive persistence
+nor the stacked correction is a strict improvement over it once RMSE and
+outlier control are weighed alongside MAE, and for an outbreak-hotspot use
+case, damping severe over/undershoot is arguably more operationally
+relevant than shaving typical-case error.
+
+### Documentation Updated
+`EXPERIMENT_LOG.md` (M3-010, M3-011), `QUESTIONS_FOR_DEFENSE.md`,
+`CHANGELOG.md`. `results_summary.txt` now includes the persistence-baseline
+comparison table (`evaluate.py`).
+
+---
+
+## Stage 2: Four Follow-Up Compensation Mechanisms Tested (2026-08-08, M3-012 through M3-015)
+
+Following directly from M3-010/M3-011's finding that the official RF loses
+to naive persistence, four genuinely different mechanisms were tested in
+sequence - each one either ruled out honestly or advanced only after
+surviving a stress test, per this module's established discipline.
+
+**M3-012 - re-evaluate with a hotspot-ranking metric instead of MAE/RMSE.**
+Module 3's actual purpose is spatial hotspot detection, not case-count
+regression - Spearman rank correlation and precision@k (does the model
+correctly flag the top-k highest-risk districts each week) were added as a
+companion evaluation lens. Result: naive persistence wins on this lens too
+(Spearman 0.849 vs. the RF's 0.813; precision@5 0.784 vs. 0.759) - this did
+not rescue the RF, it confirmed the gap under a second, independent metric.
+Kept permanently in `results_summary.txt` alongside MAE/RMSE, not as a
+replacement (`hotspot_ranking_evaluation.py`).
+
+**M3-013 - blend the RF's and persistence's final predictions** (not
+stacking, which M3-011 already rejected - this leaves both models
+unchanged and mixes their outputs, `Risk_blend = w*Risk_RF +
+(1-w)*Risk_persistence`, weight chosen out-of-fold per spatial fold).
+Stress-tested with a week-level paired bootstrap before trusting the
+aggregate table (which initially looked like a clean win): the blend is a
+real, statistically robust improvement over the RF alone (all bootstrap CIs
+favorable), but a statistical TIE with persistence on MAE/precision@5 and a
+real, significant LOSS on Spearman rho. **Not adopted** - narrower value
+only (`blended_persistence_rf.py`).
+
+**M3-014 - isotonic calibration, Module 2's own compensation mechanism**
+(recalibrate a raw score against actual outcomes, zero covariates - adapted
+from Module 2's Platt/isotonic Stage 2). Motivated by a real, committed
+diagnostic: every model under-predicts systematically in its lowest-risk
+decile (actual cases 57-139% higher than predicted there). **Failed
+cleanly, and the failure was root-caused, not left unexplained**: degradation
+concentrated almost entirely in the fold containing Colombo/Gampaha (the
+highest case-magnitude fold by a wide margin) - the calibration curve, fit
+on the other 4 (lower-magnitude) folds, has no data to extrapolate from and
+clips Colombo's real range to a severe underprediction. This is a structural
+mismatch between calibration's implicit same-range assumption and Module 3's
+geographically-clustered CV folds (unlike Module 2's random folds, where
+every fold shares a similar distribution) - **rejected**
+(`isotonic_calibration.py`).
+
+**M3-015 - model the RELATIVE residual, not the absolute one - the strongest
+result in this arc.** A direct diagnostic (not assumed) found Stage 1's raw
+error strongly heteroscedastic (corr(Risk_0, |residual|) = 0.78) - every
+prior mechanism modeled the absolute residual, letting the largest outbreak
+weeks dominate the learning signal. Modeling
+`(Number_of_Cases - Risk_0)/(Risk_0+1)` instead, with an exact
+reconstruction back to absolute Risk, produces an RF that beats BOTH naive
+persistence and the official RF on every metric, confirmed via a week-level
+bootstrap (CIs entirely favorable, not a raw-aggregate artifact) and broad
+across 4 of 5 spatial folds. Two honest caveats: RMSE's win concentrates in
+the highest-volume fold (the official RF still wins RMSE in 3 of the other
+4), and the model does notably worse at the NE-monsoon representative week
+(2021 Wk1 - already flagged in M3-001 as the one structurally non-clustered
+week). **Promoted to official Stage 2 (2026-08-08), user-confirmed** - see
+`EXPERIMENT_LOG.md` M3-015 for the full numbers and the promotion's
+post-hoc verification (regenerated `results_summary.txt`/
+`hotspot_ranking_evaluation.csv` reproduce M3-015's own validated figures;
+frozen scripts M3-006/M3-011 re-verified unaffected).
+
+A companion diagnostic ruled out spatial spillover before M3-015 was built:
+a Queen-contiguous neighbor's residual lagged one week correlates -0.30 with
+a district's own current residual, but that drops to a negligible 0.03
+partial correlation once the district's own lag_1 is accounted for -
+neighboring districts' errors carry no information a district's own recent
+history doesn't already provide.
+
+### Documentation Updated
+`EXPERIMENT_LOG.md` (M3-012 through M3-015), `research_context/
+QUESTIONS_FOR_DEFENSE.md`, `research_context/CHANGELOG.md`.
+
+---
+
 ## Visualization: Continuous Risk Surface (implemented 2026-07-29)
 
 **Rendering-layer technique only — not a new modeling stage.** Neither the
@@ -448,13 +694,15 @@ Two consumers:
   western-cluster story every time; and the latest real week (2026 Wk21),
   correctly rescaled to its much lower case counts, with Kalutara edging
   out Gampaha - exactly what that week's real numbers say, not a bug.
-  **Deliberately out of scope**: a genuine FUTURE-week map (beyond 2026
-  Wk21). Module 3 has no forecasting capability of its own - both Stage
-  1's KDE weighting and Stage 2's residual target require a known
-  `Number_of_Cases`, and `hybrid_risk_map.csv` stops at the latest week
-  with real reported data. A future map would require feeding Module 1/2's
-  forecasts in as a hypothetical input - real new cross-module work, not a
-  visualization change - decided not to pursue this (2026-07-30).
+  **Superseded (2026-08-04, Decision 031)**: a genuine FUTURE-week map was
+  previously deliberately out of scope, since Module 3 had no forecasting
+  capability of its own - both Stage 1's KDE weighting and Stage 2's
+  residual target require a known `Number_of_Cases`, and `hybrid_risk_map.csv`
+  stops at the latest week with real reported data. This has now been
+  built (`src/module3_spatial/forecast_future.py`) by feeding Module 1's
+  forecasted case counts in as the required cross-module input - see the
+  new "Forward Operational Hotspot Forecast" section below and
+  `RESEARCH_DECISIONS.md` Decision 031 for the full reasoning.
 - **Dashboard — four switchable views** (`render_operational_page()`,
   `pages.py`), all real data (`hybrid_risk_map.csv` + the same GADM
   centroids), no synthetic values in any of the four:
@@ -582,6 +830,96 @@ happened to be tuned for.
 
 ---
 
+## Forward Operational Hotspot Forecast (implemented 2026-08-04, Decision 031)
+
+**Cross-module, operational tier - see `RESEARCH_DECISIONS.md` Decision
+031.** Supersedes this file's earlier (2026-07-30) "deliberately out of
+scope" note for a future-week map - that note correctly identified the
+exact dependency this now resolves: a future-week map needs Module 1's
+forecasted case counts fed in as a hypothetical input, since Stage 1's KDE
+weighting and Stage 2's residual target both require a known
+`Number_of_Cases`.
+
+`src/module3_spatial/forecast_future.py` produces a next-week hotspot
+forecast (default horizon: 1 week beyond the last reported case week -
+currently 2026 Wk25 → forecasts Wk26) without retraining or reconverging
+anything:
+
+1. **Case-count proxy**: reads `data/processed/module1/future_forecast.csv`
+   (`horizon_step=1`'s `final_prediction` per district) - only READS this
+   file, never edits anything under `module_1_forecasting/`/
+   `src/module1_forecasting/`, per this module's own scope rule.
+2. **Climate is real observed data, not a forecast**: verified directly -
+   because Module 3's case-count reporting lags real calendar time by
+   several weeks, the forecast week's actual calendar dates have typically
+   already passed by the time this script runs, so every raw daily
+   Open-Meteo row for that date range is tagged `climate_data_source=
+   "observed"`. Only the case count is a genuine forecast; every output
+   row records both `cases_source` and `climate_source` so this is never
+   conflated.
+3. **Stage 1**: the SAME fixed 25x25 Silverman kernel (not refit) applied
+   to Module 1's forecasted case counts as weights, then mass-conserved to
+   the forecast week's total forecasted cases (the forecast-week analogue
+   of `compensation_model.py::rescale_kde_baseline`).
+4. **Stage 2**: the already-trained frozen final RF model
+   (`rf_final_model.joblib`, now trained on `STAGE2_FEATURE_COLUMNS` -
+   M3-008) scores the forecast row(s); the Mahalanobis anomaly score
+   reuses the PERSISTED training-time mean/covariance
+   (`MODULE3_MAHALANOBIS_STATS_PATH`, written by
+   `feature_engineering.py`) rather than refitting on a
+   historical-plus-one-new-row sample. **Own-district residual lags
+   (UPDATED 2026-08-05, M3-008)**: computed from REAL historical
+   `Number_of_Cases` and Stage 1's already-committed `KDE_baseline`
+   (`baseline_risk.csv`), never from a forecast value - lag_1..4 always
+   look strictly backward into already-reported weeks, even at
+   `horizon_step=1`.
+5. **Combine once**: `Risk_forecast = Risk_0_forecast + 1.0 *
+   predicted_residual` (UPDATED 2026-08-05, was 0.05 - see the Stage 2
+   Promotion section above), then **clipped at 0** (case counts cannot be
+   negative) - a single application of the already-decided formula, not a
+   multi-iteration convergence claim (the official pipeline itself now
+   caps at `MAX_ITERATIONS=1` by design, not just "happens to converge
+   there" - see the updated Stage 2 spec above).
+
+Any remaining NaN in a required feature raises an explicit error rather
+than guessing - unlike Module 1's XGBoost, Module 3's Stage 2 model is a
+bare `sklearn.RandomForestRegressor` with no native NaN tolerance.
+
+Output: `data/processed/module3/future_hotspot_forecast.csv`, every row
+tagged `evidence_tier="operational"` - never to be cited alongside Stage
+1's Moran's I / Stage 2's spatial-CV figures in `results_summary.txt`.
+Also produces a static figure
+(`outputs/figures/module3/risk_surface_forecast_{year}_wk{week}.png`,
+reusing `risk_surface.py`'s grid/IDW functions unchanged) and a dashboard
+panel, **UPDATED 2026-08-08**: `_render_m3_forecast_panel()` in
+`src/dashboard/views/operational_monitoring.py` ("Module 3 — next-week
+hotspot forecast", `pages.py` was retired in the 2026-08-07 multipage
+redesign). Refactored into a dedicated function (previously inline code)
+to match Module 1's `_render_nowcast_panel()` structure - module/evidence
+badges, a 3-metric row (Forecast Hybrid Risk / Stage 1 baseline / relative
+correction applied, reflecting the M3-015 relative-residual mechanics),
+and a national top-5 table. Reuses exactly ONE of Module 3's four map
+styles (the Folium heat-cloud, `_hybrid_risk_folium_heatmap`) via a
+column-rename adapter - deliberately not the full four-view switcher used
+by the historical Hybrid Risk map section, since this is a compact
+forecast summary. Data loaded via the new `load_m3_hotspot_forecast()` in
+`src/dashboard/data_loaders.py`, named to match `load_m1_nowcast()`'s
+convention.
+
+Wired into `scripts/refresh_dashboard_data.py` (module3_preprocessing +
+module3_forecast_future, ordered right after module1_forecast_future -
+its only dependency - and before the Module 2 steps, since two pre-existing,
+unrelated bugs in Module 2's own forward-scoring scripts currently abort
+that orchestrator before reaching later steps).
+
+**Note on `DEFAULT_HORIZON_WEEKS`**: only horizon=1 has been exercised and
+verified. Raising it would need each later forecast week to chain in
+earlier forecast weeks as pseudo-history for its own lag features (as
+Module 1's `forecast_future.py` does recursively) - not yet implemented,
+flagged directly in the code rather than silently assumed to work.
+
+---
+
 ## Open Questions — now answered
 
 1. **Are district centroids sufficient, or are finer spatial units needed?** → District centroids (25 units) are sufficient for this scope; sub-district disaggregation is noted as a limitation/future work, not implemented.
@@ -589,7 +927,7 @@ happened to be tuned for.
 3. **What is the spatial residual target?** → `Actual case intensity − Current_Risk` (see Stage 2 above), recalculated each loop iteration.
 4. **How should spatial leakage be prevented?** → Spatial K-means CV (5 folds, districts clustered by location), not random k-fold.
 5. **Which spatial validation method is most suitable?** → Spatial K-means CV, per point 4.
-6. **How should Module 3 outputs combine with Module 1 and Module 2?** → TBD at integration stage; Module 3 exports district-week Hybrid Risk as GeoJSON/CSV keyed by (District, Epi_Week) for the shared dashboard to consume — final join logic to be confirmed with the team.
+6. **How should Module 3 outputs combine with Module 1 and Module 2?** → Historical: Module 3 exports district-week Hybrid Risk as CSV keyed by (District, Epi_Week) for the shared dashboard to consume. Forward/operational: resolved by Decision 031 - Module 3's forecast_future.py reads Module 1's `future_forecast.csv` for the forecast week's case-count proxy (read-only, one direction); Module 2's own forward risk score is independent and does not feed into or consume Module 3's output.
 
 **Rejected approach:** Geographically Weighted Regression (GWR) — considered, not used. With only 25 spatial units, local weighting is statistically unreliable; Random Forest was chosen instead for robustness with limited-N tabular data.
 
@@ -602,6 +940,16 @@ happened to be tuned for.
 - MAE / RMSE of the Random Forest on held-out spatial CV folds
 - Feature importance (which environmental factors drive corrections)
 - Spatial cross-validation performance, not random split
+- **Hotspot-ranking companion metrics (added 2026-08-08, M3-012)**: Spearman
+  rank correlation and precision@k (k=3, 5) between predicted and actual
+  risk ordering across districts each week - matches Module 3's actual
+  hotspot-detection purpose more directly than MAE/RMSE alone; reported
+  alongside, not instead of, the fit metrics above.
+- A naive persistence baseline (M3-010) and, where relevant, a week-level
+  paired bootstrap CI (M3-013/M3-015) are the standard before any new
+  compensation mechanism's aggregate metric is trusted as a genuine
+  improvement - an aggregate table alone has already been shown (M3-013) to
+  overstate a result that doesn't survive fold- and week-level scrutiny.
 
 ---
 

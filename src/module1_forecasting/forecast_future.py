@@ -117,6 +117,7 @@ from src.module1_forecasting.residual_transform import combine_stage2_forecast, 
 from src.module1_forecasting.feature_engineering import (  # noqa: E402
     HUMIDITY_COLUMN,
     RAINFALL_COLUMN,
+    REPORTING_DELAY_FEATURE_COLUMNS,
     TEMPERATURE_COLUMN,
     WEEKS_PER_YEAR,
     build_fold_agnostic_features,

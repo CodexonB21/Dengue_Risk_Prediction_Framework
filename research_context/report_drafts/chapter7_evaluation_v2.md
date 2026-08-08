@@ -44,7 +44,7 @@ Because outbreak weeks are rare, PR-AUC is the primary Stage 1 discrimination me
 
 ### 7.2.4 Module 3 metrics and protocol
 
-Stage 1 spatial validity is assessed using Global Moran's I with queen-contiguity weights on the KDE baseline surface, reported both as an aggregated district summary and as selected weekly checks. Stage 2 residual prediction quality is assessed by out-of-fold MAE and RMSE under five-fold spatial K-means cross-validation. Convergence of the iterative risk update is checked by a dual criterion on maximum risk-value change and residual Moran's I significance, under the adopted shrinkage factor α = 0.05. Aggregate case-fit of the rescaled Stage 1 baseline versus the converged Stage 2 Risk surface is compared using correlation, MAE, and RMSE against actual district-week cases. This last comparison is reported honestly even when Stage 2 does not improve fit.
+Stage 1 spatial validity is assessed using Global Moran's I with queen-contiguity weights on the KDE baseline surface, reported both as an aggregated district summary and as selected weekly checks. Stage 2 residual prediction quality is assessed by out-of-fold MAE and RMSE under five-fold spatial K-means cross-validation. Convergence of the iterative risk update is checked by a dual criterion on maximum risk-value change and residual Moran's I significance, under the adopted full-magnitude update factor α = 1. Aggregate case-fit of the rescaled Stage 1 baseline, a naive persistence baseline, and the converged Stage 2 Risk surface is compared using correlation, MAE, and RMSE against actual district-week cases, alongside a rank-based hotspot lens (Spearman correlation, precision at top-k). This comparison is reported honestly regardless of outcome — an earlier design iteration is retained in the narrative precisely because it did not improve fit, before the final formulation was found to.
 
 ### 7.2.5 Scope boundaries
 
@@ -191,33 +191,37 @@ Aggregated Global Moran's I on the KDE baseline is I ≈ 0.702 with permutation 
 
 The NE-monsoon week's non-significance is retained deliberately. It shows that the aggregated I ≈ 0.70 headline must not be read as proof that every week exhibits the same clustering strength. Stage 1 therefore establishes a generally clustered spatial baseline with documented temporal nuance, which is an appropriate foundation for residual adjustment rather than a claim of invariant spatial structure.
 
-### 7.5.3 Stage 2 RF residual adjustment and α-update convergence
+### 7.5.3 Stage 2 RF residual adjustment and evolution to the final formulation
 
-Stage 2 defines residual intensity as actual case intensity minus current Risk, beginning from the mass-conserving rescaled KDE baseline. Out-of-fold residual prediction under spatial CV achieved mean MAE 33.12 ± 23.57 and RMSE 54.79 ± 29.63 across five folds. The iterative update uses
+Stage 2's design went through two verified refinements before reaching its final, promoted form, and both are reported here because they materially change what the model's accuracy can be attributed to. An initial version trained the Random Forest on climate and demographic covariates alone (lagged rainfall and temperature, climate anomalies, monsoon indicators, elevation, population density, and a Mahalanobis anomaly score) and produced no genuine improvement over Stage 1 once benchmarked honestly. Diagnosing this null result found that none of those covariates gave the model information about a district's own recent case trajectory; adding own-district lags of the residual (one to four weeks back) resolved this and became the dominant features by a wide margin, confirming genuine short-term epidemic persistence at district level.
+
+A second refinement addressed the scale of the residual target itself. A direct diagnostic of the raw (absolute) residual found it strongly heteroscedastic — error magnitude scales with the predicted baseline magnitude (correlation ≈ 0.78 between the baseline and the absolute residual's magnitude) — so a model trained on the absolute residual lets the handful of largest outbreak weeks dominate the learning signal at the expense of ordinary weeks. The final Stage 2 model instead predicts a relative residual, the absolute residual divided by the current baseline risk, with an exact reconstruction back to an absolute Risk value:
 
 ```text
-Risk_t = Risk_(t-1) + α · predicted_residual_t
+Risk_t = Risk_(t-1) + α · predicted_relative_residual_t · (Risk_(t-1) + 1)
 ```
 
-with α = 0.05. A literal unshrunk update (α = 1.0) diverged under honest out-of-fold residual prediction. Under α = 0.05 the loop converged at iteration 1 (max_delta ≈ 9.63 below epsilon ≈ 12.98), with residual Moran's I remaining non-significant. Feature importance of the final Random Forest is dominated by population density (≈ 0.407) and estimated population (≈ 0.178), followed by temperature and rainfall lag/anomaly terms. This pattern supports an interpretation of Stage 2 as district-level burden correction informed by demography and climate, rather than as a pure spatial declustering engine.
+with α = 1 (the full-magnitude update). An earlier absolute-scale formulation required shrinkage (α = 0.05) because an unshrunk update on that scale diverged under honest out-of-fold prediction; the relative-scale reformulation, combined with the own-district lag features, removed this instability. The loop converges at iteration 1 under the dual numeric/spatial criterion, with residual Moran's I remaining non-significant. Feature importance of the final Random Forest is dominated by the district's own relative-residual lags (lag 1 ≈ 0.67, lag 2 ≈ 0.14, roughly 81 per cent combined), with the earlier absolute-residual lags, population density, and climate terms each contributing under two per cent. This pattern confirms that Stage 2's real, defensible mechanism is short-term epidemic persistence, not primarily an environmental or demographic correction — a genuine reframing from the module's original design intent, stated plainly rather than left implicit.
 
-### 7.5.4 Stage 1 vs Stage 2 aggregate fit
+### 7.5.4 Stage 1 vs Stage 2 aggregate fit, and comparison against a naive persistence baseline
 
-Comparison of the rescaled Stage 1 baseline against the converged Stage 2 Risk surface yields a verified null-to-negative aggregate-fit result.
+Because the own-district lag features account for the large majority of feature importance, the natural follow-up question is whether the Random Forest's out-of-fold prediction actually beats the trivial arithmetic of carrying a district's own last residual forward with no model at all. Both comparisons are reported together, since the naive-persistence check materially changes how the headline aggregate-fit improvement should be read.
 
-**Table 7.6: Stage 1 versus Stage 2 aggregate fit to actual district-week cases**
+**Table 7.6: Stage 1, naive persistence, and Stage 2 final — fit to actual district-week cases**
 
-| Stage | Correlation | MAE | RMSE |
+| Model | Correlation | MAE | RMSE |
 |---|---|---|---|
-| Stage 1 alone (Risk_0, rescaled KDE) | 0.8243 | 20.19 | 47.30 |
-| Stage 2 final (Risk, post iterative loop) | 0.8205 | 20.54 | 47.72 |
-| Change (Stage 2 − Stage 1) | −0.0037 | +0.35 | +0.41 |
+| Stage 1 alone (Risk_0, rescaled KDE) | 0.8241 | 20.54 | 48.20 |
+| Naive persistence (no model) | 0.9493 | 9.44 | 26.63 |
+| Stage 2 final (Risk, post iterative loop) | 0.9592 | 8.03 | 24.02 |
 
-Stage 2 at α = 0.05 does not improve aggregate correlation, MAE, or RMSE relative to the rescaled KDE baseline. The implemented correction therefore cannot be defended as a national case-fit optimiser. Its evaluated contribution is stable residual adjustment under spatial validation, covariate-informed explanation of burden deviations, and methodological honesty in reporting a null aggregate-fit outcome rather than selecting a flattering secondary metric after the fact.
+Stage 2's final formulation improves on Stage 1 alone by roughly 61 per cent on MAE, and — unlike an earlier absolute-residual iteration of the same architecture, which lost to naive persistence on MAE — also improves on the naive-persistence baseline on every reported metric. This was confirmed through a week-level paired bootstrap (2,000 resamples) rather than trusted from the aggregate table alone, since an aggregate improvement can mask a result that is not robust week to week; the bootstrapped confidence intervals for Stage 2's advantage over both Stage 1 and naive persistence exclude zero. A rank-based companion evaluation — Spearman correlation and precision at the top 3 and top 5 highest-risk districts each week, matching Module 3's hotspot-detection purpose more directly than raw case-count error — shows the same ordering (Stage 2 final: Spearman ≈ 0.89, precision@5 ≈ 0.82; naive persistence: ≈ 0.85 and ≈ 0.78; Stage 1 alone: ≈ 0.71 and ≈ 0.60).
+
+Two limitations are reported alongside this result rather than omitted. First, the RMSE improvement over naive persistence, while present in every spatial fold, is proportionally larger in the highest case-volume fold (containing Colombo and Gampaha) than in the others. Second, at the one representative week already identified in Stage 1 as lacking significant spatial clustering (an NE-monsoon week where the hotspot shifts away from the western districts), Stage 2's ranking accuracy is noticeably weaker than either baseline — a plausible sign that the model leans on dynamics specific to the dominant south-western clustering pattern that do not fully transfer to that structurally different regime.
 
 ### 7.5.5 Interpretation and limits
 
-Module 3 Stage 1 succeeds as a clustered spatial baseline with an important weekly caveat. Stage 2 succeeds as a constrained residual-adjustment procedure that converges under shrinkage and yields interpretable demographic/climate drivers, but it does not improve aggregate case-fit. IDW rendering used for maps is visualisation only and does not alter either stage's estimates. District-level analysis cannot resolve sub-district hotspots, and Open-Meteo climate/elevation remain point-per-district inputs. These limits belong in the evaluation narrative because they bound what the Risk surface can claim as early-warning spatial support.
+Module 3 Stage 1 succeeds as a clustered spatial baseline with an important weekly caveat. Stage 2, in its final form, succeeds as a genuine residual-compensation procedure: it converges cleanly, improves aggregate case-fit and hotspot-ranking accuracy over both Stage 1 alone and a naive persistence baseline, and its dominant learned mechanism (short-term own-district persistence) is interpretable and consistent with known epidemic dynamics. This required two rounds of honest diagnosis and correction — an initial covariate-only design that was null, and an absolute-residual design that lost to a trivial baseline — reported here as evidence of a rigorous evaluation process, not smoothed over. IDW rendering used for maps is visualisation only and does not alter either stage's estimates. District-level analysis cannot resolve sub-district hotspots, Open-Meteo climate/elevation remain point-per-district inputs, and the model's weaker performance at the structurally atypical NE-monsoon week remains an open limitation. These limits belong in the evaluation narrative because they bound what the Risk surface can claim as early-warning spatial support.
 
 Figure 7.5 shows the continuous hybrid risk surface for the Stage 1 peak week (2017 Week 29), obtained by IDW interpolation of the twenty-five district Risk scores onto a land-clipped grid. The map concentrates elevated risk in the south-western coastal corridor, notably around Colombo, Gampaha, and Kalutara, while much of the north and east remains comparatively low. The figure should be read as a visualisation of the converged district Risk surface for a high-burden week, not as evidence that Stage 2 improved aggregate case-fit relative to Stage 1.
 
@@ -266,7 +270,7 @@ Several limitations should remain explicit in any defence of these results. Dist
 
 ## 7.8 Summary
 
-This chapter evaluated all three modules of the Residual Compensation Modeling Framework under protocols matched to each research question. Module 1's residual compensation improved case-forecast MASE for most districts relative to SARIMA alone, with honest holdout exceptions and partial statistical significance. Module 2's tuned Random Forest Stage 1 and Platt-scaled Stage 2 provided outbreak-alert performance that cannot be recovered by simply thresholding Module 1 forecasts, and a subsequent round of hyperparameter tuning produced a further, holdout-confirmed improvement in both discrimination and calibration, alongside three additional ablations (ensembling, adaptive relabeling, a spatial feature from Module 3) that were tested and honestly not adopted. Module 3's KDE baseline exhibited significant spatial clustering with documented weekly nuance, while Stage 2 residual adjustment converged under α = 0.05 without improving aggregate case-fit. Cross-module comparison supports retaining magnitude, calibrated outbreak risk, and spatial hotspot views as complementary decision-support products. Chapter 8 summarises the completed research contributions and outlines realistic future work.
+This chapter evaluated all three modules of the Residual Compensation Modeling Framework under protocols matched to each research question. Module 1's residual compensation improved case-forecast MASE for most districts relative to SARIMA alone, with honest holdout exceptions and partial statistical significance. Module 2's tuned Random Forest Stage 1 and Platt-scaled Stage 2 provided outbreak-alert performance that cannot be recovered by simply thresholding Module 1 forecasts, and a subsequent round of hyperparameter tuning produced a further, holdout-confirmed improvement in both discrimination and calibration, alongside three additional ablations (ensembling, adaptive relabeling, a spatial feature from Module 3) that were tested and honestly not adopted. Module 3's KDE baseline exhibited significant spatial clustering with documented weekly nuance, and its final Stage 2 formulation — a relative-residual Random Forest driven mainly by own-district case persistence, converged under a full-magnitude (α = 1) update — genuinely improved aggregate case-fit and hotspot-ranking accuracy over both Stage 1 and a naive persistence baseline, after two earlier design iterations were honestly tested and found insufficient. Cross-module comparison supports retaining magnitude, calibrated outbreak risk, and spatial hotspot views as complementary decision-support products. Chapter 8 summarises the completed research contributions and outlines realistic future work.
 
 **Approx. word count:** 165 words
 
@@ -280,7 +284,7 @@ This chapter evaluated all three modules of the Residual Compensation Modeling F
 | 7.2 Evaluation Strategy | 565 |
 | 7.3 Module 1 | 920 |
 | 7.4 Module 2 | 900 |
-| 7.5 Module 3 | 850 |
+| 7.5 Module 3 | 1050 |
 | 7.6 Comparative | 460 |
 | 7.7 Discussion | 420 |
 | 7.8 Summary | 165 |

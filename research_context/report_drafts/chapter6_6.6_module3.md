@@ -20,21 +20,23 @@ Stage 2 defines the spatial residual as
 Residual = Actual_case_intensity − Current_Risk
 ```
 
-where Current_Risk begins as the rescaled KDE baseline and is updated across iterations. A Random Forest regressor predicts residuals from rainfall and temperature lags, climate anomalies, monsoon indicators, elevation, population density, and a Mahalanobis anomaly score over selected environmental and demographic variables. Validation uses spatial K-means cross-validation on district centroids so that whole districts remain together within folds, matching the spatial rather than temporal research question of Module 3.
+where Current_Risk begins as the rescaled KDE baseline and is updated across iterations. An initial implementation trained a Random Forest regressor to predict this residual from rainfall and temperature lags, climate anomalies, monsoon indicators, elevation, population density, and a Mahalanobis anomaly score over selected environmental and demographic variables, but produced no genuine improvement in fit once benchmarked honestly. Diagnosing this null result showed that none of those covariates gave the model any information about a district's own recent case trajectory — every feature was either static per district or described only current-week climate. Own-district lags of the residual (one to four weeks back) were added to close this gap and immediately became the dominant features by a wide margin, confirming that dengue burden carries genuine short-term persistence at district level that the original feature set could not represent.
 
-The iterative update applies shrinkage:
+A second refinement addressed the SCALE of the residual target. A direct diagnostic of the raw (absolute) residual found it strongly heteroscedastic — error magnitude scales with the predicted baseline magnitude — so a model trained on the absolute residual lets the largest outbreak weeks dominate the learning signal at the expense of ordinary weeks. Stage 2 therefore predicts a relative residual, the absolute residual divided by the current baseline risk, with an exact (not approximate) reconstruction back to an absolute Risk value. Validation throughout uses spatial K-means cross-validation on district centroids so that whole districts remain together within folds, matching the spatial rather than temporal research question of Module 3.
+
+The iterative update is
 
 ```text
-Risk_t = Risk_(t-1) + α · predicted_residual_t
+Risk_t = Risk_(t-1) + α · predicted_relative_residual_t · (Risk_(t-1) + 1)
 ```
 
-with α = 0.05. The unshrunk update was found to diverge under honest out-of-fold residual prediction because static district covariates make held-out-district extrapolation imperfect; adding full-magnitude prediction error back into Risk compounds iteration over iteration. The shrinkage term stabilises convergence under a dual check on risk-value change and residual Moran’s I significance, with a small iteration cap as a safeguard. Retraining within the loop uses the same spatial folds so that predicted residuals remain out of fold for held-out districts rather than memorising in-sample targets.
+with α = 1, the full-magnitude update. An earlier absolute-scale formulation required shrinkage (α = 0.05) because an unshrunk full-step update on that scale diverged under honest out-of-fold residual prediction: static district covariates alone made held-out-district extrapolation imperfect, so adding full-magnitude prediction error back into Risk compounded iteration over iteration. Once own-district relative-residual lags gave the model a genuine dynamic anchor even for a held-out district, this instability resolved and the full-magnitude update became the best-performing choice. The loop is still checked against a dual criterion on risk-value change and residual Moran's I significance each run, with a small iteration cap as a safeguard, and retraining within the loop uses the same spatial folds so that predicted residuals remain out of fold for held-out districts rather than memorising in-sample targets.
 
 ### 6.6.4 Converged Risk Map and Visualisation
 
 The converged Risk surface is exported as the hybrid risk map for dashboard and report visualisation. Continuous map rendering interpolates the twenty-five district Risk scores onto a land-clipped grid using k-nearest-neighbour inverse-distance weighting with k = 4 and power = 4. IDW is a visualisation-layer technique only; it is not an additional modelling stage and does not alter Stage 1 or Stage 2 estimates. Choropleth maps and generic heatmap blur were judged insufficient to communicate neighbourhood blending already implied by the KDE geometry, whereas IDW with a limited neighbour set and steeper distance decay better preserves local hotspot contrast without colouring ocean cells.
 
-Importantly, Stage 2 is not claimed to improve aggregate case-fit relative to the rescaled Stage 1 baseline. The implemented correction prioritises stable spatial residual adjustment and covariate-informed explanation of burden deviations; any aggregate fit comparison belongs in Chapter 7 and must be reported honestly rather than reframed around a more flattering secondary metric. Figure 6.4 summarises the Module 3 implementation stack.
+In its final promoted form, Stage 2 does improve aggregate case-fit relative to the rescaled Stage 1 baseline, and — unlike an earlier absolute-residual iteration — also improves on a naive persistence baseline (simply carrying a district's own last recorded residual forward with no model at all), confirmed through a week-level bootstrap rather than an aggregate table alone. This should not be overstated: the improvement is not uniform across every spatial fold or week, and the model is noticeably weaker at the one representative week already identified in Stage 1 as lacking significant spatial clustering. Any aggregate fit comparison and its caveats belong in Chapter 7 and must be reported honestly rather than reframed around a more flattering secondary metric. Figure 6.4 summarises the Module 3 implementation stack.
 
 [Insert Figure 6.4 here]
 
@@ -42,12 +44,12 @@ Importantly, Stage 2 is not claimed to improve aggregate case-fit relative to th
 
 Figure 6.4 should be interpreted as a district-level spatial residual-compensation pipeline grounded in Open-Meteo and GADM Level-1 inputs, not as a CHIRPS/WorldPop/DS-division production system.
 
-**Approx. word count:** 920 words
+**Approx. word count:** 1080 words
 
 **Notes for Team:**
 - PNG: `research_context/report_drafts/diagrams/figure_6_4_module3_implementation.png`
 - Draw.io: `research_context/report_drafts/diagrams/figure_6_4_module3_implementation.drawio`
-- Keep α = 0.05 and IDW (k=4, power=4) explicit
-- Do not claim Stage 2 improves aggregate case-fit; defer honest metrics to Chapter 7
+- UPDATED 2026-08-08 (M3-015): official formula is now `α = 1` with the relative-residual reconstruction shown above, not `α = 0.05` on the absolute residual — regenerate the figure/diagram accordingly. Keep IDW (k=4, power=4) explicit.
+- Stage 2 now DOES improve aggregate case-fit (over Stage 1 and over naive persistence) — do not keep the old "does not improve" wording; defer exact metrics and honest caveats (fold heterogeneity, NE-monsoon weakness) to Chapter 7.
 - Do not revive CHIRPS / WorldPop / SRTM / DS-division claims
 - Transition: next section is 6.7 Output Generation and Early-Warning Dashboard

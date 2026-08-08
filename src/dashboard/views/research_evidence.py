@@ -16,6 +16,7 @@ from src.dashboard.data_loaders import (
     load_m3_convergence_log,
     load_m3_feature_importance,
     load_m3_morans_i,
+    load_m3_persistence_baseline,
     load_m3_stage_comparison,
     load_production_stack,
     m1_holdout_summary,
@@ -186,8 +187,12 @@ def render_evidence_page() -> None:
     st.subheader("Module 3 — spatial hotspot detection (KDE + RF residual compensation)")
     st.caption(
         "Stage 1: Kernel Density Estimation + Global Moran's I spatial baseline. "
-        "Stage 2: Random Forest residual compensation, wrapped in an iterative "
-        "refinement loop (max 4 iterations, dual convergence check)."
+        "Stage 2: Random Forest RELATIVE-residual compensation (own-district relative-"
+        "residual lag features, M3-015 — target is (Actual - Risk_0) / (Risk_0 + 1), "
+        "not the raw difference, since the raw residual was found strongly "
+        "heteroscedastic), capped at 1 iteration by design — the lag features are "
+        "fixed relative to Risk_0, so retraining past iteration 1 is not well-founded "
+        "for this feature set (see MODULE_CONTEXT.md)."
     )
 
     morans_df = load_m3_morans_i()
@@ -195,6 +200,7 @@ def render_evidence_page() -> None:
     convergence = m3_convergence_summary(load_m3_convergence_log())
     m3_comparison = load_m3_stage_comparison()
     m3_importance = load_m3_feature_importance()
+    m3_persistence = load_m3_persistence_baseline()
 
     col1, col2 = st.columns(2)
     with col1:
@@ -234,19 +240,41 @@ def render_evidence_page() -> None:
         for col in ("corr", "mae", "rmse"):
             if col in display.columns:
                 display[col] = display[col].map(lambda x: f"{x:.4f}" if pd.notna(x) else "—")
-        st.dataframe(display, use_container_width=True, hide_index=True)
-        st.info(
-            "**Null result, reported honestly**: Stage 2's residual correction does NOT "
-            "improve aggregate fit to actual case counts (correlation -0.0037, MAE +1.7%, "
-            "RMSE +0.9% vs. Stage 1 alone). This is expected, not a bug — the shrinkage "
-            "term (alpha=0.05) was chosen for stable, immediate convergence, not accuracy. "
-            "Stage 2's real value is diagnostic: the feature importance below reveals "
-            "*which* factors (population density, climate timing) drive district-level "
-            "burden beyond pure spatial proximity — something Stage 1's KDE baseline, "
-            "with zero covariates, structurally cannot provide."
-        )
+        st.dataframe(display, width="stretch", hide_index=True)
+        st.success("Genuinely improves fit vs. Stage 1 alone (M3-015) — see below for how this was verified.")
     else:
         st.warning("Stage 1 vs Stage 2 comparison file not found — run `python -m src.module3_spatial.evaluate`.")
+
+    st.markdown("**Is Stage 2 actually beating a trivial baseline?**")
+    if not m3_persistence.empty:
+        display = m3_persistence.copy()
+        for col in ("corr", "mae", "rmse"):
+            if col in display.columns:
+                display[col] = display[col].map(lambda x: f"{x:.4f}" if pd.notna(x) else "—")
+        st.dataframe(display, width="stretch", hide_index=True)
+        st.success("Now genuinely beats the naive-persistence baseline too (M3-015) — see below.")
+    else:
+        st.warning("Persistence baseline file not found — run `python -m src.module3_spatial.persistence_baseline`.")
+
+    with st.expander("How Stage 2 evolved — M3-005 → M3-008 → M3-015"):
+        st.markdown(
+            "1. **Climate/demographic covariates alone (M3-005):** null result — no "
+            "genuine improvement over Stage 1.\n"
+            "2. **+ own-district absolute-residual lags (M3-008):** beat Stage 1 "
+            "(MAE 20.54 → 9.96, ~51% reduction) but still lost to naive persistence "
+            "on MAE (9.44 vs. 9.96) — only won on correlation and RMSE.\n"
+            "3. **Relative residual instead of absolute (M3-015):** a direct diagnostic "
+            "found the absolute residual strongly heteroscedastic (error scales with "
+            "predicted magnitude), letting the largest outbreak weeks dominate the "
+            "learning signal. Predicting the RELATIVE residual instead (MAE 20.54 → "
+            "8.03, ~61% reduction; correlation 0.824 → 0.959) beats BOTH Stage 1 and "
+            "naive persistence on every metric, confirmed via a week-level bootstrap, "
+            "not just the aggregate table above.\n\n"
+            "**Two honest caveats remain**: the RMSE gain is proportionally larger in "
+            "the highest-case-volume spatial fold, and the model is noticeably weaker "
+            "at the NE-monsoon week already flagged above as non-clustered — see "
+            "`EXPERIMENT_LOG.md` M3-015 for the full numbers."
+        )
 
     if not m3_importance.empty:
         st.markdown("**Stage 2 feature importance**")

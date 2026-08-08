@@ -24,6 +24,8 @@ from src.config import (  # noqa: E402
     MODULE2_FUTURE_RISK_PREDICTIONS_PATH,
     MODULE2_LIVE_RISK_PREDICTIONS_PATH,
     MODULE2_WEEKLY_MODELING_TABLE_PATH,
+    MODULE3_FUTURE_HOTSPOT_FORECAST_PATH,
+    MODULE3_MASTER_TABLE_PATH,
     SHARED_CLIMATE_WEEKLY_PATH,
 )
 
@@ -64,6 +66,8 @@ def _summarize_outputs() -> pd.DataFrame:
     _max_epi(MODULE1_NOWCAST_ACCURACY_PATH, "nowcast_prospective_accuracy")
     _max_epi(MODULE2_LIVE_RISK_PREDICTIONS_PATH, "live_risk")
     _max_epi(MODULE2_FUTURE_RISK_PREDICTIONS_PATH, "future_risk")
+    _max_epi(MODULE3_MASTER_TABLE_PATH, "module3_master_table")
+    _max_epi(MODULE3_FUTURE_HOTSPOT_FORECAST_PATH, "module3_future_hotspot_forecast")
     summary = pd.DataFrame(rows)
     summary["refreshed_at_utc"] = datetime.now(timezone.utc).isoformat()
     DASHBOARD_REFRESH_MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -84,6 +88,7 @@ def run_refresh(skip_weather: bool = False) -> pd.DataFrame:
     _run_step("shared_preprocessing", [PYTHON, "-m", "src.preprocessing.shared"])
     _run_step("module1_preprocessing", [PYTHON, "-m", "src.preprocessing.module1_preprocessing"])
     _run_step("module2_preprocessing", [PYTHON, "-m", "src.preprocessing.module2_preprocessing"])
+    _run_step("module3_preprocessing", [PYTHON, "-m", "src.preprocessing.module3_preprocessing"])
     _run_step("module1_forecast_future", [PYTHON, "-m", "src.module1_forecasting.forecast_future"])
     _run_step(
         "module1_nowcast",

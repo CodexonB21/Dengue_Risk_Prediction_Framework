@@ -27,7 +27,9 @@ from src.config import (
     MODULE2_RISK_THRESHOLD_HOLDOUT_COMPARISON_PATH,
     MODULE2_STAGE2_METRICS_PATH,
     MODULE3_CONVERGENCE_LOG_PATH,
+    MODULE3_FUTURE_HOTSPOT_FORECAST_PATH,
     MODULE3_MORANS_I_METRICS_PATH,
+    MODULE3_PERSISTENCE_BASELINE_PATH,
     MODULE3_RF_FEATURE_IMPORTANCE_PATH,
     MODULE3_STAGE_COMPARISON_PATH,
     GADM_LEVEL1_SHAPEFILE_PATH,
@@ -169,6 +171,10 @@ def load_m3_stage_comparison() -> pd.DataFrame:
     return load_csv(MODULE3_STAGE_COMPARISON_PATH)
 
 
+def load_m3_persistence_baseline() -> pd.DataFrame:
+    return load_csv(MODULE3_PERSISTENCE_BASELINE_PATH)
+
+
 def m3_morans_i_summary(morans_df: pd.DataFrame) -> dict[str, float | bool]:
     if morans_df.empty:
         return {}
@@ -199,6 +205,14 @@ def load_m1_nowcast() -> pd.DataFrame:
     used elsewhere in the dashboard - this is the specific horizon=1 output
     Decision 040/M1-016 promoted to production."""
     return load_csv(MODULE1_NOWCAST_PATH)
+
+
+def load_m3_hotspot_forecast() -> pd.DataFrame:
+    """Module 3's genuine next-week spatial forecast (Decision 031/M3-007,
+    relative-residual RF as of Decision 051/M3-015) - the spatial-axis
+    analogue of `load_m1_nowcast()` above, named the same way for
+    consistency across the three modules' "next week" panels."""
+    return load_csv(MODULE3_FUTURE_HOTSPOT_FORECAST_PATH)
 
 
 def load_m1_nowcast_log() -> pd.DataFrame:

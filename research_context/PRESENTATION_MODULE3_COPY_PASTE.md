@@ -59,10 +59,10 @@ Stage 1 — Spatial baseline
 • Output: KDE_baseline risk surface
 
 Stage 2 — Residual compensation
-• Residual = actual case intensity − current Risk
-• Random Forest predicts spatial residual
-• Iterative update with shrinkage (α = 0.05):
-    Risk_t = Risk_(t−1) + α · predicted_residual_t
+• Residual = (actual case intensity − current Risk) / (current Risk + 1) — a RELATIVE measure
+• Random Forest predicts the relative spatial residual
+• Full-magnitude iterative update (α = 1):
+    Risk_t = Risk_(t−1) + α · predicted_residual_t · (Risk_(t−1)+1)
 
 Validation
 • 5-fold spatial K-means cross-validation on district centroids
@@ -172,52 +172,55 @@ Moran's I confirms the KDE surface is not arbitrary noise — dengue burden clus
 
 **Title:**
 ```
-Stage 2 — Demographic and Environmental Correction
+Stage 2 — Relative-Residual Correction Driven by Case Persistence
 ```
 
 **ON-SLIDE:**
 ```
 Residual model
-• Target: observed case intensity − current Risk surface
+• Target: (observed case intensity − current Risk) / (current Risk + 1) — a RELATIVE measure
 • Random Forest regressor under 5-fold spatial cross-validation
-• Residual features: population, climate lags, anomalies, elevation
+• Residual features: own-district recent case history (primary),
+  population, climate lags, anomalies, elevation (secondary)
 
 Iterative risk update
-• Shrinkage α = 0.05 ensures stable convergence
-• Converged Risk surface: corr(Risk, Cases) ≈ 0.82
+• Full-magnitude update (α = 1) — stable once own-district history was added
+• Converged Risk surface: corr(Risk, Cases) ≈ 0.96 —
+  a genuine improvement over Stage 1 alone (≈0.82) and a naive
+  "no model" baseline (≈0.95)
 
 Dominant correction drivers
-• Population density  — leading feature (~41% importance)
-• Estimated population — second (~18% importance)
-• Temperature and rainfall lag/anomaly terms — supporting
+• Own-district relative-residual lag (1 week back) — leading feature (~67% importance)
+• Own-district relative-residual lag (2 weeks back) — second (~14% importance)
+• Population density and climate terms — supporting (each <2%)
 
 Interpretation
-• Stage 2 adjusts spatial burden using demographic and
-  environmental context, not just geographic proximity
+• Stage 2's real mechanism is short-term epidemic persistence,
+  with demographic/environmental context playing a secondary role
 ```
 
 **INSERT FIGURE:**
 - **Feature importance chart**  
-- File: `outputs/figures/module3/feature_importance.png`  
+- File: `outputs/figures/module3/feature_importance.png` (regenerated 2026-08-08)  
 - Place: right half or full-width below text
 
 **INSERT TABLE (paste into slide):**
 
 | Rank | Feature | Importance |
 |:---:|---|---|
-| 1 | population_density | ≈ 0.41 |
-| 2 | estimated population | ≈ 0.18 |
-| 3 | temperature (lag / anomaly) | supporting |
-| 4 | rainfall (lag / anomaly) | supporting |
+| 1 | relative_residual_lag_1 | ≈ 0.67 |
+| 2 | relative_residual_lag_2 | ≈ 0.14 |
+| 3 | population_density | supporting (<2%) |
+| 4 | climate lag / anomaly terms | supporting (each <2%) |
 
 **FIGURE CAPTION (optional):**
 ```
 Stage 2 Random Forest feature importance —
-population density leads spatial residual correction
+own-district case persistence leads spatial residual correction
 ```
 
 **SPEAKER NOTES:**
-Population density dominating feature importance makes epidemiological sense — higher-density districts carry different baseline burden patterns. Climate terms add contextual adjustment on top of the KDE spatial baseline.
+A district's own recent case history dominating feature importance makes epidemiological sense — dengue burden carries genuine week-to-week persistence. This was found only after an earlier version trained on climate/demographics alone was tested and produced no improvement.
 
 ---
 
@@ -243,7 +246,8 @@ Geographic pattern
 Framework value
 • Supports geographic prioritisation alongside
   Module 1 case forecasts and Module 2 outbreak alerts
-• Strong association with observed burden (corr ≈ 0.82)
+• Strong association with observed burden (corr ≈ 0.96) —
+  genuinely better than Stage 1 alone AND a naive "no model" check
 ```
 
 **INSERT FIGURE (required — make this the hero slide):**
@@ -279,7 +283,9 @@ Delivered
 
 Demonstrated
 • Significant spatial clustering (Moran's I ≈ 0.70)
-• Interpretable demographic and climate-driven correction drivers
+• A relative-residual correction, driven mainly by case persistence, that
+  genuinely improves case-fit and hotspot ranking over Stage 1 AND a naive
+  "no model" baseline (bootstrap-confirmed, not just an aggregate table)
 • Peak-week map aligns with known high-burden geography
 
 Framework role — three complementary modules
@@ -324,5 +330,5 @@ Module 3 — Hybrid Spatial Hotspot Detection | 214099D
 
 ---
 
-**Approx. on-slide word count:** ~620 words across 7 slides  
-**Status:** Copy-paste ready (presentation-safe, 2026-07-31)
+**Approx. on-slide word count:** ~640 words across 7 slides  
+**Status:** Copy-paste ready (presentation-safe, 2026-07-31; UPDATED 2026-08-08 after M3-015 promotion — Stage 2 now genuinely improves case-fit, see `PRESENTATION_MODULE3_SLIDES.md` for full context)

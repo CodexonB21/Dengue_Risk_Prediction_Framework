@@ -1,0 +1,7 @@
+metric,comparison,point_diff (blend - other),ci_low,ci_high,pct_weeks_blend_better
+MAE,Blended (w*RF + (1-w)*persistence) vs. Naive persistence (no model),0.021945258568011994,-0.08119004852650069,0.1020042968479829,44.3
+MAE,"Blended (w*RF + (1-w)*persistence) vs. Stage 2 RF, official",-0.5012688562093004,-0.7352378116629701,-0.24677319980156218,69.1
+precision_at_5,Blended (w*RF + (1-w)*persistence) vs. Naive persistence (no model),0.0031840796019900752,-0.0009950248756218638,0.007562189054726276,6.3
+precision_at_5,"Blended (w*RF + (1-w)*persistence) vs. Stage 2 RF, official",0.028059701492537337,0.020298507462686466,0.03562189054726361,24.0
+spearman_rho,Blended (w*RF + (1-w)*persistence) vs. Naive persistence (no model),-0.008138501821214783,-0.010763572818264105,-0.005572225391695443,38.0
+spearman_rho,"Blended (w*RF + (1-w)*persistence) vs. Stage 2 RF, official",0.028074516467122113,0.024390771817959202,0.03144749368978558,75.2

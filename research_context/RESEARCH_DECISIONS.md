@@ -2093,3 +2093,96 @@ normal") is usually the safer call, given the label's low overall prevalence (De
 ### Documentation Updated
 `module_2_classification/MODULE_CONTEXT.md`, `module_2_classification/EXPERIMENT_LOG.md`
 (M2-016), `research_context/CHANGELOG.md`.
+
+---
+
+## Decision 050: Module 3 Stage 2 — Own-District Residual Lag Features Promoted, Alpha Raised to 1.0 (M3-008)
+
+**Module:** Module 3
+**Status:** Adopted 2026-08-05; documented retroactively 2026-08-08 (this entry did not previously
+exist — `module_3_spatial/MODULE_CONTEXT.md` had mis-cited this decision as "Decision 032", which
+is actually an unrelated Module 1 entry (M1-011); corrected as part of this backfill).
+**Date:** 2026-08-05
+
+### Decision
+Promoted own-district lags (1-4 weeks) of the rescaled residual into Stage 2's official feature set
+(`STAGE2_FEATURE_COLUMNS = FEATURE_COLUMNS + RESIDUAL_LAG_COLUMNS`), and raised the iterative
+loop's shrinkage factor from `alpha=0.05` to `alpha=1.0` (no shrinkage) to match. The iterative
+loop was also capped at `MAX_ITERATIONS=1` by design (the lag features are fixed relative to
+`Risk_0`, so retraining on an evolving target past iteration 1 is theoretically incoherent, verified
+empirically: running iterations 2-4 anyway produced an oscillating, non-converging `max_delta`).
+
+### Reason
+The original 16-feature Stage 2 model (climate/demographic covariates only, `alpha=0.05`) showed a
+null aggregate-fit result (M3-005) — none of those features gave the Random Forest any information
+about a district's own recent case trajectory. A standalone ablation (`stage2_experiments.py`)
+tested adding own-district residual lags before promoting: out-of-fold residual MAE dropped from
+34.71 to 10.08, and `alpha=1.0` became the best-performing choice once the lag features gave the
+RF a genuine dynamic anchor even for a held-out district under spatial CV.
+
+### Implication
+- Official result after promotion: corr 0.8241 -> 0.9554, MAE 20.54 -> 9.96 (~51% reduction),
+  RMSE 48.20 -> 25.06 vs. Stage 1 alone.
+- Feature importance flipped from population_density/Estimated_Population (58.5% combined) to
+  the own-district residual lags (89.8% combined) — a genuine reframing of Stage 2's real
+  mechanism (short-term epidemic persistence, not primarily environmental/demographic correction).
+- Superseded by Decision 051 (M3-015): a follow-up check (M3-010) found this promoted model still
+  lost to a naive "carry last week's residual forward" baseline on MAE — the relative-residual
+  reformulation in Decision 051 is what finally closed that gap.
+
+### Documentation Updated
+`module_3_spatial/MODULE_CONTEXT.md` (citation corrected from the erroneous "Decision 032" to this
+entry), `module_3_spatial/EXPERIMENT_LOG.md` (M3-008), `research_context/CHANGELOG.md` (this entry).
+
+---
+
+## Decision 051: Module 3 Stage 2 — Relative-Residual Target Adopted, Beats Naive Persistence (M3-015)
+
+**Module:** Module 3
+**Status:** Adopted 2026-08-08
+**Date:** 2026-08-08
+
+### Decision
+Changed Stage 2's Random Forest target from the absolute residual (`Number_of_Cases - Risk_0`) to
+a relative residual (`(Number_of_Cases - Risk_0) / (Risk_0 + 1)`), with an exact (not approximate)
+reconstruction back to an absolute Risk value: `Risk_t = Risk_(t-1) + alpha * predicted_relative_residual_t
+* (Risk_(t-1) + 1)`. `STAGE2_FEATURE_COLUMNS_V2` adds own-district relative-residual lags (1-4
+weeks) alongside the existing absolute-residual lags and climate/demographic covariates;
+`alpha=1.0` (full-magnitude) is unchanged from Decision 050.
+
+### Reason
+Decision 050's promoted model (M3-008) was found (M3-010) to lose to a naive "carry last week's
+own residual forward" baseline on MAE, despite beating Stage 1 substantially — a direct diagnostic
+of the raw absolute residual found it strongly heteroscedastic (`corr(Risk_0, |residual|) = 0.78`),
+letting the handful of largest outbreak weeks dominate the learning signal at the expense of
+ordinary weeks. Three alternative compensation mechanisms were tried first and rejected before
+this one: an output-level blend of the RF and naive persistence (M3-013, real improvement over the
+RF alone but still only a statistical tie with persistence); an isotonic calibration layer adapted
+from Module 2's own Stage 2 mechanism (M3-014, failed cleanly — Module 3's geographically-clustered
+spatial CV folds violate calibration's implicit same-range assumption, unlike Module 2's random
+folds). The relative-residual reformulation was motivated by directly diagnosing the residual's
+own structure (heteroscedasticity) rather than trying another feature set on the same target scale.
+
+### Implication
+- Official result: beats BOTH Stage 1 alone and naive persistence on every reported metric
+  (corr 0.9592 vs. 0.9493/0.8241; MAE 8.03 vs. 9.44/20.54; RMSE 24.02 vs. 26.63/48.20), plus a
+  rank-based hotspot lens (Spearman, precision@3/5) — confirmed via a week-level paired bootstrap
+  (2,000 resamples), not just the aggregate table, per the discipline M3-013's initial (overstated)
+  aggregate result established as necessary.
+- Two honest caveats retained: the RMSE improvement over naive persistence, while present in every
+  spatial fold, is proportionally larger in the highest case-volume fold; the model is noticeably
+  weaker at the NE-monsoon representative week (already flagged in M3-001 as the one week lacking
+  significant spatial clustering).
+- `compensation_model.py`, `iterative_loop.py`, `evaluate.py`, and `forecast_future.py` all updated
+  and rerun end-to-end; `STAGE2_FEATURE_COLUMNS`/`TARGET_COL`'s pre-existing values were kept
+  unchanged (not mutated in place) specifically to protect `alpha_sweep.py` (M3-006) and
+  `stacked_persistence_experiment.py` (M3-011)'s reproducibility as frozen historical records —
+  both re-verified post-promotion to still reproduce their original numbers exactly.
+- Superseded the report-facing framing in Chapter 5/6/7 draft sections and both presentation decks,
+  which previously stated Stage 2 "does not improve aggregate case-fit" (M3-005/M3-010's now-
+  superseded finding).
+
+### Documentation Updated
+`module_3_spatial/MODULE_CONTEXT.md`, `module_3_spatial/EXPERIMENT_LOG.md` (M3-012 through M3-015),
+`research_context/QUESTIONS_FOR_DEFENSE.md`, `research_context/CHANGELOG.md`, and the Chapter 5/6/7
+report drafts and Module 3 presentation decks (this entry).

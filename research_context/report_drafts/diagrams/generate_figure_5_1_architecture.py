@@ -152,7 +152,7 @@ def main() -> Path:
             [
                 "Module-specific prep\nspatial master table",
                 "Stage 1\nKDE + Moran’s I",
-                "Stage 2\nRF residual (α=0.05)",
+                "Stage 2\nRF relative residual (α=1)",
                 "Output\nhotspot risk surface",
             ],
         ),
