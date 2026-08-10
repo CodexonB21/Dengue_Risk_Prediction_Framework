@@ -32,9 +32,12 @@ than adopt that structure, Figure 5.1's existing (already-correct) layered layou
 kept and extended: (1) the Module 1 Stage 2 box now notes "(+ climate lags/anomalies)"
 so the diagram no longer implies XGBoost is climate-blind (Decision 001 only makes Stage
 1/SARIMA climate-free); (2) a second dashed cross-module arrow, Module 1 → Module 3
-"operational forward only (Decision 031)", was added alongside the existing Module 1 →
-Module 2 arrow — Module 3's forward hotspot forecast was implemented after this figure's
-original design and had never been reflected in it. Also fixed a real drift found while
+"operational forward only (Decision 052)" (label corrected 2026-08-10 from an earlier
+mis-citation of "Decision 031" — an unrelated Module 1 entry — to Decision 052, the
+backfilled decision for Module 3's forward forecast), was added alongside the existing
+Module 1 → Module 2 arrow — Module 3's forward hotspot forecast was implemented after this
+figure's original design and had never been reflected in it. Also fixed a real drift found
+while
 doing this: `figure_5_1_system_architecture.drawio` (the hand-editable source) still said
 "Stage 2: Isotonic calibration" and "RF residual (α=0.05)" even though
 `generate_figure_5_1_architecture.py`/the PNG had already been corrected to Platt
@@ -219,7 +222,7 @@ Notes:
 - Must show shared vs module-specific preprocessing, not one undifferentiated preprocessing block.
 - Modules are largely parallel peers; two dashed cross-module arrows required (both real,
   operational-tier only, never used for training/evaluation): M1→M2 "operational forward
-  only (Decision 027)" and M1→M3 "operational forward only (Decision 031)".
+  only (Decision 027)" and M1→M3 "operational forward only (Decision 052)".
 - Correct models: M1 SARIMA→XGBoost (Stage 2 uses climate lags/anomalies — label this on
   the Stage 2 box, since Decision 001 only makes Stage 1/SARIMA climate-free, not Stage
   2); M2 tuned RF→Platt scaling (Decision 047 — was isotonic before Stage 1 tuning); M3

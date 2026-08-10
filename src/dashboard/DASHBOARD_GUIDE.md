@@ -60,7 +60,7 @@ reruns and is independently testable via `streamlit.testing.v1.AppTest.switch_pa
 | `views/overview.py` | Overview | Cold-open story; all numbers read live, nothing hardcoded |
 | `views/research_evidence.py` | Research Evidence | Holdout-validated — safe to cite |
 | `views/operational_monitoring.py` | Operational Monitoring | Reads `st.session_state["district_select"]` directly (file-based pages can't receive function arguments from `app.py`) |
-| `views/prospective_tracking.py` | Prospective Tracking | Self-checking accuracy trackers for forward predictions |
+| `views/prospective_tracking.py` | Prospective Tracking | Self-checking accuracy trackers for forward predictions (Module 1, Module 2, and, as of Decision 052/M3-016, Module 3) |
 
 Supporting modules (not pages themselves):
 
@@ -73,8 +73,10 @@ Supporting modules (not pages themselves):
 `data/processed/module2/live_risk_predictions.csv`, `future_risk_predictions.csv`,
 `data/processed/module1/future_forecast.csv`, `nowcast_next_week.csv`,
 `nowcast_prediction_log.csv`, `outputs/metrics/module1/nowcast_prospective_accuracy.csv`,
-`data/processed/module2/stage2_uncertainty_bands.csv`, `risk_prediction_log.csv`, and
-`outputs/metrics/module2/risk_prospective_accuracy.csv` are all read-only inputs — see
+`data/processed/module2/stage2_uncertainty_bands.csv`, `risk_prediction_log.csv`,
+`outputs/metrics/module2/risk_prospective_accuracy.csv`,
+`data/processed/module3/future_hotspot_forecast.csv`, `hotspot_prediction_log.csv`, and
+`outputs/metrics/module3/hotspot_prospective_accuracy.csv` are all read-only inputs — see
 `src/config.py` for their path constants and each source script's own docstring for how
 they're produced.
 
@@ -86,7 +88,7 @@ they're produced.
 |---|---|
 | `research_context/CURRENT_ARCHITECTURE.md` | Dashboard integration layer |
 | `research_context/PIPELINE_ARCHITECTURE_PLAN.md` | Refresh pipeline stage order |
-| `research_context/RESEARCH_DECISIONS.md` | Decision 027 (M1-fed forward risk), Decision 047 (current thresholds/architecture) |
+| `research_context/RESEARCH_DECISIONS.md` | Decision 027 (M1-fed forward risk), Decision 047 (current thresholds/architecture), Decision 052 (M3 forward hotspot forecast + prospective tracker) |
 | `research_context/DATA_DICTIONARY.md` | Output column definitions |
 | `research_context/QUESTIONS_FOR_DEFENSE.md` | Evidence-tier discipline, per-district/per-week honest limitations |
 | `module_1_forecasting/MODULE_CONTEXT.md`, `module_2_classification/MODULE_CONTEXT.md` | Module-specific implementation status |
@@ -96,7 +98,7 @@ they're produced.
 ## Known limitations
 
 1. **Forecast API horizon** — Open-Meteo Forecast API covers ~16 days; horizons 7–8 may have partial weekly climate.
-2. **Error compounding** — Multi-week case lags fed by Module 1 forecasts; forward risk uncertainty grows with horizon.
+2. **Error compounding** — Multi-week case lags fed by Module 1 forecasts; forward risk uncertainty grows with horizon. Module 3's Prospective Tracking panel (Decision 052/M3-016) reports `risk_0_abs_error` specifically to give this a genuine, if early, empirical read, isolating the error inherited from Module 1's case-count forecast from Module 3's own Stage 2 correction.
 3. **Production model training** — Checkpoints trained on all available history, including weeks shown on the dashboard.
 4. **sklearn version** — If you see `InconsistentVersionWarning`, scoring still runs; pin the sklearn version used to train the frozen models for strict reproducibility.
 5. **No retraining in app** — Refresh updates inputs and rescoring only; model weights are frozen in `models/`.

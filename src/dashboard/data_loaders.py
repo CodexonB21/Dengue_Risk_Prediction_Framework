@@ -28,6 +28,8 @@ from src.config import (
     MODULE2_STAGE2_METRICS_PATH,
     MODULE3_CONVERGENCE_LOG_PATH,
     MODULE3_FUTURE_HOTSPOT_FORECAST_PATH,
+    MODULE3_HOTSPOT_LOG_PATH,
+    MODULE3_HOTSPOT_PROSPECTIVE_ACCURACY_PATH,
     MODULE3_MORANS_I_METRICS_PATH,
     MODULE3_PERSISTENCE_BASELINE_PATH,
     MODULE3_RF_FEATURE_IMPORTANCE_PATH,
@@ -201,14 +203,14 @@ def m3_convergence_summary(log_df: pd.DataFrame) -> dict[str, float | int | bool
 
 def load_m1_nowcast() -> pd.DataFrame:
     """Module 1's genuine single-week-ahead prediction (vintage-ensembled
-    SARIMA + Stage 2), distinct from the 8-week `future_forecast.csv` already
+    SARIMA + Stage 2), distinct from the 4-week `future_forecast.csv` already
     used elsewhere in the dashboard - this is the specific horizon=1 output
     Decision 040/M1-016 promoted to production."""
     return load_csv(MODULE1_NOWCAST_PATH)
 
 
 def load_m3_hotspot_forecast() -> pd.DataFrame:
-    """Module 3's genuine next-week spatial forecast (Decision 031/M3-007,
+    """Module 3's genuine next-week spatial forecast (Decision 052/M3-007,
     relative-residual RF as of Decision 051/M3-015) - the spatial-axis
     analogue of `load_m1_nowcast()` above, named the same way for
     consistency across the three modules' "next week" panels."""
@@ -242,3 +244,14 @@ def load_m2_uncertainty_bands() -> pd.DataFrame:
     around Stage 2's calibrated probability (M2-012) - computed over
     validation/holdout folds only (validated tier), not forward weeks."""
     return load_csv(MODULE2_UNCERTAINTY_BANDS_PATH)
+
+
+def load_m3_hotspot_log() -> pd.DataFrame:
+    return load_csv(MODULE3_HOTSPOT_LOG_PATH)
+
+
+def load_m3_hotspot_prospective_accuracy() -> pd.DataFrame:
+    """Rows appear here ONLY once resolved against a real recomputed Stage 1
+    baseline (Decision 052/M3-016) - same "empty is honest, not broken"
+    semantics as `load_m1_nowcast_accuracy()`/`load_m2_risk_prospective_accuracy()`."""
+    return load_csv(MODULE3_HOTSPOT_PROSPECTIVE_ACCURACY_PATH)

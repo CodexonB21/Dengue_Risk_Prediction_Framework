@@ -187,7 +187,7 @@ def main() -> Path:
     )
     ax.text(34, 37.3, "operational\nforward only", ha="center", va="bottom", fontsize=6.5, color="#6B7280")
 
-    # Dashed operational link M1 -> M3 (Decision 031 — forecast case counts feed
+    # Dashed operational link M1 -> M3 (Decision 052 — forecast case counts feed
     # forward Stage 1 KDE weighting only, never training/evaluation). Routed through
     # the empty band below the output row so it doesn't cross Module 2's boxes.
     y_out_mid = m1_output[1] + m1_output[3] / 2
@@ -203,7 +203,7 @@ def main() -> Path:
             connectionstyle="arc3,rad=-0.35",
         ),
     )
-    ax.text(63, 25.8, "operational forward only\n(Decision 031)", ha="center", fontsize=6.5, color="#6B7280")
+    ax.text(63, 25.8, "operational forward only\n(Decision 052)", ha="center", fontsize=6.5, color="#6B7280")
 
     # Layer 4 — Evaluation
     box(

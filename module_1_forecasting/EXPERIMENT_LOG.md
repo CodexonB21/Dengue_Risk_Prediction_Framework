@@ -2102,3 +2102,73 @@ are kept as reusable infrastructure for that narrower follow-up if pursued.
 ### Documentation Updated
 `module_1_forecasting/MODULE_CONTEXT.md`, `research_context/RESEARCH_DECISIONS.md`
 (new decision), `research_context/CHANGELOG.md`, this entry.
+
+---
+
+## Experiment ID: M1-022
+
+### Date
+2026-08-10
+
+### Research Question
+A user reviewing the dashboard's 8-week case forecast noticed the numbers appeared to decline in
+nearly every district and asked whether that reflects real epidemiological behavior. Investigate
+directly: is the decline real signal, or an artifact of how `forecast_future.py`'s Stage 2 recursion
+works?
+
+### Districts
+All 25.
+
+### Stage 1 Model
+Not touched - used to isolate whether the decline originates here.
+
+### Stage 2 Model
+Not touched - used to isolate whether the decline originates here.
+
+### Features Used
+Not applicable - this is a diagnostic of the existing forecast output, not a new feature/model.
+
+### Metrics
+Decomposed `future_forecast.csv` into `sarima_prediction` (Stage 1) and `predicted_residual`
+(Stage 2) per horizon step, and cross-referenced `residual_lag_1_is_recursive` and
+`feature_completeness_pct`, both already present in the output.
+
+### Results
+- **24 of 25 districts** show a lower `final_prediction` at horizon_step=8 than horizon_step=1;
+  four (Kilinochchi, Mannar, Vavuniya, Mullaitivu) collapse to exactly 0 by step 8.
+- **Stage 1 (SARIMA) stays essentially flat** across the full 8-step horizon - e.g. Colombo's
+  `sarima_prediction` ranges only 335.1-367.8 across all 8 steps; Kilinochchi's ranges 10.6-11.9.
+  The decline is not coming from Stage 1.
+- **Stage 2's `predicted_residual` declines steadily**, and the mechanism is directly visible:
+  `residual_lag_1_is_recursive` is `False` only at horizon_step=1 and `True` for every later step -
+  from week 2 onward, Stage 2 is feeding on its OWN prior predictions, not real historical data.
+  Colombo's correction: 201.6→278.0→206.7→203.5→176.5→161.4→146.4→118.9. Kilinochchi's correction
+  goes increasingly NEGATIVE: 5.8→‑0.05→‑4.3→‑3.5→‑4.5→‑6.6→‑8.1→‑13.0.
+- `feature_completeness_pct` also declines from 85.0% (step 1) to 47.3% (step 8) across all
+  districts - already a documented limitation, but distinct from the bias found here.
+
+### Interpretation
+This is a systematic directional bias, not merely "growing uncertainty" - a materially stronger
+and more precise finding than the existing "error compounding" framing (`DASHBOARD_GUIDE.md`'s
+Known Limitations). Once Stage 2's lag features become self-fed, small directional errors compound
+step over step instead of averaging out - a known instability of recursive multi-step forecasting
+with tree-based lag-feature models. This is distinct from Stage 1's own multi-step SARIMA math,
+which correctly reverts toward a stable mean rather than drifting. The four districts that collapse
+to exactly 0 (Kilinochchi, Mannar, Vavuniya, Mullaitivu) are notably the same low-volume districts
+already flagged elsewhere (M1-009/Decision 034) as fold-specific outliers under residual correction.
+
+### Decision
+**Shortened `FORECAST_HORIZON_WEEKS` from 8 to 4** (Decision 053) - reduces exposure to the bias's
+worst effects (feature completeness floor rises from 47% to 64%; districts collapsing to exactly 0
+drop from 4 to 2) without fixing the underlying recursion artifact. **Did not** attempt the
+textbook fix (separate direct per-horizon models instead of one model applied recursively) this
+session - that is a real modeling change requiring its own walk-forward validation per horizon, not
+something to bolt on without that validation this close to a defense. Flagged as a named, credible
+follow-up rather than fixed or hidden.
+
+### Documentation Updated
+`src/config.py`, `src/module1_forecasting/forecast_future.py` (now imports
+`FORECAST_HORIZON_WEEKS` from `src.config` instead of a separately hardcoded, silently-driftable
+local constant), `research_context/RESEARCH_DECISIONS.md` (Decision 053),
+`module_2_classification/EXPERIMENT_LOG.md` (M2-017), `src/dashboard/DASHBOARD_GUIDE.md`,
+`research_context/CHANGELOG.md`, this entry.

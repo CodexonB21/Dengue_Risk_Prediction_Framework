@@ -51,7 +51,7 @@ from src.module3_spatial.risk_surface import (
 def _render_nowcast_panel(nowcast: pd.DataFrame, district: str) -> None:
     """Module 1's genuine single-week-ahead prediction (Decision 040/M1-016's
     vintage-ensembled SARIMA + Stage 2) - a distinct, more current headline
-    number than the 8-week `future_forecast.csv` used below, and previously
+    number than the 4-week `future_forecast.csv` used below, and previously
     completely absent from the dashboard despite being production output."""
     module_badge("m1")
     st.subheader("Module 1 — next-week case nowcast")
@@ -64,7 +64,7 @@ def _render_nowcast_panel(nowcast: pd.DataFrame, district: str) -> None:
     target = f"{int(nowcast['Year'].iloc[0])} Wk{int(nowcast['Week'].iloc[0])}" if not nowcast.empty else "—"
     st.caption(
         f"Single-step \"predict next week using all data up to now\" ({target}) — distinct from the "
-        "recursive 8-week forecast further down this page. Uses a 4-vintage SARIMA ensemble "
+        "recursive 4-week forecast further down this page. Uses a 4-vintage SARIMA ensemble "
         "(Decision 039/M1-016), the first broad accuracy improvement found across Module 1's full "
         "remediation arc, though still operational-tier (no holdout MASE for this specific path)."
     )
@@ -232,7 +232,7 @@ def render_operational_page(
         if hist.empty and fut.empty:
             st.warning("No case forecast data.")
         else:
-            fig = px.line(title=f"{district}: cases — history + 8-week forward (operational)")
+            fig = px.line(title=f"{district}: cases — history + 4-week forward (operational)")
             if not hist.empty:
                 fig.add_scatter(
                     x=hist["Week_Start_Date"],
@@ -312,7 +312,7 @@ def render_operational_page(
             "- **This week** uses real reported cases. **Next week (forecast)** uses "
             "Module 1's case forecast plus real *observed* climate — Module 3's "
             "reporting lag means the forecast week's weather has already happened. "
-            "See Decision 031 (`research_context/RESEARCH_DECISIONS.md`).\n"
+            "See Decision 052 (`research_context/RESEARCH_DECISIONS.md`).\n"
             "- Not a validated forecast — see the **Research evidence** page for "
             "Stage 1/Stage 2 validation numbers (Moran's I, convergence, fit comparison)."
         )

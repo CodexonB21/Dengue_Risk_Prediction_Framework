@@ -371,7 +371,7 @@ the intended "risk points toward whichever neighbor has more cases" behavior. Th
 rendering-layer technique — it does not feed back into the RF or the iterative loop, and does
 not change any committed Stage 1/2 output.
 
-**Forward operational hotspot forecast (Decision 031)**: Module 3 has no forecasting capability
+**Forward operational hotspot forecast (Decision 052)**: Module 3 has no forecasting capability
 of its own (Stage 1's KDE weighting and Stage 2's residual target both require a known case
 count), so its forward forecast **reads Module 1's `future_forecast.csv`** as a case-count
 proxy — a one-directional, read-only cross-module dependency, consistent with each module's

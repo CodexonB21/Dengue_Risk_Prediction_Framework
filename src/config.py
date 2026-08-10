@@ -63,6 +63,8 @@ MODULE3_STAGE_COMPARISON_PATH = MODULE3_METRICS_DIR / "stage1_vs_stage2_comparis
 MODULE3_RISK_SURFACE_PLOT_PATH = MODULE3_FIGURES_DIR / "risk_surface_peak_week.png"
 MODULE3_MAHALANOBIS_STATS_PATH = MODULE3_MODELS_DIR / "mahalanobis_stats.joblib"
 MODULE3_FUTURE_HOTSPOT_FORECAST_PATH = MODULE3_PROCESSED_DIR / "future_hotspot_forecast.csv"
+MODULE3_HOTSPOT_LOG_PATH = MODULE3_PROCESSED_DIR / "hotspot_prediction_log.csv"
+MODULE3_HOTSPOT_PROSPECTIVE_ACCURACY_PATH = MODULE3_METRICS_DIR / "hotspot_prospective_accuracy.csv"
 MODULE3_ALPHA_SWEEP_METRICS_PATH = MODULE3_METRICS_DIR / "alpha_sweep_accuracy.csv"
 MODULE3_POPULATION_DENSITY_PDP_PLOT_PATH = MODULE3_FIGURES_DIR / "population_density_pdp.png"
 MODULE3_STAGE2_EXPERIMENTS_PATH = MODULE3_METRICS_DIR / "stage2_experiments.csv"
@@ -331,7 +333,15 @@ def module2_stage2_paths(feature_variant: str | None = None) -> dict[str, Path]:
     }
 
 # Shared forward horizon for Module 1 case forecast and Module 2 forward risk.
-FORECAST_HORIZON_WEEKS = 8
+# UPDATED 2026-08-10 (Decision 053): shortened from 8 to 4. Weeks 5-8 were found
+# to carry a systematic downward bias, not just growing uncertainty - Stage 2's
+# residual correction becomes fully recursive from horizon_step=2 onward (it
+# feeds on its own prior predictions, not real data) and drifts steadily in one
+# direction as a result (24/25 districts declined 8-week-out vs. week 1; four
+# collapsed to exactly 0). SARIMA's own multi-step baseline stays essentially
+# flat over the same span, confirming the decline is a Stage-2 recursion
+# artifact, not a real signal. See RESEARCH_DECISIONS.md Decision 053.
+FORECAST_HORIZON_WEEKS = 4
 
 # --- Dashboard outputs ---
 DASHBOARD_REFRESH_MANIFEST_PATH = OUTPUTS_DIR / "metrics" / "dashboard_refresh_manifest.csv"

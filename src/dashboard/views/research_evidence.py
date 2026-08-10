@@ -85,6 +85,11 @@ def render_evidence_page() -> None:
         st.subheader("Module 2 — holdout outbreak alerting")
         if m2:
             st.metric(f"Holdout PR-AUC ({m2['architecture']})", f"{m2['pr_auc']:.3f}", help="PR-AUC")
+            st.metric(
+                f"Holdout Brier Skill Score ({m2['architecture']})",
+                f"{m2['brier_skill_score']:.3f}",
+                help="Brier Skill Score",
+            )
             if m2.get("alert_recall") is not None:
                 st.metric(
                     f"Alert recall @ τ={m2['alert_threshold']}",

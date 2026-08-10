@@ -164,16 +164,20 @@ Integrated outputs include:
 - Predicted weekly dengue case counts (Module 1 forward forecast)
 - Outbreak risk category or probability (Module 2 live + forward operational scoring)
 - Spatial hotspot map (Module 3 — historical `hybrid_risk_map.csv` + forward operational
-  `future_hotspot_forecast.csv`, Decision 031)
+  `future_hotspot_forecast.csv`, Decision 052)
 - Alerts and decision-support summaries
 
-**Known gap (2026-08-04):** `module2_classification/live_scoring.py` and
-`forecast_future_risk.py` currently have pre-existing, unrelated bugs (a sklearn
-calibration reshape error and a reporting-anomaly boolean-mask error) that abort
-`scripts/refresh_dashboard_data.py` before it completes. Module 1 and Module 3's own
-steps are ordered before these in the orchestrator so they still refresh successfully;
-Module 2's live/forward operational outputs remain stale until these are fixed
-(Module 2-owned files, not fixed as part of Decision 031 - flagged, not fixed).
+**Known gap (2026-08-04), corrected 2026-08-10:** `module2_classification/live_scoring.py`
+and `forecast_future_risk.py` had pre-existing, unrelated bugs (a sklearn calibration
+reshape error and a reporting-anomaly boolean-mask error) that could abort
+`scripts/refresh_dashboard_data.py` before it completes. This note claimed Module 3's own
+forecast step was "ordered before these in the orchestrator so they still refresh
+successfully" - that was never actually true until Decision 052/M3-016: `run_refresh()`
+never called `src.module3_spatial.forecast_future` at all before that fix. It is now
+genuinely ordered before the Module 2 steps, so Module 3 (and Module 1) refresh
+successfully even if Module 2's bugs still abort the run; Module 2's live/forward
+operational outputs remain stale until those two bugs are fixed (Module 2-owned files, not
+fixed as part of Decision 052 - flagged, not fixed).
 
 **Evidence tiers:** holdout-validated metrics (walk-forward/holdout) vs. operational
 forward outputs (`evidence_tier=operational`) — must never be conflated in reporting.

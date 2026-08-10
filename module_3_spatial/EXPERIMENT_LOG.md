@@ -987,18 +987,21 @@ explicitly in the report rather than lumping all three modules'
 
 ### Decision
 **Keep** this as Module 3's forward operational forecast, formalized as
-Decision 031 (supersedes the 2026-07-30 "deliberately out of scope"
-note). **Keep** `DEFAULT_HORIZON_WEEKS=1` as the only exercised/verified
-horizon - raising it needs recursive pseudo-history chaining, not yet
-implemented (flagged in code). **Do not** fix Module 2's two unrelated
-bugs as part of this work (out of scope) - flagged to the team instead.
+Decision 052 (supersedes the 2026-07-30 "deliberately out of scope"
+note; this entry originally, and incorrectly, cited "Decision 031" here -
+an unrelated Module 1 entry - corrected 2026-08-10 when Decision 052 was
+backfilled alongside M3-016's prospective tracker). **Keep**
+`DEFAULT_HORIZON_WEEKS=1` as the only exercised/verified horizon - raising
+it needs recursive pseudo-history chaining, not yet implemented (flagged
+in code). **Do not** fix Module 2's two unrelated bugs as part of this
+work (out of scope) - flagged to the team instead.
 
 ### Documentation Updated
 - `module_3_spatial/MODULE_CONTEXT.md` (new "Forward Operational Hotspot
   Forecast" section; superseded the 2026-07-30 out-of-scope note; Open
   Question #6 updated).
 - `module_3_spatial/EXPERIMENT_LOG.md` (this entry).
-- `research_context/RESEARCH_DECISIONS.md` (Decision 031).
+- `research_context/RESEARCH_DECISIONS.md` (Decision 052).
 - `research_context/CURRENT_ARCHITECTURE.md` (integration layer updated;
   Module 2's two known bugs flagged).
 - `research_context/QUESTIONS_FOR_DEFENSE.md` (new entry on the forward
@@ -1882,3 +1885,113 @@ promoted), `module_3_spatial/EXPERIMENT_LOG.md` (this entry).
 - Added `src/module3_spatial/relative_residual_compensation.py`.
 - Added `outputs/metrics/module3/relative_residual_comparison.csv`,
   `relative_residual_bootstrap_ci.csv`.
+
+---
+
+## Experiment ID: M3-016
+
+### Date
+2026-08-10
+
+### Research Question
+Module 1 (Decision 041/M1-017) and Module 2 (Decision 048/M2-015) both have
+a prospective (not backtested) accuracy tracker for their forward
+predictions, but Module 3's forward hotspot forecast (`forecast_future.py`)
+did not. While auditing the dashboard for consistency, this was initially
+assumed to be an open research question - what does "resolving" a forward
+prediction even mean for a continuous spatial Hybrid Risk score, rather
+than a case count (M1) or a binary alert (M2)? On inspection, it is not:
+Stage 2's Random Forest only ever consumes backward-looking lag/climate/
+static features, never the target week's own case count, so its
+prediction is identical whether that week's case count was forecast
+(at forecast time) or real (once reported). The only quantity that
+actually changes on reconciliation is Stage 1's KDE baseline, which just
+needs the real total case count once available - the same shape of
+problem M1/M2 already solved. Can a tracker be built on that basis, at
+comparable effort to M1/M2's?
+
+### Spatial Unit
+District-week, matching `forecast_future.py`'s own forecast rows (all 25
+districts per forecast week; currently only `horizon_step=1` since
+`DEFAULT_HORIZON_WEEKS=1`).
+
+### Baseline Spatial Method
+Not touched - this is tracking infrastructure, not a modeling change.
+
+### Stage 2 Model
+Not touched. Confirmed (not assumed) that `STAGE2_FEATURE_COLUMNS_V2` never
+includes the target week's own `Number_of_Cases`, which is what makes
+reusing the already-logged `predicted_relative_residual` on reconciliation
+valid rather than approximate.
+
+### Spatial Features Used
+Not applicable.
+
+### Validation Method
+New `src/module3_spatial/hotspot_tracking.py`:
+- `append_to_hotspot_log()`: every `run_forecast_future()` call
+  (`log_prediction=True` by default) appends its forecast row(s) to a
+  permanent, append-only log (`data/processed/module3/hotspot_prediction_log.csv`),
+  timestamped. Wired into `run_forecast_future()` itself - no separate
+  step to remember to run.
+- `reconcile_hotspot_log()`: once a logged target week's real case count
+  is reported (a row appears in `baseline_risk.csv`/`master_table.csv`),
+  recomputes Stage 1's KDE baseline for that week using the REAL total
+  case count (`compensation_model.rescale_kde_baseline()`, the same
+  mass-conservation every other Module 3 evidence source already uses),
+  then reapplies the already-logged `predicted_relative_residual`
+  unchanged and reconstructs `Risk_actual` with the same formula
+  `forecast_future.py` itself uses. Output
+  (`outputs/metrics/module3/hotspot_prospective_accuracy.csv`) reports
+  `abs_error` (total forecast error) and `risk_0_abs_error` (the portion
+  inherited specifically from Module 1's case-count forecast, isolated
+  because `predicted_relative_residual` is identical in both the forecast
+  and reconciled rows) - strictly additive over time, unresolved rows are
+  simply absent, never estimated. Wired into
+  `scripts/refresh_dashboard_data.py` as `module3_forecast_future` +
+  `module3_hotspot_reconcile`, and runnable standalone (`python -m
+  src.module3_spatial.hotspot_tracking`).
+
+### Results
+- A second, previously undocumented gap was found while wiring this in:
+  `scripts/refresh_dashboard_data.py`'s `run_refresh()` never actually
+  called `src.module3_spatial.forecast_future` at all, despite
+  `MODULE_CONTEXT.md`/`DASHBOARD_GUIDE.md` both stating it was wired in -
+  `future_hotspot_forecast.csv` could silently go stale on every dashboard
+  refresh. Fixed as part of this entry (see Decision 052).
+- Also found and fixed: `forecast_future.py`'s own module docstring and
+  three other locations (`MODULE_CONTEXT.md`, `operational_monitoring.py`,
+  the 2026-08-08 Figure 5.1 changelog note) mis-cited "Decision 031" (an
+  unrelated Module 1 entry) for the decision authorizing Module 3's
+  forward forecast - backfilled as Decision 052 and corrected everywhere.
+- First reconciliation run: **0 resolved, all logged rows pending** -
+  correct and expected, mirroring M1-017's first run, since the currently
+  logged forecast week(s) have not happened yet.
+
+### Residual Diagnostics
+Not applicable.
+
+### Interpretation
+This is infrastructure, not evidence - it doesn't itself show whether
+Module 3's forward forecast is accurate. What it does is guarantee that a
+genuinely prospective accuracy read WILL exist going forward, and that it
+will be possible to separate "Module 3's own Stage 2 correction was wrong"
+from "Module 1's case-count forecast feeding Module 3 was wrong" once
+enough weeks resolve - a direct, quantified read on the M1→M3
+error-propagation limitation already flagged in
+`src/dashboard/DASHBOARD_GUIDE.md`'s Known Limitations.
+
+### Decision
+**Accept.** Kept as permanent infrastructure alongside
+`run_forecast_future()`. `reconcile_hotspot_log()`'s output should be
+checked periodically (e.g. each time `refresh_dashboard_data.py` runs)
+rather than assumed silent - once enough weeks have resolved to be
+meaningful, that table becomes the first genuinely prospective evidence
+for Module 3's forward forecast, independent of and not a substitute for
+the spatial K-means CV evidence elsewhere in this document.
+
+### Documentation Updated
+`module_3_spatial/MODULE_CONTEXT.md` (citation fix; new tracker section),
+`research_context/RESEARCH_DECISIONS.md` (new Decision 052),
+`research_context/CHANGELOG.md`, `src/dashboard/DASHBOARD_GUIDE.md`,
+`research_context/EVALUATION_STUDY_PLAN_DASHBOARD.md`, this entry.

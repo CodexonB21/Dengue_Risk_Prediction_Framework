@@ -135,11 +135,11 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
-        <!-- EDGES: cross-module operational-forward links (Decisions 027/031) -->
+        <!-- EDGES: cross-module operational-forward links (Decisions 027/052) -->
         <mxCell id="e_op_m1_m2" value="operational forward only (Decision 027)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;strokeColor=#9CA3AF;fontColor=#6B7280;fontSize=9;strokeWidth=1.5;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="m1_out" target="m2_out">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_op_m1_m3" value="operational forward only (Decision 031)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;strokeColor=#9CA3AF;fontColor=#6B7280;fontSize=9;strokeWidth=1.5;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="m1_out" target="m3_out">
+        <mxCell id="e_op_m1_m3" value="operational forward only (Decision 052)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;strokeColor=#9CA3AF;fontColor=#6B7280;fontSize=9;strokeWidth=1.5;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="m1_out" target="m3_out">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="870" y="170" />

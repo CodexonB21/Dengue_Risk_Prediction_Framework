@@ -1535,3 +1535,56 @@ A plausible (not confirmed) explanation for the mixed/negative result: `case_ano
 
 ### Documentation Updated
 `research_context/RESEARCH_DECISIONS.md` (new Decision 049), `module_2_classification/MODULE_CONTEXT.md`, `module_2_classification/EXPERIMENT_LOG.md` (this entry), `research_context/CHANGELOG.md`.
+
+---
+
+## Experiment ID: M2-017
+
+### Date
+2026-08-10
+
+### Research Question
+Companion to Module 1's M1-022: a user noticed Module 2's forward outbreak-risk probability
+across the 8-week horizon rises then falls (peaking around horizon_step=2-3, declining toward
+step 8), and asked whether this reflects real behavior. Since forward risk uses Module 1's
+forecasted case counts as a lag feature from horizon_step≥2 (Decision 027), is this shape
+inherited from Module 1's own recursive-forecast bias found in M1-022?
+
+### Label Definition
+Not applicable - this is a diagnostic of existing forward-risk output, not a label change.
+
+### Data Period
+`data/processed/module2/future_risk_predictions.csv`, the live 8-week forward scoring output
+(pre-shortening).
+
+### Stage 1 / Stage 2 Model
+Not touched - used to isolate whether the shape originates in the forward-scoring inputs rather
+than the models themselves.
+
+### Results
+Module 2's mean `calibrated_probability` across the (pre-shortening) 8-week horizon: 0.397 (step
+1) → 0.526 (step 2) → 0.550 (step 3) → 0.530 (step 4) → 0.482 (step 5) → 0.435 (step 6) → 0.399
+(step 7) → 0.378 (step 8) - 17 of 25 districts show a net decline from step 1 to the final step.
+The rise from step 1→2 lines up with `uses_module1_cases` first becoming `True` at horizon_step=2
+(Decision 027); the later decline from step 3 onward lines up with M1-022's finding that Module
+1's own forecasted case counts start declining from its horizon_step=2 onward as its Stage 2
+residual correction goes fully recursive.
+
+### Interpretation
+Confirms the cross-module hypothesis: Module 2's forward-risk shape is not an independent finding,
+it is inherited from Module 1's case-count forecast one step later than Module 1's own decline
+starts, because Module 2 only begins consuming `uses_module1_cases` lag features at
+horizon_step=2. This is expected given Decision 027's explicit, documented one-directional
+dependency (Module 1 → Module 2, read-only) - not a new Module 2-specific bug, but a real
+argument for treating Module 1's M1-022 finding as a shared, cross-module issue rather than a
+Module 1-only one.
+
+### Decision
+**Adopted the shared fix from M1-022/Decision 053**: `FORECAST_HORIZON_WEEKS` (already correctly
+imported from `src.config` in `forecast_future_risk.py`) shortened from 8 to 4, reducing how far
+Module 2's forward risk can inherit Module 1's recursive bias. No Module 2-specific model or
+feature change made - the root cause lives entirely in Module 1's Stage 2 recursion.
+
+### Documentation Updated
+`research_context/RESEARCH_DECISIONS.md` (Decision 053), `module_1_forecasting/EXPERIMENT_LOG.md`
+(M1-022), `src/dashboard/DASHBOARD_GUIDE.md`, `research_context/CHANGELOG.md`, this entry.

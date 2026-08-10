@@ -1,9 +1,12 @@
 """Stage 1+2 - Forward operational hotspot forecast beyond the last reported
 case-count week.
 
-**Cross-module, operational tier - see RESEARCH_DECISIONS.md Decision 031.**
-This reverses `MODULE_CONTEXT.md`'s 2026-07-30 "deliberately out of scope"
-note, which correctly identified that a future-week map needs Module 1's
+**Cross-module, operational tier - see RESEARCH_DECISIONS.md Decision 052.**
+(UPDATED 2026-08-10: this module's docstring and `MODULE_CONTEXT.md`
+previously mis-cited "Decision 031" here, which is actually an unrelated
+Module 1 decision - Decision 052 is the correct, backfilled entry.) This
+reverses `MODULE_CONTEXT.md`'s 2026-07-30 "deliberately out of scope" note,
+which correctly identified that a future-week map needs Module 1's
 forecasts fed in as a hypothetical input. That is exactly what this script
 does - it does NOT retrain, refit, or reconverge anything; it applies the
 already-committed Stage 1 kernel/Stage 2 final model once to a new,
@@ -93,10 +96,21 @@ unlike Module 1's XGBoost, Module 3's Stage 2 model is a bare
 Outputs `data/processed/module3/future_hotspot_forecast.csv`, every row
 tagged `evidence_tier="operational"` (never to be cited alongside the
 Moran's I / spatial-CV holdout figures in `results_summary.txt`).
+
+## Prospective accuracy tracking (added 2026-08-10, Decision 052/M3-016)
+
+Every call also appends its forecast row(s) to a permanent log via
+`hotspot_tracking.append_to_hotspot_log()` (pass `log_prediction=False` to
+suppress this for ad hoc/exploratory runs). `hotspot_tracking.py`'s own
+module docstring explains how the log is later reconciled against real
+outcomes, mirroring Module 1's nowcast tracker (Decision 041/M1-017) and
+Module 2's forward-risk tracker (Decision 048/M2-015) - this closes the
+same gap for Module 3.
 """
 
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
 from pathlib import Path
@@ -137,6 +151,7 @@ from src.module3_spatial.feature_engineering import (
     compute_monsoon_dummies,
     compute_population_density,
 )
+from src.module3_spatial.hotspot_tracking import append_to_hotspot_log
 from src.module3_spatial.iterative_loop import SHRINKAGE_ALPHA
 from src.module3_spatial.kde_baseline import (
     build_kernel_matrix,
@@ -417,7 +432,17 @@ def plot_forecast_risk_surface(forecast_row: pd.DataFrame, year: int, week: int)
 # Orchestration
 # ---------------------------------------------------------------------------
 
-def run_forecast_future(horizon: int = DEFAULT_HORIZON_WEEKS) -> pd.DataFrame:
+def run_forecast_future(
+    horizon: int = DEFAULT_HORIZON_WEEKS, *, log_prediction: bool = True
+) -> pd.DataFrame:
+    """`log_prediction=True` (default, Decision 052/M3-016) appends this
+    run's forecast row(s) to the permanent prospective-accuracy log
+    (`hotspot_tracking.append_to_hotspot_log()`) - the only source of
+    genuinely forward-checkable evidence for this forecast, mirroring
+    Module 1's nowcast (Decision 041) and Module 2's forward risk
+    (Decision 048). Pass `False` for ad hoc/exploratory runs that
+    shouldn't pollute that record.
+    """
     calendar = forecast_week_calendar(horizon)
     m1_forecast = pd.read_csv(MODULE1_FUTURE_FORECAST_PATH)
     rf_model = joblib.load(MODULE3_RF_FINAL_MODEL_PATH)
@@ -488,9 +513,27 @@ def run_forecast_future(horizon: int = DEFAULT_HORIZON_WEEKS) -> pd.DataFrame:
     logger.info(
         "Wrote %d forward-hotspot-forecast rows to %s.", len(result), MODULE3_FUTURE_HOTSPOT_FORECAST_PATH,
     )
+    if log_prediction:
+        append_to_hotspot_log(result)
     return result
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Module 3 forward hotspot forecast.")
+    parser.add_argument(
+        "--horizon", type=int, default=DEFAULT_HORIZON_WEEKS,
+        help=f"Forward weeks to forecast. Default: {DEFAULT_HORIZON_WEEKS} (only this value is "
+             "exercised/verified - see the module docstring's DEFAULT_HORIZON_WEEKS note).",
+    )
+    parser.add_argument(
+        "--no-log", action="store_true",
+        help="Skip appending to the permanent hotspot prediction log - use for ad hoc/exploratory "
+             "runs that shouldn't pollute the prospective-accuracy record.",
+    )
+    return parser.parse_args(argv)
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    run_forecast_future()
+    args = _parse_args()
+    run_forecast_future(horizon=args.horizon, log_prediction=not args.no_log)

@@ -100,6 +100,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.config import (  # noqa: E402
     DISTRICTS,
+    FORECAST_HORIZON_WEEKS,
     M1_STAGE2_RESIDUAL_MODE,
     MODULE1_FIGURES_DIR,
     MODULE1_FUTURE_FORECAST_PATH,
@@ -126,13 +127,22 @@ from src.preprocessing.reporting_anomalies import REPORTING_DELAY_FEATURE_COLUMN
 
 logger = logging.getLogger(__name__)
 
-# 8 weeks ~ 2 months beyond the last available week. Deliberately not longer:
-# residual_lag_1/2 - the two most predictive Stage 2 features by a wide
-# margin (see xgboost_feature_importance.csv) - are already fully
-# recursive/self-fed by week 3 of the horizon, so confidence keeps degrading
-# with every additional week; going further wouldn't add a meaningfully
-# different story, just a longer tail of low-confidence numbers.
-FORECAST_HORIZON_WEEKS = 8
+# UPDATED 2026-08-10 (Decision 053): now imported from src.config, not
+# locally defined - this file used to hardcode its own separate
+# `FORECAST_HORIZON_WEEKS = 8` (never actually read from config.py's own
+# same-named/same-value constant), exactly the "same value defined twice,
+# silently able to drift" pattern already flagged as a past incident
+# elsewhere in this project (Decision 047/DASHBOARD_GUIDE.md). Shortened
+# from 8 to 4 weeks: `residual_lag_1/2` - the two most predictive Stage 2
+# features by a wide margin (see xgboost_feature_importance.csv) - are
+# already fully recursive/self-fed from horizon_step=2 onward, and a direct
+# check of `future_forecast.csv` confirmed this isn't just "less confident"
+# but a systematic downward bias (24/25 districts declined 8-week-out vs.
+# week 1, four collapsed to exactly 0, while Stage 1/SARIMA's own baseline
+# stayed essentially flat over the same span - see Decision 053). Cropping
+# to 4 weeks doesn't fix the recursive bias itself (it's already partly
+# visible by week 3-4), it reduces exposure to its worst effects while
+# keeping a still-actionable lead time.
 PLOT_DISTRICTS = ("Colombo", "Gampaha")
 PLOT_HISTORY_WEEKS = 52
 

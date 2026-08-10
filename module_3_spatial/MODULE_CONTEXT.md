@@ -694,7 +694,7 @@ Two consumers:
   western-cluster story every time; and the latest real week (2026 Wk21),
   correctly rescaled to its much lower case counts, with Kalutara edging
   out Gampaha - exactly what that week's real numbers say, not a bug.
-  **Superseded (2026-08-04, Decision 031)**: a genuine FUTURE-week map was
+  **Superseded (2026-08-04, Decision 052)**: a genuine FUTURE-week map was
   previously deliberately out of scope, since Module 3 had no forecasting
   capability of its own - both Stage 1's KDE weighting and Stage 2's
   residual target require a known `Number_of_Cases`, and `hybrid_risk_map.csv`
@@ -702,7 +702,7 @@ Two consumers:
   built (`src/module3_spatial/forecast_future.py`) by feeding Module 1's
   forecasted case counts in as the required cross-module input - see the
   new "Forward Operational Hotspot Forecast" section below and
-  `RESEARCH_DECISIONS.md` Decision 031 for the full reasoning.
+  `RESEARCH_DECISIONS.md` Decision 052 for the full reasoning.
 - **Dashboard — four switchable views** (`render_operational_page()`,
   `pages.py`), all real data (`hybrid_risk_map.csv` + the same GADM
   centroids), no synthetic values in any of the four:
@@ -830,12 +830,15 @@ happened to be tuned for.
 
 ---
 
-## Forward Operational Hotspot Forecast (implemented 2026-08-04, Decision 031)
+## Forward Operational Hotspot Forecast (implemented 2026-08-04, Decision 052)
 
 **Cross-module, operational tier - see `RESEARCH_DECISIONS.md` Decision
-031.** Supersedes this file's earlier (2026-07-30) "deliberately out of
-scope" note for a future-week map - that note correctly identified the
-exact dependency this now resolves: a future-week map needs Module 1's
+052.** (UPDATED 2026-08-10: this section previously mis-cited "Decision
+031" - that is actually an unrelated Module 1 entry; Decision 052 is the
+correct, backfilled entry, added alongside the prospective tracker below.)
+Supersedes this file's earlier (2026-07-30) "deliberately out of scope"
+note for a future-week map - that note correctly identified the exact
+dependency this now resolves: a future-week map needs Module 1's
 forecasted case counts fed in as a hypothetical input, since Stage 1's KDE
 weighting and Stage 2's residual target both require a known
 `Number_of_Cases`.
@@ -906,17 +909,71 @@ forecast summary. Data loaded via the new `load_m3_hotspot_forecast()` in
 `src/dashboard/data_loaders.py`, named to match `load_m1_nowcast()`'s
 convention.
 
-Wired into `scripts/refresh_dashboard_data.py` (module3_preprocessing +
-module3_forecast_future, ordered right after module1_forecast_future -
-its only dependency - and before the Module 2 steps, since two pre-existing,
-unrelated bugs in Module 2's own forward-scoring scripts currently abort
-that orchestrator before reaching later steps).
+**Actually wired into `scripts/refresh_dashboard_data.py` as of 2026-08-10
+(Decision 052/M3-016)** - `module3_forecast_future`, ordered right after
+`module1_forecast_future` (its only dependency) and before the Module 2
+steps. This paragraph previously claimed this step was already wired in;
+it was not - `run_refresh()` never actually called
+`src.module3_spatial.forecast_future`, so `future_hotspot_forecast.csv`
+could silently go stale on every dashboard refresh. Found and fixed while
+auditing the dashboard for consistency (see Decision 052).
 
 **Note on `DEFAULT_HORIZON_WEEKS`**: only horizon=1 has been exercised and
 verified. Raising it would need each later forecast week to chain in
 earlier forecast weeks as pseudo-history for its own lag features (as
 Module 1's `forecast_future.py` does recursively) - not yet implemented,
 flagged directly in the code rather than silently assumed to work.
+
+---
+
+## Prospective Accuracy Tracking (added 2026-08-10, Decision 052/M3-016)
+
+Closes the same gap Module 1's nowcast tracker (Decision 041/M1-017) and
+Module 2's forward-risk tracker (Decision 048/M2-015) already closed for
+their own modules: the forward hotspot forecast above predicts a
+district-week with no ground truth yet, so none of Module 3's other
+evidence (Moran's I, the iterative loop's convergence, the spatial K-means
+CV comparison against Stage 1 alone and against naive persistence) can
+validate it directly.
+
+New `src/module3_spatial/hotspot_tracking.py`:
+
+1. `append_to_hotspot_log()` - every `forecast_future.run_forecast_future()`
+   call (default `log_prediction=True`) appends its forecast row(s) to a
+   permanent, append-only log (`data/processed/module3/hotspot_prediction_log.csv`).
+2. `reconcile_hotspot_log()` - once a logged target week's real case count
+   has been reported (i.e. `baseline_risk.csv`/`master_table.csv` has a row
+   for that District/Year/Week), recomputes what Stage 1's KDE baseline
+   WOULD have been using the REAL total case count for that week (the same
+   `compensation_model.rescale_kde_baseline()` mass-conservation every
+   other Module 3 evidence source already uses), then reapplies the
+   ALREADY-LOGGED `predicted_relative_residual` unchanged. This is not an
+   approximation: Stage 2's RF model only ever consumes backward-looking
+   lag/climate/static features and never this week's own case count, so
+   its prediction is identical whether the case count was forecast or
+   real - the only thing that changes on reconciliation is Stage 1's
+   baseline. Output: `outputs/metrics/module3/hotspot_prospective_accuracy.csv`,
+   with `abs_error` (total forecast error, `|Risk_forecast - Risk_actual|`)
+   and `risk_0_abs_error` (the portion of that error inherited specifically
+   from Module 1's case-count forecast feeding Stage 1's KDE mass,
+   isolated because `predicted_relative_residual` is unchanged between the
+   two columns) - a genuine, if early, empirical read on the M1→M3
+   error-propagation limitation already flagged elsewhere
+   (`src/dashboard/DASHBOARD_GUIDE.md`'s Known Limitations #2).
+
+Wired into `scripts/refresh_dashboard_data.py` as `module3_hotspot_reconcile`,
+right after `module3_forecast_future`. Surfaced on the dashboard's
+Prospective Tracking page as a third tracker panel, alongside Module 1's
+nowcast tracker and Module 2's forward-risk tracker
+(`src/dashboard/views/prospective_tracking.py`,
+`load_m3_hotspot_log()`/`load_m3_hotspot_prospective_accuracy()` in
+`src/dashboard/data_loaders.py`).
+
+**0 resolved is expected immediately after this change** - same honest,
+"check back over real calendar time" semantics as M1/M2's trackers showed
+when first added. Inherits Module 3's own `DEFAULT_HORIZON_WEEKS=1`
+limitation (above): only one-week-ahead forecasts exist to track until
+that is lifted.
 
 ---
 
@@ -927,7 +984,7 @@ flagged directly in the code rather than silently assumed to work.
 3. **What is the spatial residual target?** → `Actual case intensity − Current_Risk` (see Stage 2 above), recalculated each loop iteration.
 4. **How should spatial leakage be prevented?** → Spatial K-means CV (5 folds, districts clustered by location), not random k-fold.
 5. **Which spatial validation method is most suitable?** → Spatial K-means CV, per point 4.
-6. **How should Module 3 outputs combine with Module 1 and Module 2?** → Historical: Module 3 exports district-week Hybrid Risk as CSV keyed by (District, Epi_Week) for the shared dashboard to consume. Forward/operational: resolved by Decision 031 - Module 3's forecast_future.py reads Module 1's `future_forecast.csv` for the forecast week's case-count proxy (read-only, one direction); Module 2's own forward risk score is independent and does not feed into or consume Module 3's output.
+6. **How should Module 3 outputs combine with Module 1 and Module 2?** → Historical: Module 3 exports district-week Hybrid Risk as CSV keyed by (District, Epi_Week) for the shared dashboard to consume. Forward/operational: resolved by Decision 052 - Module 3's forecast_future.py reads Module 1's `future_forecast.csv` for the forecast week's case-count proxy (read-only, one direction); Module 2's own forward risk score is independent and does not feed into or consume Module 3's output.
 
 **Rejected approach:** Geographically Weighted Regression (GWR) — considered, not used. With only 25 spatial units, local weighting is statistically unreliable; Random Forest was chosen instead for robustness with limited-N tabular data.
 

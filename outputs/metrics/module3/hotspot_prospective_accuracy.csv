@@ -1,0 +1,1 @@
+District,Year,Week,Week_Start_Date,horizon_step,Risk_0_forecast,predicted_relative_residual,Risk_forecast,cases_forecast,cases_source,climate_source,feature_completeness_pct,evidence_tier,logged_at_utc,Number_of_Cases,Risk_0_actual,Risk_actual,abs_error,smape_pct,risk_0_abs_error

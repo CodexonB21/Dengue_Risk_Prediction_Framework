@@ -62,7 +62,7 @@ Dashed arrows (both required, not optional — both are real, implemented cross-
 dependencies, operational-tier only, never used for training/evaluation):
 - Module 1 → Module 2 labelled "operational forward scoring only (Decision 027)" — M1's
   forward case forecast feeds Module 2's forward risk-scoring features.
-- Module 1 → Module 3 labelled "operational forward only (Decision 031)" — M1's forward
+- Module 1 → Module 3 labelled "operational forward only (Decision 052)" — M1's forward
   case forecast is the case-count proxy for Module 3's forward hotspot forecast.
 
 Also note explicitly on the Module 1 Stage 2 box that climate lag/anomaly features enter

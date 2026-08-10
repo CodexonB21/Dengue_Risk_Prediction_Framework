@@ -25,6 +25,7 @@ from src.config import (  # noqa: E402
     MODULE2_LIVE_RISK_PREDICTIONS_PATH,
     MODULE2_WEEKLY_MODELING_TABLE_PATH,
     MODULE3_FUTURE_HOTSPOT_FORECAST_PATH,
+    MODULE3_HOTSPOT_PROSPECTIVE_ACCURACY_PATH,
     MODULE3_MASTER_TABLE_PATH,
     SHARED_CLIMATE_WEEKLY_PATH,
 )
@@ -68,6 +69,7 @@ def _summarize_outputs() -> pd.DataFrame:
     _max_epi(MODULE2_FUTURE_RISK_PREDICTIONS_PATH, "future_risk")
     _max_epi(MODULE3_MASTER_TABLE_PATH, "module3_master_table")
     _max_epi(MODULE3_FUTURE_HOTSPOT_FORECAST_PATH, "module3_future_hotspot_forecast")
+    _max_epi(MODULE3_HOTSPOT_PROSPECTIVE_ACCURACY_PATH, "module3_hotspot_prospective_accuracy")
     summary = pd.DataFrame(rows)
     summary["refreshed_at_utc"] = datetime.now(timezone.utc).isoformat()
     DASHBOARD_REFRESH_MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -97,6 +99,14 @@ def run_refresh(skip_weather: bool = False) -> pd.DataFrame:
     _run_step(
         "module1_nowcast_reconcile",
         [PYTHON, "-m", "src.module1_forecasting.nowcast_tracking"],
+    )
+    _run_step(
+        "module3_forecast_future",
+        [PYTHON, "-m", "src.module3_spatial.forecast_future"],
+    )
+    _run_step(
+        "module3_hotspot_reconcile",
+        [PYTHON, "-m", "src.module3_spatial.hotspot_tracking"],
     )
     _run_step("module2_live_scoring", [PYTHON, "-m", "src.module2_classification.live_scoring"])
     _run_step(

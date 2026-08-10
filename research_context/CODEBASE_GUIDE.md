@@ -710,10 +710,17 @@ Ad-hoc, non-official side-by-side visualization of actual-case vs. predicted-Ris
 shared color scale.
 
 ### `src/module3_spatial/forecast_future.py`
-Cross-module operational forward hotspot forecast (Decision 031). Reads Module 1's
+Cross-module operational forward hotspot forecast (Decision 052). Reads Module 1's
 `future_forecast.csv` (read-only) as the case-count proxy for Stage 1 KDE weighting.
 `forecast_week_calendar()`, `aggregate_forecast_week_climate()`, `build_forecast_feature_table()`,
-`run_forecast_future()`. Every output row tagged `evidence_tier="operational"`.
+`run_forecast_future()`. Every output row tagged `evidence_tier="operational"`. Also logs every
+forecast to the prospective tracker (`hotspot_tracking.py`, Decision 052/M3-016).
+
+### `src/module3_spatial/hotspot_tracking.py`
+Prospective (not backtested) accuracy tracking for the forward hotspot forecast above
+(Decision 052/M3-016), mirroring `module1_forecasting/nowcast_tracking.py` and
+`module2_classification/risk_tracking.py`. `append_to_hotspot_log()`,
+`reconcile_hotspot_log()`.
 
 ### `src/module3_spatial/main.py`
 Unimplemented placeholder — Module 3 has no single end-to-end entry point; each stage script

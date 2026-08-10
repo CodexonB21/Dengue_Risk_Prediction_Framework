@@ -6,6 +6,122 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-08-10 - Module 1/2 forward horizon shortened 8→4 weeks after finding a systematic recursive-forecast bias (Decision 053/M1-022/M2-017)
+
+### Module
+Module 1 / Module 2
+
+### Change
+User noticed the dashboard's 8-week case forecast appeared to decline in almost every district and
+asked whether that's real. Direct investigation of `future_forecast.csv` confirmed a systematic
+downward bias, not real epidemiological signal: Stage 1 (SARIMA) stays essentially flat across the
+full 8-week horizon, while Stage 2's XGBoost residual correction declines steadily once it goes
+fully recursive (feeding on its own prior predictions instead of real data, from horizon_step=2
+onward) - 24/25 districts declined 8-week-out vs. week 1, four collapsed to exactly 0. Module 2's
+forward risk showed a related, one-step-delayed rise-then-fall shape, since it consumes Module 1's
+forecasted case counts as a lag feature from horizon_step≥2 (Decision 027).
+
+Shortened the shared `FORECAST_HORIZON_WEEKS` constant (`src/config.py`) from 8 to 4. Also found and
+fixed a real duplication bug while doing this: Module 1's `forecast_future.py` had its own,
+separately hardcoded `FORECAST_HORIZON_WEEKS = 8` that never actually read config.py's same-named
+constant - the exact "same value in two places, silently able to drift" pattern already flagged as
+a past incident (Decision 047). It now imports from `src.config`. Regenerated
+`future_forecast.csv` (100 rows, was 200), `future_risk_predictions.csv` (125 rows, was 225), and
+Module 3's forward forecast/tracker outputs for consistency. Updated dashboard text
+(`operational_monitoring.py`, `data_loaders.py`) that said "8-week."
+
+### Reason
+Shortening the horizon does not fix the recursive bias itself (already partly visible by
+horizon_step=3-4), but meaningfully reduces exposure to its worst effects - feature completeness
+floor rises from 47% to 64%, and districts collapsing to exactly 0 drop from 4 to 2 - while keeping
+a still-actionable lead time. The textbook fix (separate direct per-horizon models instead of one
+model applied recursively) was considered and deliberately not attempted now: it needs its own
+walk-forward validation per horizon, and this close to a defense an unvalidated modeling change
+carries real risk (see Decision 044/045's precedent of validation wins not surviving holdout
+checks). Flagged as a named, credible follow-up rather than fixed or hidden.
+
+### Impact
+- No production model weights changed - a horizon-parameter change plus a documentation fix.
+- `data/processed/module1/future_forecast.csv`, `data/processed/module2/future_risk_predictions.csv`,
+  `data/processed/module3/future_hotspot_forecast.csv`, and all three prospective-tracker logs
+  regenerated.
+- The recursive-bias finding itself remains unfixed - future work, not resolved by this change.
+
+### Documentation Updated
+`research_context/RESEARCH_DECISIONS.md` (Decision 053), `module_1_forecasting/EXPERIMENT_LOG.md`
+(M1-022), `module_2_classification/EXPERIMENT_LOG.md` (M2-017), `src/dashboard/DASHBOARD_GUIDE.md`,
+`research_context/CHANGELOG.md` (this entry).
+
+### Status
+Accepted
+
+---
+
+## 2026-08-10 - Dashboard consistency pass: Module 2's Brier Skill Score surfaced, Module 3 prospective tracker added, a real "Decision 031" mis-citation and a missing pipeline step fixed
+
+### Module
+Dashboard / Module 2 / Module 3
+
+### Change
+While auditing the dashboard for staleness (user-requested consistency check), found and fixed
+four distinct issues:
+
+1. **Module 2's Brier Skill Score was computed but never shown.** `data_loaders.py`'s
+   `m2_holdout_summary()` already loaded `brier_skill_score` from `stage2_metrics.csv` - Module
+   2's actual primary Stage 2 selection metric throughout `EXPERIMENT_LOG.md`/`RESEARCH_DECISIONS.md`
+   - but `research_evidence.py` never rendered it. Added as a new `st.metric` in the Module 2
+   holdout column, next to PR-AUC.
+2. **No prospective tracker for Module 3.** Unlike Module 1 (Decision 041/M1-017) and Module 2
+   (Decision 048/M2-015), Module 3's forward hotspot forecast had no mechanism to check itself
+   against reality once real weeks resolve. Initially assumed to be an open research question (what
+   does "resolving" a continuous spatial forecast even mean?), but on inspection it is not: Stage
+   2's RF model never consumes the target week's own case count, so the only quantity that changes
+   between forecast and actual is Stage 1's KDE baseline. Built `src/module3_spatial/hotspot_tracking.py`
+   (log + reconcile, mirroring the M1/M2 pattern exactly), wired it into `forecast_future.py`
+   (logs by default) and `refresh_dashboard_data.py`, added a third tracker panel to the dashboard's
+   Prospective Tracking page, and backfilled **Decision 052 (M3-016)**.
+3. **A real citation bug, found while building the above.** `forecast_future.py`'s own docstring,
+   `module_3_spatial/MODULE_CONTEXT.md`, and the live `operational_monitoring.py` app text all
+   cited "Decision 031" as the decision authorizing Module 3's forward hotspot forecast. Decision
+   031 is actually an unrelated Module 1 entry ("Production 'Predict Next Week' Nowcast Added") with
+   no mention of Module 3 - no decision for the Module 3 forecast had ever actually been written.
+   Backfilled as Decision 052 (above) and corrected in all three locations, plus the 2026-08-08
+   Figure 5.1 changelog entry's own reference to it.
+4. **A previously undocumented pipeline gap.** `scripts/refresh_dashboard_data.py`'s `run_refresh()`
+   never actually called `src.module3_spatial.forecast_future`, despite `MODULE_CONTEXT.md` and
+   `DASHBOARD_GUIDE.md` both stating it was wired in - meaning `future_hotspot_forecast.csv` could
+   silently go stale on every dashboard refresh button-click. Added as `module3_forecast_future`
+   (ordered right after `module1_forecast_future`, its only dependency, and before the Module 2
+   steps, per the already-documented intended order), plus the new `module3_hotspot_reconcile` step.
+
+### Reason
+User asked for a dashboard content/consistency check and specifically flagged the missing BSS
+display and the Module 2/3 prospective-tracking asymmetry. Investigating the asymmetry (rather than
+just captioning it as a permanent limitation, which was the first, too-hasty read) surfaced that a
+real tracker was buildable at comparable effort to M1/M2's, which in turn surfaced the citation bug
+and the missing pipeline step while wiring it up.
+
+### Impact
+- No production model, metric, or default artifact changed for any module's Stage 1/Stage 2 - this
+  is a dashboard-presentation and tracking-infrastructure change only.
+- New files: `src/module3_spatial/hotspot_tracking.py`,
+  `data/processed/module3/hotspot_prediction_log.csv` (created on first forecast run),
+  `outputs/metrics/module3/hotspot_prospective_accuracy.csv` (created on first reconciliation).
+- New config paths: `MODULE3_HOTSPOT_LOG_PATH`, `MODULE3_HOTSPOT_PROSPECTIVE_ACCURACY_PATH`.
+- 0 resolved rows is expected immediately after this change, for the same honest reason M1/M2's
+  trackers showed 0 resolved when first added.
+
+### Documentation Updated
+`research_context/RESEARCH_DECISIONS.md` (Decision 052), `module_3_spatial/MODULE_CONTEXT.md`
+(citation fix; new tracker section), `module_3_spatial/EXPERIMENT_LOG.md` (M3-016),
+`src/dashboard/DASHBOARD_GUIDE.md`, `research_context/EVALUATION_STUDY_PLAN_DASHBOARD.md`,
+`research_context/CHANGELOG.md` (this entry).
+
+### Status
+Accepted
+
+---
+
 ## 2026-08-08 - Figure 5.1 (system architecture) revised: climate-into-Stage-2 label, M1→M3 operational arrow, drawio drift fixed
 
 ### Module

@@ -84,7 +84,8 @@ receipts.
   explicit note that thresholding Module 1's forecast is *not* the same as Module 2's alerting
   (cross-references the M2-009 comparison further down).
 - **Two columns**: Module 1's holdout metrics (SARIMA-only MASE, hybrid MASE, districts improved,
-  sMAPE) and Module 2's holdout metrics (PR-AUC, alert recall/precision at the current threshold).
+  sMAPE) and Module 2's holdout metrics (PR-AUC, Brier Skill Score, alert recall/precision at the
+  current threshold).
 - The **M2-009 table** — Module 2's alerting vs. simply thresholding Module 1's case forecast.
   This is the concrete answer to "why do you need Module 2 if Module 1 already forecasts cases."
 - A **per-district Module 1 MASE bar chart** (SARIMA-only vs. hybrid, sorted), with an explicit
@@ -176,9 +177,16 @@ pass.
 - **Module 1's nowcast tracker**: predictions logged vs. resolved, and (once any exist) a table of
   resolved accuracy.
 - **Module 2's forward-risk tracker**: same structure, for outbreak-alert predictions.
+- **Module 3's forward hotspot-forecast tracker** (added Decision 052/M3-016): same log/resolved
+  structure, for the spatial Hybrid Risk forecast. Reconciliation recomputes Stage 1's KDE baseline
+  from the real reported case count once available and reapplies the already-logged Stage 2
+  residual unchanged, separating total forecast error from the portion inherited specifically from
+  Module 1's case-count forecast — a concrete, if early, read on the error-compounding limitation
+  named on the Operational Monitoring page.
 - A closing note that Module 2's own outbreak prevalence is low (~1.5% on holdout), so
   accumulating enough resolved *outbreak* weeks specifically to say anything meaningful here will
-  take real calendar time — framed as an honest, slow-arriving evidence tier, not a shortcut.
+  take real calendar time — framed as an honest, slow-arriving evidence tier, not a shortcut. Module
+  3's tracker is newer still and currently limited to one week ahead, since the forecast itself is.
 
 **What to say, if it shows 0 resolved (likely, unless a lot of real time has passed since the last
 refresh):** "This is expected, not broken — a logged prediction only resolves once its target
