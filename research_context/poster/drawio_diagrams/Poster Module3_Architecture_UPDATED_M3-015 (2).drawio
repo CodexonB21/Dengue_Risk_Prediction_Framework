@@ -1,0 +1,96 @@
+<mxfile host="app.diagrams.net" agent="Codexon FYP">
+  <diagram id="figure-5-5-module3-updated" name="Figure 5.5 Module 3 (Updated M3-015)">
+    <mxGraphModel dx="981" dy="535" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="820" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-32" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5F5E3;strokeColor=#27AE60;fontColor=#145A32;fontSize=11;align=center;fontFamily=Helvetica;" value="Weekly Dengue Cases" vertex="1">
+          <mxGeometry height="45" width="220" x="369.5714634486608" y="657.4285539899554" as="geometry" />
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-33" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2E86C1;fontColor=#1B4F72;fontSize=11;align=center;fontFamily=Helvetica;" value="Data Preprocessing&#xa;(district-week master table)" vertex="1">
+          <mxGeometry height="45" width="220" x="369.5714634486608" y="732.4285539899554" as="geometry" />
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-34" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F2F3F4;strokeColor=#909497;fontColor=#212F3C;fontSize=11;align=center;fontFamily=Helvetica;" value="KDE Baseline&#xa;Gaussian Kernel over Centroids" vertex="1">
+          <mxGeometry height="45" width="220" x="369.5714634486608" y="807.4285539899554" as="geometry" />
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-35" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCF3CF;strokeColor=#D4AC0D;fontColor=#7D6608;fontSize=11;align=center;fontFamily=Helvetica;" value="Moran&#39;s I Check&#xa;I = 0.70, p = 0.001" vertex="1">
+          <mxGeometry height="45" width="220" x="369.5714634486608" y="882.4285539899554" as="geometry" />
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-36" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#E74C3C;fontColor=#78281F;fontSize=11;align=center;fontFamily=Helvetica;" value="KDE_baseline&#xa;Spatial Risk Surface" vertex="1">
+          <mxGeometry height="45" width="220" x="369.5714634486608" y="957.4285539899554" as="geometry" />
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-37" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5F5E3;strokeColor=#27AE60;fontColor=#145A32;fontSize=11;align=center;fontFamily=Helvetica;" value="Climate + Spatial&#xa;Covariates" vertex="1">
+          <mxGeometry height="45" width="220" x="639.5714634486608" y="657.4285539899554" as="geometry" />
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-38" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2E86C1;fontColor=#1B4F72;fontSize=11;align=center;fontFamily=Helvetica;" value="Feature Engineering&#xa;+ Relative Residual Lags (NEW)" vertex="1">
+          <mxGeometry height="45" width="220" x="639.5714634486608" y="732.4285539899554" as="geometry" />
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-39" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F2F3F4;strokeColor=#909497;fontColor=#212F3C;fontSize=11;align=center;fontFamily=Helvetica;" value="Random Forest&#xa;Spatial Residual Learner" vertex="1">
+          <mxGeometry height="45" width="220" x="639.5714634486608" y="807.4285539899554" as="geometry" />
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-40" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCF3CF;strokeColor=#D4AC0D;fontColor=#7D6608;fontSize=11;align=center;fontFamily=Helvetica;fontStyle=1;" value="Relative Residual (UPDATED)&#xa;(Actual - Risk) / (Risk + 1)" vertex="1">
+          <mxGeometry height="45" width="220" x="639.5714634486608" y="882.4285539899554" as="geometry" />
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-41" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8DAEF;strokeColor=#8E44AD;fontColor=#4A235A;fontSize=12;fontStyle=1;align=center;fontFamily=Helvetica;" value="Iterative Update (UPDATED)&#xa;multiplicative reconstruction" vertex="1">
+          <mxGeometry height="55" width="220" x="490.0014634486608" y="1089.9985539899553" as="geometry" />
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-42" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D1F2EB;strokeColor=#17A589;fontColor=#0B5345;fontSize=12;fontStyle=1;align=center;fontFamily=Helvetica;" value="Hybrid Hotspot / Risk Map&#xa;Now beats naive baseline (MAE 8.03 vs 9.44)" vertex="1">
+          <mxGeometry height="55" width="220" x="490.0014634486608" y="1209.9985539899553" as="geometry" />
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-43" edge="1" parent="1" source="RkHXPo6pKG5hcvqO-sIj-32" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;" target="RkHXPo6pKG5hcvqO-sIj-33">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-44" edge="1" parent="1" source="RkHXPo6pKG5hcvqO-sIj-33" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;" target="RkHXPo6pKG5hcvqO-sIj-34">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-45" edge="1" parent="1" source="RkHXPo6pKG5hcvqO-sIj-34" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;" target="RkHXPo6pKG5hcvqO-sIj-35">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-46" edge="1" parent="1" source="RkHXPo6pKG5hcvqO-sIj-35" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;" target="RkHXPo6pKG5hcvqO-sIj-36">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-47" edge="1" parent="1" source="RkHXPo6pKG5hcvqO-sIj-37" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;" target="RkHXPo6pKG5hcvqO-sIj-38">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-48" edge="1" parent="1" source="RkHXPo6pKG5hcvqO-sIj-38" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;" target="RkHXPo6pKG5hcvqO-sIj-39">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-49" edge="1" parent="1" source="RkHXPo6pKG5hcvqO-sIj-39" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;" target="RkHXPo6pKG5hcvqO-sIj-40">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-50" edge="1" parent="1" source="RkHXPo6pKG5hcvqO-sIj-36" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="RkHXPo6pKG5hcvqO-sIj-39">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="614.67" y="979.88" />
+              <mxPoint x="614.67" y="830.02" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-51" edge="1" parent="1" source="RkHXPo6pKG5hcvqO-sIj-36" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;" target="RkHXPo6pKG5hcvqO-sIj-41">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="479.64" y="1050.09" />
+              <mxPoint x="580" y="1050.09" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-52" edge="1" parent="1" source="RkHXPo6pKG5hcvqO-sIj-40" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;" target="RkHXPo6pKG5hcvqO-sIj-41">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="749.53" y="1050.07" />
+              <mxPoint x="630.07" y="1050.07" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="RkHXPo6pKG5hcvqO-sIj-53" edge="1" parent="1" source="RkHXPo6pKG5hcvqO-sIj-41" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;" target="RkHXPo6pKG5hcvqO-sIj-42">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="600.05" y="1180" />
+              <mxPoint x="600.05" y="1180" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

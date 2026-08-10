@@ -31,7 +31,7 @@
         <mxCell id="m1b" value="Stage 1: SARIMA (cases only)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#15803D;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="60" y="395" width="220" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="m1c" value="Stage 2: XGBoost residual" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#15803D;fontSize=11;" vertex="1" parent="1">
+        <mxCell id="m1c" value="Stage 2: XGBoost residual (+ climate lags/anomalies)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#15803D;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="60" y="450" width="220" height="40" as="geometry" />
         </mxCell>
         <mxCell id="m1d" value="Output: weekly case forecast" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#15803D;fontSize=11;" vertex="1" parent="1">
@@ -47,7 +47,7 @@
         <mxCell id="m2b" value="Stage 1: Random Forest" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1D4ED8;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="320" y="395" width="220" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="m2c" value="Stage 2: Isotonic calibration" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1D4ED8;fontSize=11;" vertex="1" parent="1">
+        <mxCell id="m2c" value="Stage 2: Platt scaling" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1D4ED8;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="320" y="450" width="220" height="40" as="geometry" />
         </mxCell>
         <mxCell id="m2d" value="Output: alert / risk tiers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1D4ED8;fontSize=11;" vertex="1" parent="1">
@@ -63,7 +63,7 @@
         <mxCell id="m3b" value="Stage 1: KDE + Moran’s I" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="580" y="395" width="220" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="m3c" value="Stage 2: RF residual (α=0.05)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=11;" vertex="1" parent="1">
+        <mxCell id="m3c" value="Stage 2: RF relative residual (α=1)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="580" y="450" width="220" height="40" as="geometry" />
         </mxCell>
         <mxCell id="m3d" value="Output: hotspot risk surface" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B45309;fontSize=11;" vertex="1" parent="1">
@@ -99,7 +99,15 @@
         <mxCell id="e20" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#4B5563;strokeWidth=2;" edge="1" parent="1" source="m2d" target="eval"><mxGeometry relative="1" as="geometry" /></mxCell>
         <mxCell id="e21" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#4B5563;strokeWidth=2;" edge="1" parent="1" source="m3d" target="eval"><mxGeometry relative="1" as="geometry" /></mxCell>
         <mxCell id="e22" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#047857;strokeWidth=2;" edge="1" parent="1" source="eval" target="dash"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="e23" value="operational forward only" style="edgeStyle=orthogonalEdgeStyle;dashed=1;endArrow=block;endFill=1;strokeColor=#9CA3AF;fontSize=10;fontColor=#6B7280;" edge="1" parent="1" source="m1d" target="m2d"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e23" value="operational forward only (Decision 027)" style="edgeStyle=orthogonalEdgeStyle;dashed=1;endArrow=block;endFill=1;strokeColor=#9CA3AF;fontSize=10;fontColor=#6B7280;" edge="1" parent="1" source="m1d" target="m2d"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e24" value="operational forward only (Decision 031)" style="edgeStyle=orthogonalEdgeStyle;dashed=1;endArrow=block;endFill=1;strokeColor=#9CA3AF;fontSize=10;fontColor=#6B7280;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;curved=1;" edge="1" parent="1" source="m1d" target="m3d">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="420" y="650" />
+              <mxPoint x="690" y="650" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>

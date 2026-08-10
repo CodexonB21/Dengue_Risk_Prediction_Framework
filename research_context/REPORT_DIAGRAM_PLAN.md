@@ -24,6 +24,23 @@ Prototype / Prospective Tracking). New companion generator:
 were checked against their current `MODULE_CONTEXT.md` files and found already accurate —
 not touched.
 
+**Updated 2026-08-08 (Figure 5.1 consistency pass):** a user-drafted alternative
+high-level architecture sketch was reviewed against current docs and found to omit the
+shared-vs-module-specific preprocessing split (Decision 013) and both cross-module
+operational links, and to invent an undocumented "Data/Model Gateway" component. Rather
+than adopt that structure, Figure 5.1's existing (already-correct) layered layout was
+kept and extended: (1) the Module 1 Stage 2 box now notes "(+ climate lags/anomalies)"
+so the diagram no longer implies XGBoost is climate-blind (Decision 001 only makes Stage
+1/SARIMA climate-free); (2) a second dashed cross-module arrow, Module 1 → Module 3
+"operational forward only (Decision 031)", was added alongside the existing Module 1 →
+Module 2 arrow — Module 3's forward hotspot forecast was implemented after this figure's
+original design and had never been reflected in it. Also fixed a real drift found while
+doing this: `figure_5_1_system_architecture.drawio` (the hand-editable source) still said
+"Stage 2: Isotonic calibration" and "RF residual (α=0.05)" even though
+`generate_figure_5_1_architecture.py`/the PNG had already been corrected to Platt
+scaling / α=1 on 2026-08-07/M3-015 — the drawio file was never brought in sync with the
+generator at that time. All three now agree.
+
 ## Purpose
 
 This file tracks diagrams, figures, charts, and tables planned for the final report.
@@ -200,9 +217,19 @@ Files:
 Notes:
 
 - Must show shared vs module-specific preprocessing, not one undifferentiated preprocessing block.
-- Modules are largely parallel peers; optional dashed M1→M2 for operational forward only.
-- Correct models: M1 SARIMA→XGBoost; M2 tuned RF→Platt scaling (Decision 047 — was isotonic before Stage 1 tuning); M3 KDE/Moran→RF relative residual, α=1 (UPDATED 2026-08-08, M3-015 — was α=0.05).
-- **Verified current (2026-08-08)**: PNG regenerated from `generate_figure_5_1_architecture.py` — Module 2 column reads "Random Forest (tuned)" → "Platt scaling"; Module 3 column now reads "RF relative residual (α=1)".
+- Modules are largely parallel peers; two dashed cross-module arrows required (both real,
+  operational-tier only, never used for training/evaluation): M1→M2 "operational forward
+  only (Decision 027)" and M1→M3 "operational forward only (Decision 031)".
+- Correct models: M1 SARIMA→XGBoost (Stage 2 uses climate lags/anomalies — label this on
+  the Stage 2 box, since Decision 001 only makes Stage 1/SARIMA climate-free, not Stage
+  2); M2 tuned RF→Platt scaling (Decision 047 — was isotonic before Stage 1 tuning); M3
+  KDE/Moran→RF relative residual, α=1 (UPDATED 2026-08-08, M3-015 — was α=0.05).
+- **Verified current (2026-08-08)**: PNG regenerated from `generate_figure_5_1_architecture.py`
+  — Module 2 column reads "Random Forest (tuned)" → "Platt scaling"; Module 3 column reads
+  "RF relative residual (α=1)"; Module 1 Stage 2 box reads "XGBoost residual (+ climate
+  lags/anomalies)"; both M1→M2 and M1→M3 dashed operational arrows present.
+  `figure_5_1_system_architecture.drawio` brought back in sync with the generator/PNG in
+  the same pass (it had drifted — see the 2026-08-08 dated note above).
 
 ---
 

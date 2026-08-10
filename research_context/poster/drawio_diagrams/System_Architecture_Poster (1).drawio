@@ -1,0 +1,160 @@
+<mxfile host="app.diagrams.net" agent="Codexon FYP" version="22.1.0" type="device">
+  <diagram id="system-architecture-poster" name="System Architecture">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1300" pageHeight="820" math="0" shadow="0" background="#FFFFFF">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- TITLE -->
+        <mxCell id="title" value="System Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontStyle=1;fontSize=26;fontColor=#1F2937;fontFamily=Helvetica;underline=1;" vertex="1" parent="1">
+          <mxGeometry x="450" y="10" width="400" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- FRONTEND -->
+        <mxCell id="frontend" value="Frontend&#xa;&#xa;Streamlit&#xa;Dashboard" style="rounded=1;arcSize=15;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;fontColor=#78350F;fontSize=12;fontStyle=1;align=center;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="30" y="360" width="140" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- API GATEWAY -->
+        <mxCell id="api" value="Data / Model&#xa;Gateway&#xa;&#xa;(versioned&#xa;artifacts)" style="rounded=1;arcSize=15;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#DB2777;fontColor=#831843;fontSize=12;fontStyle=1;align=center;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="215" y="355" width="140" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- MODULE 1 PANEL (light blue) -->
+        <mxCell id="m1_panel" value="Module 1: Case Forecasting" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=13;fontStyle=1;verticalAlign=top;align=center;spacingTop=8;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="400" y="90" width="440" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="m1_data" value="Weekly&#xa;Case Data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=10;align=center;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="415" y="140" width="90" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="m1_base" value="SARIMA&#xa;Baseline" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BFDBFE;strokeColor=#1D4ED8;fontColor=#1E3A8A;fontSize=10;fontStyle=1;align=center;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="530" y="140" width="90" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="m1_corr" value="XGBoost&#xa;Compensation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#93C5FD;strokeColor=#1D4ED8;fontColor=#1E3A8A;fontSize=10;fontStyle=1;align=center;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="645" y="140" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="m1_out" value="Compensated&#xa;Forecast" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;fontColor=#1E3A8A;fontSize=10;align=center;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="765" y="140" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- MODULE 2 PANEL (light green) -->
+        <mxCell id="m2_panel" value="Module 2: Outbreak Classification" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#16A34A;fontColor=#14532D;fontSize=13;fontStyle=1;verticalAlign=top;align=center;spacingTop=8;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="400" y="260" width="440" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="m2_data" value="Case +&#xa;Climate Data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;fontColor=#14532D;fontSize=10;align=center;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="415" y="310" width="90" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="m2_base" value="Random Forest&#xa;Classifier" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#86EFAC;strokeColor=#15803D;fontColor=#14532D;fontSize=10;fontStyle=1;align=center;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="530" y="310" width="90" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="m2_corr" value="Platt Scaling&#xa;Calibration" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#4ADE80;strokeColor=#15803D;fontColor=#14532D;fontSize=10;fontStyle=1;align=center;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="645" y="310" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="m2_out" value="Alert Flag /&#xa;Risk Tier" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;fontColor=#14532D;fontSize=10;align=center;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="765" y="310" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- MODULE 3 PANEL (light purple/pink) -->
+        <mxCell id="m3_panel" value="Module 3: Spatial Hotspot Detection" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FAF5FF;strokeColor=#9333EA;fontColor=#4C1D95;fontSize=13;fontStyle=1;verticalAlign=top;align=center;spacingTop=8;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="400" y="430" width="440" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="m3_data" value="Case +&#xa;Spatial Data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE9FE;strokeColor=#9333EA;fontColor=#4C1D95;fontSize=10;align=center;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="415" y="480" width="90" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="m3_base" value="KDE +&#xa;Moran's I" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DDD6FE;strokeColor=#7C3AED;fontColor=#4C1D95;fontSize=10;fontStyle=1;align=center;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="530" y="480" width="90" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="m3_corr" value="Random Forest&#xa;Spatial Residual" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C4B5FD;strokeColor=#7C3AED;fontColor=#4C1D95;fontSize=10;fontStyle=1;align=center;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="645" y="480" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="m3_out" value="Hotspot /&#xa;Risk Map" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE9FE;strokeColor=#9333EA;fontColor=#4C1D95;fontSize=10;align=center;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="765" y="480" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- DATA SOURCES (far left, feeding into modules) -->
+        <mxCell id="datasources" value="Data Sources&#xa;&#xa;Epidemiology Unit&#xa;Open-Meteo&#xa;Census - GADM" style="rounded=1;arcSize=15;whiteSpace=wrap;html=1;fillColor=#F3F4F6;strokeColor=#6B7280;fontColor=#374151;fontSize=11;fontStyle=1;align=center;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="30" y="150" width="140" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- OUTPUT / DASHBOARD LAYER -->
+        <mxCell id="dashboard" value="Early-Warning&#xa;Dashboard&#xa;&#xa;Forecast charts&#xa;Risk alerts / tiers&#xa;Hotspot maps" style="rounded=1;arcSize=15;whiteSpace=wrap;html=1;fillColor=#FEF9C3;strokeColor=#CA8A04;fontColor=#713F12;fontSize=11;fontStyle=1;align=center;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="900" y="290" width="160" height="150" as="geometry" />
+        </mxCell>
+
+        <!-- DATABASE LAYER -->
+        <mxCell id="db" value="Database /&#xa;Artifact Layer" style="rounded=1;arcSize=15;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#C2410C;fontColor=#7C2D12;fontSize=11;fontStyle=1;align=center;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="325" width="130" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- EDGES: Data sources -> gateway -->
+        <mxCell id="e_ds_api" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#6B7280;strokeWidth=1.5;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" edge="1" parent="1" source="datasources" target="api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- EDGES: Frontend <-> Gateway -->
+        <mxCell id="e_front_api" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#000000;strokeWidth=1.5;startArrow=block;startFill=1;endArrow=block;endFill=1;" edge="1" parent="1" source="frontend" target="api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- EDGES: Gateway -> each module data box -->
+        <mxCell id="e_api_m1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2563EB;strokeWidth=1.5;endArrow=block;endFill=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="api" target="m1_data">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_api_m2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#16A34A;strokeWidth=1.5;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="api" target="m2_data">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_api_m3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#9333EA;strokeWidth=1.5;endArrow=block;endFill=1;exitX=1;exitY=0.7;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="api" target="m3_data">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- EDGES: within each module pipeline -->
+        <mxCell id="e_m1_1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#1D4ED8;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="m1_data" target="m1_base">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_m1_2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#1D4ED8;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="m1_base" target="m1_corr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_m1_3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#1D4ED8;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="m1_corr" target="m1_out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_m2_1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#15803D;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="m2_data" target="m2_base">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_m2_2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#15803D;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="m2_base" target="m2_corr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_m2_3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#15803D;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="m2_corr" target="m2_out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_m3_1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7C3AED;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="m3_data" target="m3_base">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_m3_2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7C3AED;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="m3_base" target="m3_corr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_m3_3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7C3AED;strokeWidth=1.5;endArrow=block;endFill=1;" edge="1" parent="1" source="m3_corr" target="m3_out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- EDGES: module outputs -> dashboard -->
+        <mxCell id="e_m1_dash" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2563EB;strokeWidth=1.5;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.2;entryDx=0;entryDy=0;" edge="1" parent="1" source="m1_out" target="dashboard">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_m2_dash" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#16A34A;strokeWidth=1.5;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="m2_out" target="dashboard">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_m3_dash" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#9333EA;strokeWidth=1.5;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.8;entryDx=0;entryDy=0;" edge="1" parent="1" source="m3_out" target="dashboard">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- EDGE: dashboard -> DB -->
+        <mxCell id="e_dash_db" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#C2410C;strokeWidth=1.5;startArrow=block;startFill=1;endArrow=block;endFill=1;" edge="1" parent="1" source="dashboard" target="db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

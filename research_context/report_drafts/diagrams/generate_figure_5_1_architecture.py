@@ -128,7 +128,7 @@ def main() -> Path:
             [
                 "Module-specific prep\nweek-53 merge · case series",
                 "Stage 1\nSARIMA (cases only)",
-                "Stage 2\nXGBoost residual",
+                "Stage 2\nXGBoost residual\n(+ climate lags/anomalies)",
                 "Output\nweekly case forecast",
             ],
         ),
@@ -159,18 +159,26 @@ def main() -> Path:
     ]
 
     # fan-out from shared
+    col_boxes = {}
     for x0, fc, ec, title, steps in cols:
         cx = x0 + 13
         arrow(ax, 50, 70, cx, 63.5, ec, lw=1.3)
         box(ax, x0, 60.5, 26, 3.2, title, fc, ec, fs=8.5, weight="bold")
         y = 55.5
+        step_boxes = []
         for i, step in enumerate(steps):
-            box(ax, x0, y - 0.2, 26, 5.0, step, "#FFFFFF", ec, fs=7.8)
+            by = y - 0.2
+            box(ax, x0, by, 26, 5.0, step, "#FFFFFF", ec, fs=7.8)
+            step_boxes.append((x0, by, 26, 5.0))
             if i < len(steps) - 1:
                 arrow(ax, cx, y - 0.2, cx, y - 1.0, ec, lw=1.1)
             y -= 6.2
+        col_boxes[title] = step_boxes
 
-    # Optional dashed operational link M1 -> M2
+    m1_output = col_boxes["Module 1\nCase Forecasting"][3]
+    m3_output = col_boxes["Module 3\nSpatial Hotspots"][3]
+
+    # Optional dashed operational link M1 -> M2 (Decision 027, forward risk features only)
     ax.annotate(
         "",
         xy=(37, 36),
@@ -178,6 +186,24 @@ def main() -> Path:
         arrowprops=dict(arrowstyle="-|>", color="#9CA3AF", lw=1.2, linestyle=(0, (4, 3))),
     )
     ax.text(34, 37.3, "operational\nforward only", ha="center", va="bottom", fontsize=6.5, color="#6B7280")
+
+    # Dashed operational link M1 -> M3 (Decision 031 — forecast case counts feed
+    # forward Stage 1 KDE weighting only, never training/evaluation). Routed through
+    # the empty band below the output row so it doesn't cross Module 2's boxes.
+    y_out_mid = m1_output[1] + m1_output[3] / 2
+    ax.annotate(
+        "",
+        xy=(m3_output[0], y_out_mid),
+        xytext=(m1_output[0] + m1_output[2], y_out_mid),
+        arrowprops=dict(
+            arrowstyle="-|>",
+            color="#9CA3AF",
+            lw=1.2,
+            linestyle=(0, (4, 3)),
+            connectionstyle="arc3,rad=-0.35",
+        ),
+    )
+    ax.text(63, 25.8, "operational forward only\n(Decision 031)", ha="center", fontsize=6.5, color="#6B7280")
 
     # Layer 4 — Evaluation
     box(

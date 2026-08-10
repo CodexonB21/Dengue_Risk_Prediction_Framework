@@ -1,0 +1,73 @@
+<mxfile host="app.diagrams.net" agent="Codexon FYP">
+  <diagram id="module2-pastel" name="Module 2 Architecture">
+    <mxGraphModel dx="1084" dy="592" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="620" pageHeight="800" background="#FFFFFF" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="a1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5F5E3;strokeColor=#27AE60;fontColor=#145A32;fontSize=11;align=center;fontFamily=Helvetica;" value="Weekly Dengue Cases" vertex="1">
+          <mxGeometry height="45" width="220" x="60" y="55" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2E86C1;fontColor=#1B4F72;fontSize=11;align=center;fontFamily=Helvetica;" value="Data Preprocessing&#xa;(week-53 kept unmerged)" vertex="1">
+          <mxGeometry height="45" width="220" x="60" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="a3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F2F3F4;strokeColor=#909497;fontColor=#212F3C;fontSize=11;align=center;fontFamily=Helvetica;" value="Epidemic-Threshold&#xa;Labelling (mean + k x SD)" vertex="1">
+          <mxGeometry height="45" width="220" x="60" y="205" as="geometry" />
+        </mxCell>
+        <mxCell id="a4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCF3CF;strokeColor=#D4AC0D;fontColor=#7D6608;fontSize=11;align=center;fontFamily=Helvetica;" value="Outbreak Labels&#xa;(binary: 0 / 1)" vertex="1">
+          <mxGeometry height="45" width="220" x="60" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="b1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5F5E3;strokeColor=#27AE60;fontColor=#145A32;fontSize=11;align=center;fontFamily=Helvetica;" value="Climate + Engineered&#xa;Features" vertex="1">
+          <mxGeometry height="45" width="220" x="330" y="55" as="geometry" />
+        </mxCell>
+        <mxCell id="b2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D6EAF8;strokeColor=#2E86C1;fontColor=#1B4F72;fontSize=11;align=center;fontFamily=Helvetica;" value="Feature Engineering&#xa;(lags, seasonality, monsoon)" vertex="1">
+          <mxGeometry height="45" width="220" x="330" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="b3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F2F3F4;strokeColor=#909497;fontColor=#212F3C;fontSize=11;align=center;fontFamily=Helvetica;" value="Random Forest (tuned)&#xa;Pooled Outbreak Classifier" vertex="1">
+          <mxGeometry height="45" width="220" x="330" y="205" as="geometry" />
+        </mxCell>
+        <mxCell id="b4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCF3CF;strokeColor=#D4AC0D;fontColor=#7D6608;fontSize=11;align=center;fontFamily=Helvetica;" value="Predicted Probability&#xa;p-hat per district-week" vertex="1">
+          <mxGeometry height="45" width="220" x="330" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="combine" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8DAEF;strokeColor=#8E44AD;fontColor=#4A235A;fontSize=12;fontStyle=1;align=center;fontFamily=Helvetica;" value="Platt Scaling&#xa;Probability Calibration" vertex="1">
+          <mxGeometry height="50" width="220" x="195" y="355" as="geometry" />
+        </mxCell>
+        <mxCell id="calib" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#E74C3C;fontColor=#78281F;fontSize=11;align=center;fontFamily=Helvetica;" value="Calibrated Probability&#xa;p-tilde = g(p-hat)" vertex="1">
+          <mxGeometry height="45" width="220" x="195" y="430" as="geometry" />
+        </mxCell>
+        <mxCell id="final" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D1F2EB;strokeColor=#17A589;fontColor=#0B5345;fontSize=12;fontStyle=1;align=center;fontFamily=Helvetica;" value="Final Output&#xa;alert_flag (tau=0.10) / risk_tier (low-med-high)" vertex="1">
+          <mxGeometry height="50" width="220" x="195" y="505" as="geometry" />
+        </mxCell>
+        <mxCell id="ea1" edge="1" parent="1" source="a1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;" target="a2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ea2" edge="1" parent="1" source="a2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;" target="a3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ea3" edge="1" parent="1" source="a3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;" target="a4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eb1" edge="1" parent="1" source="b1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;" target="b2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eb2" edge="1" parent="1" source="b2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;" target="b3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eb3" edge="1" parent="1" source="b3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;" target="b4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ea4" edge="1" parent="1" source="a4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.8;entryDx=0;entryDy=0;" target="b3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec1" edge="1" parent="1" source="b4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;" target="combine">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec2" edge="1" parent="1" source="combine" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;" target="calib">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ef" edge="1" parent="1" source="calib" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=1.5;endArrow=block;endFill=1;" target="final">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

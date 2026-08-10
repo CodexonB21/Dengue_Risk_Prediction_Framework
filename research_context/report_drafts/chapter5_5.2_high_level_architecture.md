@@ -45,10 +45,10 @@ Shared preprocessing (module-agnostic only)
  specific prep       specific prep       specific prep
  + feature groups    + feature groups    + spatial features
         ↓                  ↓                  ↓
- Stage 1 SARIMA      Stage 1 RF          Stage 1 KDE + Moran’s I
+ Stage 1 SARIMA      Stage 1 RF (tuned)  Stage 1 KDE + Moran’s I
         ↓                  ↓                  ↓
- Stage 2 XGBoost     Stage 2 isotonic    Stage 2 spatial residual
- residual            calibration         adjustment
+ Stage 2 XGBoost     Stage 2 Platt       Stage 2 RF relative
+ residual (+climate) scaling             residual (α=1)
         ↓                  ↓                  ↓
  case forecast       alert / risk tier   hotspot surface
         └──────────────────┴──────────────────┘
@@ -58,7 +58,15 @@ Shared preprocessing (module-agnostic only)
          Streamlit early-warning dashboard (read-only)
 ```
 
-Optional dashed arrow: Module 1 → Module 2 labelled “operational forward scoring only.”
+Dashed arrows (both required, not optional — both are real, implemented cross-module
+dependencies, operational-tier only, never used for training/evaluation):
+- Module 1 → Module 2 labelled "operational forward scoring only (Decision 027)" — M1's
+  forward case forecast feeds Module 2's forward risk-scoring features.
+- Module 1 → Module 3 labelled "operational forward only (Decision 031)" — M1's forward
+  case forecast is the case-count proxy for Module 3's forward hotspot forecast.
+
+Also note explicitly on the Module 1 Stage 2 box that climate lag/anomaly features enter
+there, not at Stage 1 — Stage 1 (SARIMA) stays climate-free per Decision 001.
 
 Do **not** show: one undifferentiated preprocessing block, fine-scale geocoded cases, SARIMAX in Module 1 Stage 1, Module 2 Stage 2 as climate residual ML, or a Command Centre / scenario-simulation UI.
 

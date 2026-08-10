@@ -6,6 +6,49 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-08-08 - Figure 5.1 (system architecture) revised: climate-into-Stage-2 label, M1→M3 operational arrow, drawio drift fixed
+
+### Module
+Report / Diagrams (all modules)
+
+### Change
+A user-proposed alternative high-level architecture sketch (single-lane-per-module, a
+"Data/Model Gateway" box) was reviewed against `CURRENT_ARCHITECTURE.md`,
+`PIPELINE_ARCHITECTURE_PLAN.md`, and the already-accepted Figure 5.1. The sketch omitted
+the shared-vs-module-specific preprocessing split (Decision 013) and both real
+cross-module operational links, and invented a "Gateway"/versioned-artifact component
+that does not exist in this project. Rather than adopt that structure, the existing
+Figure 5.1 layout (`generate_figure_5_1_architecture.py`,
+`figure_5_1_system_architecture.drawio`) was kept and corrected instead:
+
+1. Module 1's Stage 2 box now reads "XGBoost residual (+ climate lags/anomalies)" — the
+   diagram previously implied Stage 2 was climate-blind; only Stage 1/SARIMA is
+   climate-free (Decision 001).
+2. Added a second dashed cross-module arrow, Module 1 → Module 3, labelled "operational
+   forward only (Decision 031)" — Module 3's forward hotspot forecast
+   (`forecast_future.py`) was implemented after Figure 5.1 was first drawn and had never
+   been added to it. The existing Module 1 → Module 2 arrow (Decision 027) is unchanged.
+3. Found and fixed a real artifact-sync bug: `figure_5_1_system_architecture.drawio` (the
+   hand-editable source) still read "Stage 2: Isotonic calibration" and "RF residual
+   (α=0.05)" for Modules 2/3 even though the PNG generator script had already been
+   corrected to Platt scaling / α=1 relative residual on 2026-08-07/M3-015 — the drawio
+   file was never brought in sync at that time. Both now agree.
+
+### Reason
+Keep the report's system-architecture figure accurate to the latest accepted decisions
+and prevent a diagram-vs-implementation conflict from being carried into the final
+report uncaught.
+
+### Documentation Updated
+`research_context/REPORT_DIAGRAM_PLAN.md`,
+`research_context/report_drafts/chapter5_5.2_high_level_architecture.md`,
+`research_context/report_drafts/diagrams/generate_figure_5_1_architecture.py`,
+`research_context/report_drafts/diagrams/figure_5_1_system_architecture.drawio`,
+`research_context/report_drafts/diagrams/figure_5_1_system_architecture.png` (and its
+`figure_high_level_system_architecture.png` alias) regenerated.
+
+---
+
 ## 2026-08-08 - Module 3: M3-015 documentation/dashboard closeout - decision entries backfilled, dashboard text and next-week panel updated
 
 ### Module
