@@ -6,6 +6,44 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-08-11 - Direct h=2 Stage 2 pilot (M1-023): holdout-confirmed improvement over the recursive approach, not yet promoted
+
+### Module
+Module 1
+
+### Change
+Piloted the textbook fix for M1-022/Decision 053's recursive-forecast bias: a direct h=2 Stage 2
+model, trained on an origin-anchored feature table (every feature is the origin week's own real
+value; only `sarima_prediction` is swapped for a genuine 2-step SARIMA forecast), walk-forward
+validated on the exact same 14 folds/holdout the production model uses. Compared against the
+current recursive approach's h=2 output and against SARIMA-h2-alone, at ~21,000 dense weekly-origin
+historical points (not just the 14 annual fold boundaries) - new `src/module1_forecasting/
+direct_horizon_pilot.py` + `direct_horizon_pilot_eval.py` + `scripts/run_direct_horizon_pilot_
+parallel.py`. Two previously-undocumented feature-leakage risks were found and avoided while
+designing the origin-anchored table (`sarima_prediction` and the three climate-anomaly features are
+both normally computed relative to a row's own week - see M1-023 for the full mechanism).
+
+### Reason
+M1-022 named the bias but deliberately did not attempt a fix without validation. This pilot
+answers "does the direct strategy actually help" before committing to horizons 3-4 too.
+
+### Impact
+- **Holdout result favors direct**: beats the recursive approach in 22/25 districts on MASE, 23/25
+  on sMAPE; DM-test significant differences (2/25 districts) all favor direct, none favor
+  recursive. Pre-holdout is closer (a near-tie on MASE, direct still ahead on sMAPE).
+- **Not yet promoted to production** - this was scoped as a pilot; promoting would need a final,
+  all-data-trained direct-h2 model (not just fold-validated checkpoints), which doesn't exist yet.
+- No production model, metric, or default artifact changed.
+
+### Documentation Updated
+`module_1_forecasting/EXPERIMENT_LOG.md` (M1-023), `src/config.py`, `research_context/CHANGELOG.md`
+(this entry).
+
+### Status
+Accepted (pilot only - not a production decision)
+
+---
+
 ## 2026-08-10 - Module 1/2 forward horizon shortened 8→4 weeks after finding a systematic recursive-forecast bias (Decision 053/M1-022/M2-017)
 
 ### Module

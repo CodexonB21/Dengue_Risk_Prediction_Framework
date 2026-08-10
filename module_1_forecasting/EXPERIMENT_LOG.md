@@ -2172,3 +2172,107 @@ follow-up rather than fixed or hidden.
 local constant), `research_context/RESEARCH_DECISIONS.md` (Decision 053),
 `module_2_classification/EXPERIMENT_LOG.md` (M2-017), `src/dashboard/DASHBOARD_GUIDE.md`,
 `research_context/CHANGELOG.md`, this entry.
+
+---
+
+## Experiment ID: M1-023
+
+### Date
+2026-08-11
+
+### Research Question
+M1-022/Decision 053 named the recursive multi-week forecast's downward bias but deliberately did
+not fix it, flagging the textbook remedy (direct per-horizon models instead of one model applied
+recursively) as a real but unvalidated candidate. Pilot the smallest piece of that: does a direct
+h=2 Stage 2 model, walk-forward validated at genuinely dense (weekly, not just the 14 annual fold
+boundaries) historical origins, actually beat the current recursive approach's h=2 output - and by
+how much?
+
+### Districts
+All 25.
+
+### Stage 1 Model
+Unchanged SARIMA per-district configs (`sarima_selected_configs.csv`). New computation, not a new
+model: for every historical origin week, one fit on data strictly before that origin, asked for
+`n_periods=2` (cheap - `.forecast(steps=2)` from an already-converged fit, not a second
+optimization) instead of the production pipeline's usual `n_periods=1`.
+
+### Stage 2 Model
+Three Stage 2 variants compared at every scored origin, all using the frozen production
+`XGB_BASE_PARAMS` and the exact production fold-training recipe
+(`train_and_predict_fold`/`train_and_predict_holdout`, unmodified):
+1. **SARIMA-h2-alone** - no Stage 2 correction, the 2-step SARIMA forecast itself.
+2. **Recursive-h2** - the CURRENT production model applied to the origin's real h1 feature row,
+   then recursed one more step exactly as `forecast_future.py` already does (its own predicted h1
+   output inserted as a synthetic case count, features rebuilt, model applied again).
+3. **Direct-h2 (new)** - a SEPARATE model, walk-forward trained on an origin-anchored table where
+   every feature is the origin week's own (real, never-recursive) value and only
+   `sarima_prediction` is swapped for the genuine 2-step SARIMA forecast - never sees a synthetic
+   lag value.
+
+Two previously-undocumented leakage risks were found and avoided while designing the direct-h2
+table (not obvious from the existing per-row feature table - see `direct_horizon_pilot.py`'s module
+docstring for the full mechanism): `sarima_prediction` and the three climate-anomaly features are
+both normally computed relative to a row's OWN week, which for a naively-reused feature row would
+silently mean predicting further ahead than the features actually support.
+
+### Features Used
+Identical `FEATURE_COLUMNS` (21 features + District) for all three variants - the comparison
+isolates the STRATEGY (recursive vs. direct), not the feature set.
+
+### Validation Method
+Reuses `compensation_model.py`'s exact 14 walk-forward folds (`compute_fold_boundaries`) and
+holdout block, with fold assignment keyed on each row's ORIGIN week. MASE (m=52, scale from each
+district's full case series), sMAPE, and Diebold-Mariano (squared loss) computed per district, on
+`split ∈ {pre_holdout, holdout, all}`. 21,425 rolling-origin rows generated
+(`scripts/run_direct_horizon_pilot_parallel.py`, ~48 min parallelized across districts); 19,375
+scored (fold-trained, non-imputed).
+
+### Results
+- **Holdout (the confirmatory check, not the exploratory one) favors direct clearly**: median MASE
+  - direct 0.391 vs. recursive 0.445 vs. SARIMA-alone 0.408; median sMAPE - direct 37.0% vs.
+  recursive 40.6% vs. SARIMA-alone 39.2%. Direct beats recursive in **22/25 districts on MASE** and
+  **23/25 on sMAPE**.
+- **Pre-holdout (the larger, exploratory sample) is closer**: median MASE is essentially a tie
+  (direct 0.479 vs. recursive 0.478), but direct still clearly beats recursive on median sMAPE
+  (59.2% vs. 64.4%).
+- **Diebold-Mariano**: only 2/25 districts reach `p<0.05` for direct vs. recursive (Badulla,
+  Ratnapura) - both significant results favor direct (`mean_loss_diff > 0` in both, meaning direct
+  has the lower loss); zero districts show recursive winning significantly. Most districts show no
+  statistically significant difference either way at this sample size.
+- **The four districts that collapsed to exactly 0 in the original 8-week recursive production
+  forecast (Kilinochchi, Mannar, Vavuniya, Mullaitivu)**: direct beats recursive on holdout MASE and
+  sMAPE for 3 of 4 (Mullaitivu, Vavuniya clearly; Kilinochchi on both metrics though SARIMA-alone
+  beats both Stage-2 variants there, consistent with Kilinochchi's already-known M1-009/Decision
+  034 regression under residual correction generally). Mannar is a genuine mixed/close case
+  (recursive very slightly better on both metrics there).
+- **Honest nuance, not hidden**: a raw (unweighted, cross-district-pooled) mean bias check shows
+  direct's aggregate bias (+5.38) is actually LARGER than recursive's (+1.32) - but this pooled
+  statistic is dominated by high-volume districts (Colombo, Gampaha) and is not scale-normalized,
+  unlike MASE/sMAPE; it does not contradict the per-district-normalized result above, but is
+  reported here rather than omitted.
+
+### Interpretation
+The holdout result - the stronger of the two checks by this project's own established convention -
+supports the hypothesis directly: removing the recursive feedback loop (never letting Stage 2 feed
+on its own prior prediction) measurably improves 2-week-ahead accuracy for most districts, and does
+not make any district significantly worse. The pre-holdout near-tie on MASE (while still favoring
+direct on sMAPE) suggests the improvement, while real, is not enormous at h=2 specifically - the
+recursive bias only becomes severe at LATER horizons (h≥3, per M1-022's finding that the decline
+compounds), so a bigger win is plausible, not yet confirmed, at h=3/h=4.
+
+### Decision
+**Accept the pilot's finding as genuine evidence that the direct strategy is worth pursuing
+further; do NOT yet promote it to production.** This was scoped deliberately as a pilot (user
+request, given the added complexity found while designing it) to answer "does this help" before
+committing to horizons 3-4 - it has answered that question with a real, holdout-confirmed yes for
+h=2, not a definitive one for the full horizon. Promoting h=2 alone into `forecast_future.py` would
+require additional engineering (a final, all-data-trained direct-h2 model, not just fold-validated
+checkpoints) not yet built. Extending to h=3/h=4 is the natural next step if this line of work
+continues, since M1-022's finding suggests the recursive bias - and therefore the direct model's
+advantage - grows with horizon, not shrinks.
+
+### Documentation Updated
+`src/config.py` (new `MODULE1_DIRECT_HORIZON_PILOT_PATH`/`MODULE1_DIRECT_HORIZON_PILOT_COMPARISON_PATH`),
+new `src/module1_forecasting/direct_horizon_pilot.py`, `direct_horizon_pilot_eval.py`,
+`scripts/run_direct_horizon_pilot_parallel.py`, `research_context/CHANGELOG.md`, this entry.

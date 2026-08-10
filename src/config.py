@@ -112,6 +112,10 @@ MODULE1_FINAL_PREDICTIONS_PATH = MODULE1_PROCESSED_DIR / "final_combined_predict
 MODULE1_COMBINED_METRICS_PATH = MODULE1_METRICS_DIR / "combined_vs_baseline_metrics.csv"
 MODULE1_DM_TEST_PATH = MODULE1_METRICS_DIR / "diebold_mariano_results.csv"
 
+# --- M1-023 direct-horizon (h=2) pilot; src/module1_forecasting/direct_horizon_pilot.py ---
+MODULE1_DIRECT_HORIZON_PILOT_PATH = MODULE1_PROCESSED_DIR / "direct_horizon_pilot_h2.csv"
+MODULE1_DIRECT_HORIZON_PILOT_COMPARISON_PATH = MODULE1_METRICS_DIR / "direct_horizon_pilot_h2_comparison.csv"
+
 
 def module1_stage2_paths(
     residual_mode: str | None = None,
