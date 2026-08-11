@@ -30,17 +30,16 @@ def render_prospective_page() -> None:
         "honestly, over real calendar time, as the weeks they predicted actually happen."
     )
     st.info(
-        "**Why this page can legitimately look empty right now**: a prediction only 'resolves' once "
-        "its target week's real outcome exists in the dataset. Both trackers below were seeded "
-        "recently — 0 resolved does not mean broken, it means check back."
+        "**Why this page can look empty right now**: a prediction only counts once its target "
+        "week's real outcome exists in the dataset. Both trackers were set up recently, so "
+        "0 resolved does not mean something is broken; check back later."
     )
 
     module_badge("m1")
-    st.subheader("Module 1 — next-week case nowcast tracker")
+    st.subheader("Module 1: next-week case nowcast tracker")
     st.caption(
-        "`nowcast_tracking.py` logs every `run_nowcast()` prediction, then "
-        "`reconcile_nowcast_log()` joins it against real case counts once available, computing "
-        "absolute error and sMAPE per resolved (District, Year, Week)."
+        "Every next-week forecast is logged, then automatically checked against the real case "
+        "count once it becomes available, so we can track the error for each district and week."
     )
     prospective_tracker_panel(
         "Module 1 nowcast", load_m1_nowcast_log(), load_m1_nowcast_accuracy()
@@ -48,12 +47,10 @@ def render_prospective_page() -> None:
 
     st.divider()
     module_badge("m2")
-    st.subheader("Module 2 — forward outbreak-risk tracker")
+    st.subheader("Module 2: forward outbreak-risk tracker")
     st.caption(
-        "`risk_tracking.py` logs every genuinely-forward (`prediction_type == 'forward_week'`) row "
-        "from `forecast_future_risk.py`, then `reconcile_risk_log()` recomputes the real "
-        "epidemic-threshold label fresh once the target week resolves, and checks whether "
-        "`alert_flag` was actually correct."
+        "Every genuine forward-looking risk prediction is logged, then checked against the real "
+        "outbreak label once the target week resolves, to see whether the alert was actually correct."
     )
     prospective_tracker_panel(
         "Module 2 risk", load_m2_risk_log(), load_m2_risk_prospective_accuracy()
@@ -61,16 +58,11 @@ def render_prospective_page() -> None:
 
     st.divider()
     module_badge("m3")
-    st.subheader("Module 3 — forward hotspot-forecast tracker")
+    st.subheader("Module 3: forward hotspot-forecast tracker")
     st.caption(
-        "`hotspot_tracking.py` logs every `forecast_future.run_forecast_future()` row, then "
-        "`reconcile_hotspot_log()` recomputes Stage 1's KDE baseline using the REAL reported case "
-        "count once the target week resolves, and reapplies the already-logged "
-        "`predicted_relative_residual` unchanged (Stage 2 never sees this week's own case count, "
-        "only backward-looking lag/climate features — so it needs no recomputation). This also "
-        "isolates how much of Module 3's forward error is inherited from Module 1's case-count "
-        "forecast feeding it (`risk_0_abs_error`), separately from the total forecast error "
-        "(`abs_error`)."
+        "Every forward hotspot forecast is logged, then checked against the real reported case "
+        "count once the target week resolves. This also shows how much of Module 3's forward "
+        "error comes from Module 1's case forecast, separately from the model's own error."
     )
     prospective_tracker_panel(
         "Module 3 hotspot", load_m3_hotspot_log(), load_m3_hotspot_prospective_accuracy()
@@ -78,14 +70,9 @@ def render_prospective_page() -> None:
 
     st.divider()
     st.caption(
-        "Given Module 2's own holdout outbreak prevalence is only ~1.5%, accumulating enough "
-        "resolved **outbreak** weeks specifically (not just resolved weeks generally) to say "
-        "anything statistically meaningful here will take real calendar time by design — this is a "
-        "slow-arriving evidence tier, not a shortcut around the Research Evidence page's holdout "
-        "numbers. Module 3's tracker is newer still (Decision 052/M3-016, added 2026-08-10) and its "
-        "own forecast is currently limited to one week ahead (`DEFAULT_HORIZON_WEEKS=1`) — see "
-        "`module_3_spatial/MODULE_CONTEXT.md` for why multi-week Module 3 forecasting isn't "
-        "implemented yet."
+        "Outbreak weeks are rare (~1.5% holdout prevalence), so accumulating enough resolved "
+        "outbreak weeks to say anything statistically meaningful here will take real calendar "
+        "time. Module 3's tracker is newer and currently limited to one week ahead."
     )
 
 

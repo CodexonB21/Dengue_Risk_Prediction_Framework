@@ -12,7 +12,6 @@ from src.dashboard.data_loaders import (
     RELIABILITY_HOLDOUT_FIG,
     load_m1_district_holdout,
     load_m2_009_baseline,
-    load_m2_uncertainty_bands,
     load_m3_convergence_log,
     load_m3_feature_importance,
     load_m3_morans_i,
@@ -60,7 +59,7 @@ def render_evidence_page() -> None:
         | **Module 2** | Outbreak classifier | {m2_stage2_label} calibration | Is this week abnormally high *for this district-week*? |
 
         Module 1 and Module 2 answer **different questions**. Thresholding Module 1 case forecasts
-        is **not** equivalent to Module 2 outbreak alerting (see M2-009 table below).
+        is **not** equivalent to Module 2 outbreak alerting.
         """
     )
 
@@ -68,7 +67,7 @@ def render_evidence_page() -> None:
 
     with col1:
         module_badge("m1")
-        st.subheader("Module 1 — holdout forecasting")
+        st.subheader("Module 1: holdout forecasting")
         if m1:
             st.metric("Median MASE (SARIMA only)", f"{m1['median_mase_sarima']:.3f}", help="MASE")
             st.metric("Median MASE (SARIMA + residual correction)", f"{m1['median_mase_hybrid']:.3f}", help="MASE")
@@ -78,11 +77,11 @@ def render_evidence_page() -> None:
             )
             st.metric("Median sMAPE (hybrid)", f"{m1['median_smape_hybrid']:.1f}%", help="sMAPE")
         else:
-            st.warning("Production stack summary not found — run evaluation pipeline.")
+            st.warning("Production stack summary not found. Run the evaluation pipeline.")
 
     with col2:
         module_badge("m2")
-        st.subheader("Module 2 — holdout outbreak alerting")
+        st.subheader("Module 2: holdout outbreak alerting")
         if m2:
             st.metric(f"Holdout PR-AUC ({m2['architecture']})", f"{m2['pr_auc']:.3f}", help="PR-AUC")
             st.metric(
@@ -99,30 +98,39 @@ def render_evidence_page() -> None:
                     f"Alert precision @ τ={m2['alert_threshold']}",
                     f"{100 * float(m2['alert_precision']):.1f}%",
                 )
-            st.caption(
-                "F2-optimal alert threshold, re-selected fresh from validation folds each time "
-                "Stage 1/2 is retrained (currently read live, never hardcoded)."
-            )
+            st.caption("The alert threshold is automatically re-tuned whenever the model is retrained, so it never goes stale.")
         else:
             st.warning("Production stack summary not found.")
 
     st.divider()
-    st.subheader("Why Module 2 is not redundant (M2-009 holdout)")
-    st.caption(
-        "Same holdout block and epidemic-threshold label. Compares Module 2 alerts vs "
-        "thresholding Module 1 `final_prediction`."
-    )
+    st.subheader("Why Module 2 is not redundant")
+    st.caption("Compares Module 2 alerts against thresholding Module 1's forecasted cases, on the same holdout data.")
     if not m2_009.empty:
         display = m2_009.copy()
+        display = display.loc[
+            display["rule"].str.startswith("M2 production") | display["rule"].str.startswith("M1 forecast > epidemic")
+        ]
+        display["rule"] = display["rule"].str.replace(r",\s*tau~=[0-9.]+", "", regex=True)
         for col in ("pr_auc", "recall", "precision", "f2", "prevalence"):
             if col in display.columns:
                 display[col] = display[col].map(lambda x: f"{x:.3f}" if pd.notna(x) else "—")
+        display = display.rename(columns={
+            "rule": "Method",
+            "pr_auc": "PR-AUC",
+            "recall": "Recall",
+            "precision": "Precision",
+            "f2": "F2 Score",
+            "n_alerts": "Alerts",
+            "n_scored": "Weeks Scored",
+            "n_outbreaks": "Outbreaks",
+            "prevalence": "Prevalence",
+        })
         st.dataframe(display, use_container_width=True, hide_index=True)
     else:
         st.info("Run `python scripts/m2_009_m1_alert_baseline.py` to generate comparison table.")
 
     if not m1_districts.empty and "post_mase" in m1_districts.columns:
-        st.subheader("Module 1 — per-district holdout MASE")
+        st.subheader("Module 1: per-district holdout MASE")
         plot_df = m1_districts.sort_values("post_mase").copy()
         plot_df = plot_df.rename(columns={"pre_mase": "SARIMA only", "post_mase": "Hybrid (SARIMA + correction)"})
         fig = px.bar(
@@ -140,64 +148,25 @@ def render_evidence_page() -> None:
         ]
         if not regressed.empty:
             st.caption(
-                f"**Honest limitation, not hidden**: {', '.join(regressed['District'])} regressed under "
-                "residual correction on this holdout block (investigated in M1-009/Decision 034 and "
-                "M1-018 — a fold-specific effect, not fixable without risking overfit to this one "
-                "holdout). The pooled model is still kept for these districts rather than a per-district "
-                "override, per Decision 002/014's confirmed pooling result."
+                f"{', '.join(regressed['District'])} regressed under residual correction on this "
+                "holdout block. The pooled model is still kept for these districts rather than a "
+                "per-district override."
             )
 
     if RELIABILITY_HOLDOUT_FIG.exists():
         module_badge("m2")
-        st.subheader("Module 2 — calibration (holdout)")
+        st.subheader("Module 2: calibration (holdout)")
         st.image(
             str(RELIABILITY_HOLDOUT_FIG),
-            caption=f"Stage 1 raw vs {m2_stage2_label.lower()} — holdout reliability diagram",
+            caption=f"Stage 1 raw vs {m2_stage2_label.lower()}: holdout reliability diagram",
         )
-
-    uncertainty = load_m2_uncertainty_bands()
-    if not uncertainty.empty:
-        st.subheader("Module 2 — per-prediction uncertainty (holdout)")
-        evidence_badge("validated")
-        st.caption(
-            "Venn-Abers interval `[venn_abers_p0, venn_abers_p1]` around each calibrated probability "
-            "(M2-012) — same no-leakage fold structure as Stage 2's own calibrator. Width scales with "
-            "risk: an evaluator can see not just the probability, but how much that specific number "
-            "should be trusted."
-        )
-        holdout_bands = uncertainty.loc[
-            (uncertainty["split"] == "holdout") & (uncertainty["is_selected_model"])
-        ]
-        if not holdout_bands.empty:
-            fig = px.scatter(
-                holdout_bands,
-                x="predicted_probability",
-                y="venn_abers_width",
-                title="Uncertainty interval width vs. Stage 1 probability (holdout)",
-                labels={
-                    "predicted_probability": "Stage 1 raw probability",
-                    "venn_abers_width": "Interval width (venn_abers_p1 − venn_abers_p0)",
-                },
-                opacity=0.4,
-            )
-            st.plotly_chart(fig, use_container_width=True)
-            st.caption(
-                "Bands are computed on holdout/validation folds only. Forward-week (operational) "
-                "predictions do not yet have bands — treat that as a documented gap, not a fabricated "
-                "error bar."
-            )
 
     st.divider()
     module_badge("m3")
-    st.subheader("Module 3 — spatial hotspot detection (KDE + RF residual compensation)")
+    st.subheader("Module 3: spatial hotspot detection")
     st.caption(
-        "Stage 1: Kernel Density Estimation + Global Moran's I spatial baseline. "
-        "Stage 2: Random Forest RELATIVE-residual compensation (own-district relative-"
-        "residual lag features, M3-015 — target is (Actual - Risk_0) / (Risk_0 + 1), "
-        "not the raw difference, since the raw residual was found strongly "
-        "heteroscedastic), capped at 1 iteration by design — the lag features are "
-        "fixed relative to Risk_0, so retraining past iteration 1 is not well-founded "
-        "for this feature set (see MODULE_CONTEXT.md)."
+        "Stage 1 estimates a spatial risk baseline and checks for real geographic clustering. "
+        "Stage 2 uses a Random Forest model to correct Stage 1's errors, run for one correction pass."
     )
 
     morans_df = load_m3_morans_i()
@@ -209,26 +178,25 @@ def render_evidence_page() -> None:
 
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("**Stage 1 — spatial clustering validation**")
+        st.markdown("**Stage 1: spatial clustering validation**")
         if morans:
             st.metric("Global Moran's I", f"{morans['I']:.3f}", help="Moran's I")
             st.metric("p-value (permutation, 999 runs)", f"{morans['p_sim']:.3f}")
             st.metric("Clustering significant?", "Yes" if morans["significant"] else "No")
         else:
-            st.warning("Moran's I validation file not found — run `python -m src.module3_spatial.kde_baseline`.")
+            st.warning("Moran's I validation file not found. Run `python -m src.module3_spatial.kde_baseline`.")
 
         ne_row = morans_df.loc[morans_df.get("check") == "ne_monsoon"] if not morans_df.empty else pd.DataFrame()
         if not ne_row.empty:
             r = ne_row.iloc[0]
             st.caption(
-                f"**Not universal, shown honestly**: the NE-monsoon representative week "
-                f"({int(r['Year'])} Wk{int(r['Week'])}) shows **no** significant spatial clustering "
-                f"(I={r['I']:.3f}, p={r['p_sim']:.3f}) — the aggregated result above should not be read "
-                "as 'every week is spatially clustered.'"
+                f"Not every week shows this pattern: the NE-monsoon week ({int(r['Year'])} Wk{int(r['Week'])}) "
+                "had no significant spatial clustering. The result above is an overall pattern, not "
+                "true for every single week."
             )
 
     with col2:
-        st.markdown("**Stage 2 — iterative loop convergence**")
+        st.markdown("**Stage 2: iterative loop convergence**")
         if convergence:
             st.metric("Converged after", f"{convergence['n_iterations']} iteration(s)")
             st.metric(
@@ -237,7 +205,7 @@ def render_evidence_page() -> None:
             )
             st.metric("Converged?", "Yes" if convergence["converged"] else "No (hit iteration cap)")
         else:
-            st.warning("Convergence log not found — run `python -m src.module3_spatial.iterative_loop`.")
+            st.warning("Convergence log not found. Run `python -m src.module3_spatial.iterative_loop`.")
 
     st.markdown("**Does Stage 2 improve fit over Stage 1 alone?**")
     if not m3_comparison.empty:
@@ -246,9 +214,9 @@ def render_evidence_page() -> None:
             if col in display.columns:
                 display[col] = display[col].map(lambda x: f"{x:.4f}" if pd.notna(x) else "—")
         st.dataframe(display, width="stretch", hide_index=True)
-        st.success("Genuinely improves fit vs. Stage 1 alone (M3-015) — see below for how this was verified.")
+        st.success("Genuinely improves fit vs. Stage 1 alone.")
     else:
-        st.warning("Stage 1 vs Stage 2 comparison file not found — run `python -m src.module3_spatial.evaluate`.")
+        st.warning("Stage 1 vs Stage 2 comparison file not found. Run `python -m src.module3_spatial.evaluate`.")
 
     st.markdown("**Is Stage 2 actually beating a trivial baseline?**")
     if not m3_persistence.empty:
@@ -257,29 +225,9 @@ def render_evidence_page() -> None:
             if col in display.columns:
                 display[col] = display[col].map(lambda x: f"{x:.4f}" if pd.notna(x) else "—")
         st.dataframe(display, width="stretch", hide_index=True)
-        st.success("Now genuinely beats the naive-persistence baseline too (M3-015) — see below.")
+        st.success("Now genuinely beats the naive-persistence baseline too.")
     else:
-        st.warning("Persistence baseline file not found — run `python -m src.module3_spatial.persistence_baseline`.")
-
-    with st.expander("How Stage 2 evolved — M3-005 → M3-008 → M3-015"):
-        st.markdown(
-            "1. **Climate/demographic covariates alone (M3-005):** null result — no "
-            "genuine improvement over Stage 1.\n"
-            "2. **+ own-district absolute-residual lags (M3-008):** beat Stage 1 "
-            "(MAE 20.54 → 9.96, ~51% reduction) but still lost to naive persistence "
-            "on MAE (9.44 vs. 9.96) — only won on correlation and RMSE.\n"
-            "3. **Relative residual instead of absolute (M3-015):** a direct diagnostic "
-            "found the absolute residual strongly heteroscedastic (error scales with "
-            "predicted magnitude), letting the largest outbreak weeks dominate the "
-            "learning signal. Predicting the RELATIVE residual instead (MAE 20.54 → "
-            "8.03, ~61% reduction; correlation 0.824 → 0.959) beats BOTH Stage 1 and "
-            "naive persistence on every metric, confirmed via a week-level bootstrap, "
-            "not just the aggregate table above.\n\n"
-            "**Two honest caveats remain**: the RMSE gain is proportionally larger in "
-            "the highest-case-volume spatial fold, and the model is noticeably weaker "
-            "at the NE-monsoon week already flagged above as non-clustered — see "
-            "`EXPERIMENT_LOG.md` M3-015 for the full numbers."
-        )
+        st.warning("Persistence baseline file not found. Run `python -m src.module3_spatial.persistence_baseline`.")
 
     if not m3_importance.empty:
         st.markdown("**Stage 2 feature importance**")
@@ -299,22 +247,20 @@ def render_evidence_page() -> None:
             st.plotly_chart(fig, use_container_width=True)
 
     st.caption(
-        "**Honest limitation**: Module 3 has no temporal holdout (only spatial K-means CV) — "
-        "every map shown elsewhere in this app is already out-of-fold by construction, but there is "
-        "no held-back future block the way Module 1/2 have. See `QUESTIONS_FOR_DEFENSE.md`."
+        "Module 3 does not have a held-out future time block for testing, only cross-validation "
+        "across districts. Every map elsewhere in this app already uses out-of-sample predictions, "
+        "but there is no separate future period reserved for testing, unlike Module 1 and 2."
     )
 
-    with st.expander("Operational vs validation — what not to cite"):
+    with st.expander("Operational vs validation: what not to cite"):
         st.markdown(
             """
             | | **This page (validation)** | **Operational prototype page** |
             |---|---|---|
             | Purpose | Thesis / viva evidence | Decision-support sketch |
-            | Case inputs | Real observed lags only | M1 forecasts for forward lags |
-            | Climate | Historical observed | Observed + forecast API |
+            | Case inputs | Real observed lags only | Module 1 forecasts for forward lags |
+            | Climate | Historical observed | Observed + forecast data |
             | Safe to cite PR-AUC/MASE | **Yes** | **No** |
-
-            See `research_context/QUESTIONS_FOR_DEFENSE.md` and `src/dashboard/DASHBOARD_GUIDE.md`.
             """
         )
 

@@ -19,7 +19,7 @@ from src.dashboard.data_loaders import (
 
 
 def render_overview_page() -> None:
-    st.header("Sri Lanka Dengue — Residual Compensation Risk Prediction Framework")
+    st.header("Sri Lanka Dengue: Risk Prediction Framework")
     st.markdown(
         "A **hybrid, two-stage** framework: a statistical or classical baseline model makes a "
         "first-pass prediction, and a machine-learning model then corrects that baseline's *errors* "
@@ -61,16 +61,16 @@ def render_overview_page() -> None:
         st.metric(
             "Global Moran's I",
             f"{morans['I']:.3f}" if morans else "—",
-            help="Spatial autocorrelation statistic — positive & significant means nearby districts have genuinely similar risk, not noise.",
+            help="Spatial clustering statistic. A positive, significant value means nearby districts have similar risk, not random noise.",
         )
         st.caption("*Where is risk spatially clustering?*")
 
     st.divider()
     st.subheader("Evidence tiers used throughout this dashboard")
     st.caption(
-        "Every number on every page carries one of these three badges. This is the single most "
-        "important thing to track while exploring — a number's badge tells you whether it is safe "
-        "to cite as validated model skill, or is a live/forward output with no ground truth yet."
+        "Every number on every page carries one of these three badges, which tell you whether it "
+        "is a validated result or a live/forward output that has not been checked against real "
+        "outcomes yet."
     )
     ec1, ec2, ec3 = st.columns(3)
     with ec1:
@@ -87,20 +87,19 @@ def render_overview_page() -> None:
     st.subheader("How to read this dashboard")
     st.markdown(
         """
-        1. **Research Evidence** — start here. Holdout-validated numbers for all three modules,
-           including the per-district and per-week honest limitations (a few districts and one
-           seasonal window where a model underperforms, reported rather than hidden).
-        2. **Operational Monitoring** — the same frozen models applied to the most recent and
-           forward-looking data: national triage, a per-district drill-down, and the spatial
-           hotspot map. Useful for a decision-support demo; **not** additional validation evidence.
-        3. **Prospective Tracking** — the self-checking mechanism built so operational forward
-           predictions can eventually be verified against reality, not just trusted on faith.
+        1. **Research Evidence**: start here for validated results across all three modules,
+           including a few known limitations reported honestly rather than hidden.
+        2. **Operational Monitoring**: the same models applied to the latest and upcoming weeks,
+           showing a national overview, a per-district view, and the spatial hotspot map. Useful
+           for a live demo, but **not** additional proof of accuracy.
+        3. **Prospective Tracking**: checks operational forecasts against real outcomes once
+           those weeks actually happen.
         """
     )
     st.caption(
-        "Module 1's forecasts feed Module 2's forward risk scoring for horizons ≥ 2 weeks ahead "
-        "(an intentional integration, not a validation shortcut) — see the Operational Monitoring "
-        "page's Forward risk tab for the `uses_module1_cases` flag on every affected row."
+        "Module 1's forecasts feed into Module 2's risk scoring for the second week ahead and "
+        "beyond. This is an intentional design choice, not a shortcut. See the Forward risk tab "
+        "on the Operational Monitoring page for details."
     )
 
 

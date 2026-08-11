@@ -34,7 +34,7 @@ def evidence_badge(tier: EvidenceTier, *, extra: str | None = None) -> None:
     c = EVIDENCE_TIER_COLORS[tier]
     label = EVIDENCE_TIER_LABELS[tier]
     if extra:
-        label = f"{label} — {extra}"
+        label = f"{label}: {extra}"
     st.markdown(
         f"""<div style="display:inline-block;padding:4px 12px;border-radius:14px;
         background-color:{c['fill']};border:1.5px solid {c['edge']};color:{c['text']};
@@ -62,22 +62,22 @@ def module_badge(module: Module) -> None:
 
 
 GLOSSARY: dict[str, str] = {
-    "calibrated_probability": "Outbreak probability (0-1) after Stage 2 recalibration of Stage 1's raw score.",
-    "risk_tier": "Low / medium / high, derived from calibrated_probability using the current production thresholds.",
-    "alert_flag": "True if calibrated_probability is at or above the current alert threshold — 'worth attention', not 'outbreak confirmed'.",
-    "feature_completeness_pct": "Share of numeric input features that were non-missing when this row was scored (100% = fully informed).",
-    "already_scored_in_pipeline": "True if this week's data was inside the model's own training/evaluation history — not an independent validation point.",
-    "horizon_step": "0 = latest real week; 1 = next week; 2-8 = further forward weeks with compounding uncertainty.",
-    "prediction_type": "'observed_week' (horizon 0, real data) or 'forward_week' (horizon >= 1, a genuine forecast).",
-    "cases_source": "Where this row's case count came from: 'actual' (real), 'na' (withheld, next-week leakage guard), or 'module1_forecast' (Module 1 prediction feeding a lag feature).",
-    "climate_source": "'observed', 'forecast' (Open-Meteo forecast API), 'mixed', or 'missing'.",
-    "uses_module1_cases": "True when Module 1's forecast feeds this row's case-lag features (horizon >= 2 only).",
-    "evidence_tier": "Which of the three evidence tiers (validated / operational-live / operational-prospective) this row belongs to.",
-    "MASE": "Mean Absolute Scaled Error — forecast error relative to a naive seasonal baseline; below 1.0 beats the baseline.",
-    "sMAPE": "Symmetric Mean Absolute Percentage Error — scale-free forecast error, 0-100%.",
-    "PR-AUC": "Precision-Recall Area Under Curve — discrimination skill for a rare/imbalanced outcome (here, outbreak weeks).",
-    "Brier Skill Score": "Calibration skill relative to always predicting the base rate; positive means the model's probabilities beat that naive baseline.",
-    "Moran's I": "A statistic for spatial autocorrelation — positive and significant means nearby districts have similar risk (real clustering, not noise).",
+    "calibrated_probability": "The model's outbreak probability for this district-week, from 0 to 1.",
+    "risk_tier": "Low, medium, or high, based on the calibrated probability.",
+    "alert_flag": "True if the probability is at or above the alert threshold. It means 'worth attention', not 'outbreak confirmed'.",
+    "feature_completeness_pct": "Share of input data that was available when this row was scored. 100% means fully complete.",
+    "already_scored_in_pipeline": "True if this week's data was already part of the model's training history, so it is not an independent check.",
+    "horizon_step": "How many weeks ahead this row looks: 0 is the latest real week, 1 is next week, and 2-8 are further ahead with more uncertainty.",
+    "prediction_type": "Whether this row uses real data for a week that already happened, or is a genuine forecast for a future week.",
+    "cases_source": "Where this row's case count came from: real reported data, withheld (to avoid leaking next week's data), or a Module 1 forecast.",
+    "climate_source": "Where this row's weather data came from: observed, forecast, a mix of both, or missing.",
+    "uses_module1_cases": "True when Module 1's case forecast was used to build this row (only for weeks 2 and beyond).",
+    "evidence_tier": "Which of the three evidence tiers this row belongs to: validated, live/operational, or prospective.",
+    "MASE": "Mean Absolute Scaled Error: forecast error compared to a simple baseline model. Below 1.0 means the model beats that baseline.",
+    "sMAPE": "Symmetric Mean Absolute Percentage Error: forecast error as a percentage, from 0 to 100%.",
+    "PR-AUC": "Precision-Recall Area Under Curve: how well the model tells apart rare outbreak weeks from normal ones.",
+    "Brier Skill Score": "How much better the model's probabilities are than always guessing the average rate. Positive is better.",
+    "Moran's I": "A statistic for spatial clustering. A positive, significant value means nearby districts have similar risk, not random noise.",
 }
 
 
@@ -101,7 +101,7 @@ def render_glossary_sidebar() -> None:
     """
     with st.sidebar.expander("📖 Glossary", expanded=False):
         for term, definition in GLOSSARY.items():
-            st.markdown(f"**{term}** — {definition}")
+            st.markdown(f"**{term}**: {definition}")
 
 
 @st.cache_data(show_spinner=False)
@@ -139,12 +139,12 @@ def prospective_tracker_panel(name: str, log_df: pd.DataFrame, accuracy_df: pd.D
         f"{name}: resolved so far",
         f"{n_resolved} / {n_logged}",
         help="A logged prediction 'resolves' once the real target week's outcome is known. "
-        "0 resolved does not mean the tracker is broken — it means those weeks haven't happened yet.",
+        "0 resolved simply means those weeks haven't happened yet; it does not mean the tracker is broken.",
     )
     if n_resolved == 0:
         st.info(
-            f"No {name} predictions have resolved yet — this tracker accumulates evidence "
-            "honestly over real calendar time, not on demand. Check back as weeks pass."
+            f"No {name} predictions have resolved yet. This tracker builds up evidence over real "
+            "time, not on demand, so check back as the weeks pass."
         )
     else:
         st.dataframe(accuracy_df.tail(20), use_container_width=True)

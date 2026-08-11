@@ -28,9 +28,9 @@ MODULE_COLORS: dict[str, dict[str, str]] = {
 
 MODULE_LABELS: dict[str, str] = {
     "shared": "Shared",
-    "m1": "Module 1 — Forecasting",
-    "m2": "Module 2 — Classification",
-    "m3": "Module 3 — Spatial",
+    "m1": "Module 1: Forecasting",
+    "m2": "Module 2: Classification",
+    "m3": "Module 3: Spatial",
     "dash": "Dashboard",
 }
 
@@ -45,6 +45,6 @@ EVIDENCE_TIER_COLORS: dict[str, dict[str, str]] = {
 
 EVIDENCE_TIER_LABELS: dict[str, str] = {
     "validated": "Validated (holdout / walk-forward)",
-    "operational_live": "Operational — live/forward",
-    "operational_prospective": "Operational — prospective (tracked, not yet resolved)",
+    "operational_live": "Operational (live/forward)",
+    "operational_prospective": "Operational (prospective, not yet resolved)",
 }

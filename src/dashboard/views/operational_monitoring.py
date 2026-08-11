@@ -54,19 +54,17 @@ def _render_nowcast_panel(nowcast: pd.DataFrame, district: str) -> None:
     number than the 4-week `future_forecast.csv` used below, and previously
     completely absent from the dashboard despite being production output."""
     module_badge("m1")
-    st.subheader("Module 1 — next-week case nowcast")
+    st.subheader("Module 1: next-week case nowcast")
     evidence_badge("operational_live")
     if nowcast.empty:
-        st.info("Nowcast file not found — run `python -m src.module1_forecasting.forecast_future --nowcast`.")
+        st.info("Nowcast file not found. Run `python -m src.module1_forecasting.forecast_future --nowcast`.")
         return
 
     row = nowcast.loc[nowcast["District"] == district]
     target = f"{int(nowcast['Year'].iloc[0])} Wk{int(nowcast['Week'].iloc[0])}" if not nowcast.empty else "—"
     st.caption(
-        f"Single-step \"predict next week using all data up to now\" ({target}) — distinct from the "
-        "recursive 4-week forecast further down this page. Uses a 4-vintage SARIMA ensemble "
-        "(Decision 039/M1-016), the first broad accuracy improvement found across Module 1's full "
-        "remediation arc, though still operational-tier (no holdout MASE for this specific path)."
+        f"A one-step forecast for next week ({target}), using all data available today. This is "
+        "different from the 4-week forecast further down this page."
     )
     if not row.empty:
         r = row.iloc[0]
@@ -102,8 +100,8 @@ def render_operational_page(
     st.header("Operational monitoring prototype")
     evidence_badge("operational_live")
     st.caption(
-        "Not holdout-validated. Use for integration demo only. "
-        "Thesis accuracy claims must come from the **Research evidence** page."
+        "This page is not holdout-validated. It is for demonstration only. Thesis accuracy claims "
+        "come from the **Research Evidence** page."
     )
 
     st.info(
@@ -135,8 +133,8 @@ def render_operational_page(
     module_badge("m2")
     st.subheader("National triage (monitoring signals)")
     st.caption(
-        "Counts below are **early-warning flags**, not validated detections. "
-        "High predicted cases ≠ outbreak in high-baseline districts (Colombo, Gampaha)."
+        "Counts below are **early-warning flags**, not validated detections. High predicted cases "
+        "do not necessarily mean an outbreak in high-baseline districts (Colombo, Gampaha)."
     )
 
     forward = future_risk.loc[future_risk["prediction_type"] == "forward_week"].copy() if not future_risk.empty else pd.DataFrame()
@@ -158,7 +156,7 @@ def render_operational_page(
         st.write("Top 5 districts by max **forward** calibrated probability (operational)")
         st.dataframe(top, use_container_width=True)
     else:
-        st.info("Forward risk CSV not found — run `python scripts/refresh_dashboard_data.py`.")
+        st.info("Forward risk data not found. Run `python scripts/refresh_dashboard_data.py`.")
 
     st.divider()
     st.subheader(f"District drill-down: {district}")
@@ -167,7 +165,7 @@ def render_operational_page(
 
     with tab_recent:
         module_badge("m2")
-        st.caption("Recent observed weeks — production checkpoint; weeks may overlap training history.")
+        st.caption("Recent observed weeks.")
         if live.empty:
             st.warning("No live risk predictions.")
         else:
@@ -186,7 +184,7 @@ def render_operational_page(
 
             recent_cols = [
                 "Year", "Week", "Number_of_Cases", "calibrated_probability", "risk_tier",
-                "alert_flag", "feature_completeness_pct", "already_scored_in_pipeline",
+                "alert_flag", "already_scored_in_pipeline",
             ]
             recent_cols = [c for c in recent_cols if c in dlive.columns]
             st.dataframe(
@@ -218,21 +216,19 @@ def render_operational_page(
             st.plotly_chart(fig, use_container_width=True)
             if dlive["catch_up_week"].any():
                 st.caption(
-                    "🟠 marker: this week immediately follows a week flagged as a likely reporting "
-                    "dip/catch-up (Decision 026/028) — case-derived lag features for it were built "
-                    "on an artificially low prior-week count, so the probability here should be read "
-                    "alongside the actual `Number_of_Cases` column above, not on its own."
+                    "🟠 marker: this week follows a likely reporting dip or catch-up. Read the "
+                    "probability alongside the actual case count above, rather than on its own."
                 )
 
     with tab_cases:
         module_badge("m1")
-        st.caption("Module 1 forward forecast — recursive multi-step; **not** holdout MASE.")
+        st.caption("Module 1's multi-step forward forecast. Not the same as the holdout accuracy shown on the Research Evidence page.")
         hist = m1_weekly.loc[m1_weekly["District"] == district].sort_values(["Year", "Week"]).tail(52)
         fut = future_cases.loc[future_cases["District"] == district].sort_values("horizon_step")
         if hist.empty and fut.empty:
             st.warning("No case forecast data.")
         else:
-            fig = px.line(title=f"{district}: cases — history + 4-week forward (operational)")
+            fig = px.line(title=f"{district}: case history and 4-week forecast")
             if not hist.empty:
                 fig.add_scatter(
                     x=hist["Week_Start_Date"],
@@ -263,17 +259,11 @@ def render_operational_page(
             st.plotly_chart(fig, use_container_width=True)
             if "is_reporting_anomaly" in hist.columns and hist["is_reporting_anomaly"].fillna(False).any():
                 st.caption(
-                    "🟠 markers are weeks flagged as a likely reporting dip/catch-up spike rather than a "
-                    "genuine case-count change (Decision 026/028) — a documented data-quality signal, "
-                    "not a model error."
+                    "🟠 markers flag a likely reporting dip/catch-up rather than a genuine case-count change."
                 )
 
     with tab_forward:
         module_badge("m2")
-        st.warning(
-            "Horizon ≥ 2 uses Module 1 predicted case lags and forecast climate. "
-            "Uncertainty compounds — treat as scenario view, not validated probability."
-        )
         dfwd = future_risk.loc[future_risk["District"] == district].sort_values("horizon_step")
         if dfwd.empty:
             st.warning("No forward risk predictions.")
@@ -282,7 +272,7 @@ def render_operational_page(
                 "horizon_step", "prediction_type", "Year", "Week",
                 "calibrated_probability", "risk_tier", "alert_flag",
                 "cases_source", "climate_source", "feature_completeness_pct",
-                "uses_module1_cases", "evidence_tier",
+                "uses_module1_cases",
             ]
             st.dataframe(
                 dfwd[forward_cols],
@@ -300,21 +290,17 @@ def render_operational_page(
 
     st.divider()
     module_badge("m3")
-    st.subheader("Module 3 — spatial hotspot map")
+    st.subheader("Module 3: spatial hotspot map")
     evidence_badge("operational_live")
-    st.caption("Hybrid Risk = KDE spatial baseline + Random Forest relative-residual correction.")
+    st.caption("Hybrid Risk combines a spatial baseline model with a Random Forest correction step.")
     with st.expander("How this map is built"):
         st.markdown(
-            "- **Colour** is the Hybrid Risk score (KDE spatial baseline + Stage 2 "
-            "correction), interpolated continuously via nearest-neighbour distance "
-            "weighting — risk blends across the border between two high-risk "
-            "neighbouring districts rather than stopping dead at a district line.\n"
-            "- **This week** uses real reported cases. **Next week (forecast)** uses "
-            "Module 1's case forecast plus real *observed* climate — Module 3's "
-            "reporting lag means the forecast week's weather has already happened. "
-            "See Decision 052 (`research_context/RESEARCH_DECISIONS.md`).\n"
-            "- Not a validated forecast — see the **Research evidence** page for "
-            "Stage 1/Stage 2 validation numbers (Moran's I, convergence, fit comparison)."
+            "- **Colour** shows the Hybrid Risk score. It blends smoothly across district borders "
+            "instead of stopping sharply at a line.\n"
+            "- **This week** uses real reported cases. **Next week (forecast)** uses Module 1's "
+            "case forecast along with real observed weather data.\n"
+            "- This map is not a validated forecast. See the **Research Evidence** page for "
+            "validation results."
         )
 
     mode = st.segmented_control(
@@ -330,7 +316,7 @@ def render_operational_page(
     if mode == "This week":
         if hybrid_risk.empty or district_geometry.empty:
             st.info(
-                "Hybrid risk map or district geometry not found — run "
+                "Hybrid risk map or district geometry not found. Run "
                 "`python -m src.module3_spatial.iterative_loop`."
             )
         else:
@@ -366,7 +352,7 @@ def render_operational_page(
 
     else:
         if hotspot_forecast.empty or district_geometry.empty:
-            st.info("Forecast not found — run `python -m src.module3_spatial.forecast_future`.")
+            st.info("Forecast not found. Run `python -m src.module3_spatial.forecast_future`.")
         else:
             fc_latest = hotspot_forecast.sort_values(["Year", "Week"]).groupby(["Year", "Week"]).tail(len(DISTRICTS))
             fc_year, fc_week = int(fc_latest["Year"].iloc[0]), int(fc_latest["Week"].iloc[0])
@@ -393,9 +379,9 @@ def render_operational_page(
     if not hybrid_risk.empty:
         with st.expander(f"{district}: model accuracy detail (out-of-fold history)"):
             st.caption(
-                "Predicted (Hybrid Risk) is out-of-fold (5-fold spatial K-means CV) — a "
-                "model that never trained on this district. Green above zero = "
-                "over-predicted, red below zero = under-predicted."
+                "The predicted Hybrid Risk value comes from a model that was never trained on this "
+                "district, so it's a fair test. Green above zero means over-predicted; red below "
+                "zero means under-predicted."
             )
             history_fig = _hybrid_risk_actual_vs_predicted_chart(hybrid_risk, district)
             st.plotly_chart(history_fig, width="stretch")
@@ -524,7 +510,7 @@ def _hybrid_risk_choropleth(
     fig.update_geos(fitbounds="locations", visible=False)
     fig.update_layout(
         title=dict(
-            text=f"Dengue Hybrid Risk Map — {year} Week {week}",
+            text=f"Dengue Hybrid Risk Map: {year} Week {week}",
             x=0.5,
             xanchor="center",
             font=dict(size=20),

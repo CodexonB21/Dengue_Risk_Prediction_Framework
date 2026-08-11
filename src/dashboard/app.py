@@ -50,7 +50,7 @@ def _run_refresh(skip_weather: bool) -> None:
 
 def main() -> None:
     st.set_page_config(page_title="Dengue Research & Early Warning", layout="wide")
-    st.title("Sri Lanka Dengue — Research Framework & Early Warning")
+    st.title("Sri Lanka Dengue Research & Early Warning Framework")
 
     st.caption(
         "Team Codexon FYP · Residual compensation framework · "
