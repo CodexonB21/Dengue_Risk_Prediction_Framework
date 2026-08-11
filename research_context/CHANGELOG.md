@@ -6,6 +6,28 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-08-11 - Verified DOIs/access links for all 16 Module 1 literature-connection papers; found 3 citation corrections
+
+### Module
+Module 1 (documentation only)
+
+### Change
+Added a DOI/open-access-link table and a "best 1-2 papers per connection" recommendation table to
+`research_context/MODULE1_LITERATURE_CONNECTIONS.md`, verified via Crossref/journal metadata for
+all 16 papers ([1],[3],[5],[6],[9],[10],[12],[20]-[28]).
+
+### Reason
+Team needed downloadable links and a citation-priority shortlist ahead of defense prep.
+
+### Impact
+Found 3 citation errors to fix before thesis submission: (1) [10] Chen & Moraga's identifier is
+article 52, not "vol. 53, no. 32" (also wrong in `_interim_extract.md`); (2) [21]'s first author is
+Liu, not Hossain — cite as "Liu et al. (2025)"; (3) [23]/[24] are both single-authored by Mahadee Al
+Mobin, not "et al." Also flagged [20], [25], [26] as medRxiv/preprint sources without a confirmed
+peer-reviewed version yet.
+
+---
+
 ## 2026-08-11 - Direct h=3/h=4 Stage 2 pilot extension (M1-024): advantage over recursive narrows with horizon, contrary to the initial hypothesis
 
 ### Module

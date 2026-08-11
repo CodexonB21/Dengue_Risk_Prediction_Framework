@@ -334,6 +334,47 @@ helps" is oversold. Be ready with these:
 
 ---
 
+## DOI / Access Links and Recommended Citations (Verified 2026-08-11)
+
+DOIs and open-access links for all 16 papers referenced above, confirmed via Crossref/journal
+metadata and (where possible) direct fetch of the primary source. Table also lists the single best
+1-2 papers to cite for each of the 9 viva-question connections above.
+
+| Ref | Citation (verified) | DOI | Open-access link | Status |
+|---|---|---|---|---|
+| [1] | Uduwanage et al., "Prediction of Dengue Outbreaks in Sri Lanka Using ML Techniques," *Sri Lanka J. Medicine* 34(1):15-26, 2025 | [10.4038/sljm.v34i1.568](https://doi.org/10.4038/sljm.v34i1.568) | [sljm.sljol.info PDF](https://sljm.sljol.info/articles/568/files/68060c4a7bc38.pdf) | Verified |
+| [3] | Yi et al., "PICTUREE-Aedes," *Pathogens* 12(6):771, 2023 | [10.3390/pathogens12060771](https://doi.org/10.3390/pathogens12060771) | [mdpi.com](https://www.mdpi.com/2076-0817/12/6/771) | Verified |
+| [5] | Chathurangika, Perera, De Silva, arXiv:2401.10295, 2024 | [10.48550/arXiv.2401.10295](https://doi.org/10.48550/arXiv.2401.10295) | [arxiv.org/abs/2401.10295](https://arxiv.org/abs/2401.10295) | Verified (arXiv only — no journal version found) |
+| [6] | Karasinghe et al., "Modified ARIMA…," *PLOS ONE* 19(3):e0299953, 2024 | [10.1371/journal.pone.0299953](https://doi.org/10.1371/journal.pone.0299953) | [PMC10923413](https://pmc.ncbi.nlm.nih.gov/articles/PMC10923413/) | Verified |
+| [9] | Hamedin, Musa, Sulong, *Osong Public Health Res. Perspect.* 17(1):50-60, 2026 | [10.24171/j.phrp.2025.0397](https://doi.org/10.24171/j.phrp.2025.0397) | [PMC12980637](https://pmc.ncbi.nlm.nih.gov/articles/PMC12980637/) | Verified |
+| [10] | Chen & Moraga, *Tropical Medicine and Health* 53(1), article 52, 2025 | [10.1186/s41182-025-00723-7](https://doi.org/10.1186/s41182-025-00723-7) | [PMC11984044](https://pmc.ncbi.nlm.nih.gov/articles/PMC11984044/) | Verified — **correction**: this file and `_interim_extract.md` currently say "vol. 53, no. 32"; the actual identifier is article **52** |
+| [12] | Francisco, Carvajal, Watanabe, *PLOS NTD* 18(10):e0012599, 2024 | [10.1371/journal.pntd.0012599](https://doi.org/10.1371/journal.pntd.0012599) | [PMC11527386](https://pmc.ncbi.nlm.nih.gov/articles/PMC11527386/) | Verified |
+| [20] | Hossain, Safa, Juthi, Tasnia, medRxiv preprint, Sept. 2025 | [10.1101/2025.09.14.25335716](https://doi.org/10.1101/2025.09.14.25335716) | [medRxiv](https://www.medrxiv.org/content/10.1101/2025.09.14.25335716v1) | Partial — authors/model description match; exact mean-function notation and ZIP/ZINB-non-convergence claim not independently re-confirmed against the full PDF. **Unreviewed preprint.** |
+| [21] | Liu, Hossain, Hossain, *Scientific Reports* 15, 2025 | [10.1038/s41598-025-19752-7](https://doi.org/10.1038/s41598-025-19752-7) | [nature.com](https://www.nature.com/articles/s41598-025-19752-7) | Verified — **correction**: first author is **Liu**, not Hossain; cite as "Liu et al. (2025)," not "Hossain, Liu, Hossain (2025)" |
+| [22] | Tuan, *Tropical Medicine and Infectious Disease* 9(10):250, 2024 | [10.3390/tropicalmed9100250](https://doi.org/10.3390/tropicalmed9100250) | [PMC11511084](https://pmc.ncbi.nlm.nih.gov/articles/PMC11511084/) | Verified — note a later correction notice exists (PMC12115829); check it doesn't affect the cited lag/overdispersion figures |
+| [23] | Al Mobin, *Scientific Reports* 14, 2024 | [10.1038/s41598-024-83770-0](https://doi.org/10.1038/s41598-024-83770-0) | [nature.com](https://www.nature.com/articles/s41598-024-83770-0) | Verified — **single author**; cite "Al Mobin (2024)," not "Al Mobin et al." |
+| [24] | Al Mobin, *BMC Infectious Diseases* 25, 2025 | [10.1186/s12879-025-11159-z](https://doi.org/10.1186/s12879-025-11159-z) | [biomedcentral.com](https://bmcinfectdis.biomedcentral.com/articles/10.1186/s12879-025-11159-z) | Verified — same single author as [23] (a follow-up paper, not a different research group) |
+| [25] | Yuan, Wang, Liu, medRxiv preprint, Oct. 2025 | [10.1101/2025.10.04.25337267](https://doi.org/10.1101/2025.10.04.25337267) | [medRxiv](https://www.medrxiv.org/content/10.1101/2025.10.04.25337267v1.full) | Verified content — **unreviewed preprint** |
+| [26] | Correa Araujo et al., 2024 Dengue Forecasting Sprint in Brazil | [10.1073/pnas.2508989123](https://doi.org/10.1073/pnas.2508989123) (journal) / [10.1101/2025.05.12.25327419](https://doi.org/10.1101/2025.05.12.25327419) (preprint) | [medRxiv PDF](https://www.medrxiv.org/content/10.1101/2025.05.12.25327419v1.full) | PNAS DOI found via search but not independently clicked through (domain blocked in the retrieval session) — spot-check resolution before citing the journal DOI in the thesis |
+| [27] | da Silva et al., *Eur. Phys. J. Special Topics*, 2024 | [10.1140/epjs/s11734-024-01201-7](https://doi.org/10.1140/epjs/s11734-024-01201-7) | [arxiv.org/abs/2404.05266](https://arxiv.org/abs/2404.05266) | Verified |
+| [28] | Panja et al., *Chaos, Solitons & Fractals* 170:113124, 2023 | [10.1016/j.chaos.2023.113124](https://doi.org/10.1016/j.chaos.2023.113124) | [arxiv.org/abs/2212.08323](https://arxiv.org/abs/2212.08323) | Verified title/journal/authors; MASE formula text not re-confirmed against the PDF (unreadable in retrieval session) |
+
+### Best 1-2 Papers to Cite, Per Connection
+
+| # | Connection | Recommended citation(s) |
+|---|---|---|
+| 1 | Two-stage baseline+correction architecture | [6] Karasinghe et al. 2024 (names the exact gap, domestic precedent) + [21] Liu, Hossain, Hossain 2025 (explicit unimplemented-future-work quote) |
+| 2 | SARIMA as baseline, kept climate-free | [1] Uduwanage et al. 2025 (only paper testing SARIMAX head-to-head in Sri Lanka) |
+| 3 | Residual formula precedent | [10] Chen & Moraga 2025 (exact same functional form, most rigorously verified of the three) |
+| 4 | Climate lag windows | [1] Uduwanage et al. 2025 (entomological derivation) + [22] Tuan 2024 (independently selected near-identical lag depths) |
+| 5 | Climate-anomaly framing | [23] Al Mobin 2024 (strongest adjacent empirical argument: 93.76% variability from engineered features) |
+| 6 | MAE loss choice | None — this is correctly your own empirical finding; do not force a citation |
+| 7 | MASE metric choice | [28] Panja et al. 2023 (identical formula and training-window scaling convention) |
+| 8 | Zero-inflation handling | [12] Francisco et al. 2024 (anchor paper) + [20] Hossain, Safa, Juthi, Tasnia 2025 (counter-precedent: ZIP/ZINB failed) |
+| 9 | Counter-evidence ("hybrid always helps") | [27] da Silva et al. 2024 (most direct parallel to Module 1's own per-district regression finding) |
+
+---
+
 ## What Was NOT Verified, Stated Plainly
 
 - Papers [3], [6], [20], [25], [26] were retrieved via automated extraction tools rather than a
