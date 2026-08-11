@@ -38,7 +38,10 @@ from src.config import (  # noqa: E402
     MODULE1_WEEKLY_MODELING_TABLE_PATH,
     module1_stage2_paths,
 )
-from src.module1_forecasting.direct_horizon_pilot import rolling_direct_and_recursive_district  # noqa: E402
+from src.module1_forecasting.direct_horizon_pilot import (  # noqa: E402
+    MAX_HORIZON_DEFAULT,
+    rolling_direct_and_recursive_district,
+)
 from src.module1_forecasting.residual_transform import validate_residual_mode  # noqa: E402
 from src.module1_forecasting.rolling_one_step import _load_selected_configs  # noqa: E402
 from src.module1_forecasting.validation import DEFAULT_MIN_TRAIN_YEARS, DEFAULT_WEEKS_PER_YEAR  # noqa: E402
@@ -46,7 +49,7 @@ from src.module1_forecasting.validation import DEFAULT_MIN_TRAIN_YEARS, DEFAULT_
 logger = logging.getLogger(__name__)
 
 
-def _run_one(district: str, mode: str, min_train_weeks: int) -> pd.DataFrame:
+def _run_one(district: str, mode: str, min_train_weeks: int, max_horizon: int) -> pd.DataFrame:
     """Worker entry point - must be module-level and take only picklable
     (str/int) arguments for Windows' spawn-based ProcessPoolExecutor."""
     weekly_df = pd.read_csv(
@@ -59,17 +62,18 @@ def _run_one(district: str, mode: str, min_train_weeks: int) -> pd.DataFrame:
     return rolling_direct_and_recursive_district(
         district, weekly_df, sarima_configs[district], xgb_model,
         min_train_weeks=min_train_weeks, target_keys=None, residual_mode=mode,
+        max_horizon=max_horizon,
     )
 
 
-def main(max_workers: int = 12) -> None:
+def main(max_workers: int = 12, max_horizon: int = MAX_HORIZON_DEFAULT) -> None:
     mode = validate_residual_mode(M1_STAGE2_RESIDUAL_MODE)
     min_train_weeks = DEFAULT_MIN_TRAIN_YEARS * DEFAULT_WEEKS_PER_YEAR
     t0 = time.time()
 
     frames: list[pd.DataFrame] = []
     with ProcessPoolExecutor(max_workers=max_workers) as pool:
-        futures = {pool.submit(_run_one, d, mode, min_train_weeks): d for d in DISTRICTS}
+        futures = {pool.submit(_run_one, d, mode, min_train_weeks, max_horizon): d for d in DISTRICTS}
         for fut in as_completed(futures):
             district = futures[fut]
             df = fut.result()

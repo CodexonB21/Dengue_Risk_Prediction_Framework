@@ -6,6 +6,46 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-08-11 - Direct h=3/h=4 Stage 2 pilot extension (M1-024): advantage over recursive narrows with horizon, contrary to the initial hypothesis
+
+### Module
+Module 1
+
+### Change
+Extended M1-023's direct-vs-recursive h=2 pilot to h=3 and h=4, generalizing
+`direct_horizon_pilot.py` to compute all three horizons in one pass (one SARIMA fit per origin
+asked for `n_periods=4`, with the recursive comparison genuinely chained through each step - h4's
+synthetic history includes h3's own recursive prediction, which includes h2's). ~21,400 rolling-
+origin rows, ~64 min parallelized across districts.
+
+### Reason
+M1-022 found the recursive bias compounds with horizon; the natural hypothesis was that the direct
+model's advantage over recursive would grow at h=3/h=4 too. Testing this rather than assuming it.
+
+### Impact
+- **Hypothesis not confirmed.** Direct still beats recursive on holdout at every horizon tested
+  (district win rate never drops below 17/25; DM-test significant differences, where they occur,
+  always favor direct, never recursive) - but the margin narrows: median holdout MASE advantage
+  shrinks from +0.037 (h=2) to +0.001 (h=3) to -0.006 (h=4, recursive marginally ahead on this one
+  metric specifically). A separate, more fundamental pattern explains this better than "direct stops
+  working": ALL THREE approaches (direct, recursive, SARIMA-alone) converge toward similar skill as
+  horizon grows, since the short-term signals Stage 2 relies on decay in relevance the further out
+  the target is - this is not specific to the recursive-vs-direct question.
+- **h=2 remains the clearest, most defensible case for the direct strategy.** h=3/h=4 are real but
+  weaker, more mixed evidence - reported honestly rather than only reporting the horizon that looks
+  best.
+- Still not promoted to production - this remains pilot evidence, not a production decision.
+
+### Documentation Updated
+`module_1_forecasting/EXPERIMENT_LOG.md` (M1-024), `src/module1_forecasting/direct_horizon_pilot.py`
+(generalized to `max_horizon`), `direct_horizon_pilot_eval.py` (generalized per-horizon, fixed a
+duplicate-`District`-column bug found while testing), `research_context/CHANGELOG.md` (this entry).
+
+### Status
+Accepted (pilot only - not a production decision)
+
+---
+
 ## 2026-08-11 - Direct h=2 Stage 2 pilot (M1-023): holdout-confirmed improvement over the recursive approach, not yet promoted
 
 ### Module

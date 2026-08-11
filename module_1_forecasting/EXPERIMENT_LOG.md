@@ -2276,3 +2276,106 @@ advantage - grows with horizon, not shrinks.
 `src/config.py` (new `MODULE1_DIRECT_HORIZON_PILOT_PATH`/`MODULE1_DIRECT_HORIZON_PILOT_COMPARISON_PATH`),
 new `src/module1_forecasting/direct_horizon_pilot.py`, `direct_horizon_pilot_eval.py`,
 `scripts/run_direct_horizon_pilot_parallel.py`, `research_context/CHANGELOG.md`, this entry.
+
+---
+
+## Experiment ID: M1-024
+
+### Date
+2026-08-11
+
+### Research Question
+M1-023 piloted the direct strategy at h=2 only and found a holdout-confirmed improvement. Extend
+the SAME pilot to h=3 and h=4 (generalizing `direct_horizon_pilot.py` to compute all three horizons
+in one pass, chaining the recursive comparison through each step exactly as `forecast_future.py`
+does). Working hypothesis going in (from M1-022's finding that the recursive bias compounds with
+horizon): the direct model's advantage over the recursive approach should GROW, not shrink, at
+h=3/h=4.
+
+### Districts
+All 25.
+
+### Stage 1 Model
+Unchanged. One SARIMA fit per historical origin, now asked for `n_periods=4` (was `n_periods=2` in
+M1-023) - the dominant cost (the fit itself) is NOT repeated per horizon; only the cheap
+`.forecast(steps=N)` extraction and the recursive feature-reconstruction/XGBoost-predict chain grow
+with horizon.
+
+### Stage 2 Model
+Same three variants as M1-023 (SARIMA-alone, recursive, direct), now computed for h=2, 3, AND 4
+together per origin, with the recursive comparison genuinely CHAINED (h3's synthetic history
+includes h2's own recursive prediction, h4's includes h3's) - not three independent single-step
+recursions. Same frozen production `XGB_BASE_PARAMS` and fold-training recipe as M1-023.
+
+### Features Used
+Identical `FEATURE_COLUMNS` for all three variants at all three horizons - origin-anchored base
+feature row shared across horizons, only `sarima_prediction` differs per horizon (see
+`direct_horizon_pilot.py`'s module docstring for the full mechanism, unchanged from M1-023).
+
+### Validation Method
+Same as M1-023 (14 walk-forward folds, holdout block, MASE/sMAPE/DM-test), run for h=2, 3, 4 in one
+combined pass. 21,375 rolling-origin rows generated (~64 min parallelized across districts,
+`scripts/run_direct_horizon_pilot_parallel.py`); 19,325 scored per horizon (fold-trained,
+non-imputed). Found and fixed one bug while generalizing the eval script: the feature-column list
+included `District` twice (once explicitly, once via `FEATURE_COLUMNS`, which already contains it),
+silently producing a duplicate column that broke the fold-key `zip()` - caught immediately by a
+crash, not a silent wrong result, when dry-testing against a small sample before the full run.
+
+### Results
+**The hypothesis was NOT confirmed - the direct model's advantage over recursive NARROWS with
+horizon on holdout, rather than growing, though it never reverses in a way that reaches
+significance:**
+
+| Horizon | Direct beats recursive (MASE) | Direct beats recursive (sMAPE) | DM significant (25 districts) | Median holdout MASE (direct / recursive / SARIMA-alone) | Median holdout sMAPE |
+|---|---|---|---|---|---|
+| h=2 | 22/25 | 22/25 | 2/25, both favor direct | 0.328 / 0.365 / 0.360 | 36.1% / 41.3% / 37.8% |
+| h=3 | 22/25 | 23/25 | 1/25, favors direct | 0.408 / 0.409 / 0.403 | 39.8% / 44.6% / 42.9% |
+| h=4 | 21/25 | 17/25 | 1/25, favors direct | 0.484 / 0.478 / 0.480 | 41.5% / 44.6% / 46.6% |
+
+- District-level win rate stays a clear majority for direct at every horizon (never drops below
+  17/25), but the sMAPE win rate specifically drops from 22-23/25 at h=2/h=3 to 17/25 at h=4.
+- Median holdout MASE: direct's lead over recursive shrinks from +0.037 (h=2) to +0.001 (h=3) to
+  **-0.006 (h=4, recursive marginally ahead)** - direct's MASE advantage effectively disappears by
+  h=4, even though its sMAPE and district-win-rate advantage does not.
+- **Zero districts, at any horizon, show recursive winning significantly against direct** - the DM
+  test never flips in recursive's favor, even where the median metrics narrow to a near-tie.
+- **A separate, equally real pattern**: ALL THREE approaches' absolute skill over naive SARIMA
+  converges toward each other as horizon grows - e.g. SARIMA-alone's holdout MASE (0.360, 0.403,
+  0.480) is close behind or ahead of BOTH Stage-2 variants by h=3/h=4, unlike at h=2 where direct
+  clearly separates from SARIMA-alone (0.328 vs. 0.360). This suggests the honest limiting factor
+  is not "recursive vs. direct" specifically, but that ANY Stage 2 correction - direct or recursive
+  - has less to add over the statistical baseline as horizon grows, because the short-term signals
+  (residual/case lags) that give Stage 2 its edge decay in relevance the further out the target is.
+- Pre-holdout (the larger, exploratory sample) shows the same narrowing pattern, slightly earlier:
+  direct leads on MASE at h=2 (0.479 vs. 0.486) but recursive is marginally ahead at h=3 (0.532 vs.
+  0.552) and h=4 (0.597 vs. 0.609); direct still leads on sMAPE at h=2/h=3, and is close (recursive
+  marginally ahead) at h=4.
+
+### Interpretation
+M1-022's finding that the recursive bias grows with horizon is still true on its own terms (verified
+directly in the earlier decomposition of `future_forecast.csv`), but it does not translate into an
+ever-widening DIRECT-vs-RECURSIVE gap the way the initial hypothesis assumed - because the
+RECURSIVE model isn't the only thing losing ground at longer horizons; the DIRECT model's own edge
+over plain SARIMA is *also* shrinking, for the more fundamental reason that less real, informative
+signal survives that far from the forecast origin regardless of strategy. The honest, supportable
+conclusion is narrower than "direct fixes the problem at every horizon": direct is a genuine,
+holdout-confirmed improvement that is strongest and most reliable at h=2, remains a real (if
+narrowing) improvement through h=3-4, and never loses to recursive in a way that reaches
+significance at any horizon tested - but it does not fully close the gap between "how far can this
+framework forecast with confidence" and "4 weeks," since even the best of the three approaches
+degrades substantially by h=4 (median sMAPE 41-47% vs. ~22-38% at h=2, depending on approach).
+
+### Decision
+**Accept the pilot's finding; still do not promote to production.** The clearest, least-caveated
+case for the direct strategy remains h=2 specifically (M1-023's original scope). h=3/h=4 show real
+but weaker, more mixed support - genuinely useful evidence for the report (this is exactly the kind
+of finding this project's own discipline calls for reporting honestly rather than only reporting the
+horizon that looks best), but not grounds to claim the direct strategy is a broad fix for "the
+multi-week forecast" as a whole. If this work continues toward production, h=2 alone is the
+strongest, most defensible candidate; h=3/h=4 would need their own justification given how close the
+three approaches become by that point.
+
+### Documentation Updated
+`src/module1_forecasting/direct_horizon_pilot.py` (generalized to `max_horizon` parameter, chained
+recursion), `direct_horizon_pilot_eval.py` (generalized per-horizon table construction, duplicate-
+column bug fixed), `research_context/CHANGELOG.md`, this entry.
