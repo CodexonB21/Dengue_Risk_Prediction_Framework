@@ -98,6 +98,10 @@ MODULE1_METRICS_DIR = OUTPUTS_DIR / "metrics" / "module1"
 MODULE1_SARIMA_METRICS_PATH = MODULE1_METRICS_DIR / "sarima_walk_forward_metrics.csv"
 MODULE1_FIGURES_DIR = OUTPUTS_DIR / "figures" / "module1"
 
+# --- Module 1 seasonal-differencing diagnostics (OCSB/Canova-Hansen; src/module1_forecasting/seasonal_diff_diagnostics.py) ---
+MODULE1_SEASONAL_DIFF_TEST_PATH = MODULE1_METRICS_DIR / "seasonal_differencing_tests.csv"
+MODULE1_SEASONAL_DIFF_PLOT_PATH = MODULE1_FIGURES_DIR / "seasonal_differencing_test_heatmap.png"
+
 # --- Module 1 Stage 2 (XGBoost residual compensation; src/module1_forecasting/compensation_model.py) ---
 M1_STAGE2_RESIDUAL_MODE = "additive"  # "additive" (M1-005 baseline) | "log" (M1-006A)
 
@@ -106,11 +110,14 @@ MODULE1_XGBOOST_MODELS_DIR = MODULE1_MODELS_DIR / "xgboost_folds"
 MODULE1_XGBOOST_FINAL_MODEL_PATH = MODULE1_MODELS_DIR / "xgboost_final_model.json"
 MODULE1_XGBOOST_METRICS_PATH = MODULE1_METRICS_DIR / "xgboost_stage2_metrics.csv"
 MODULE1_XGBOOST_FEATURE_IMPORTANCE_PATH = MODULE1_METRICS_DIR / "xgboost_feature_importance.csv"
+MODULE1_XGBOOST_FEATURE_IMPORTANCE_PLOT_PATH = MODULE1_FIGURES_DIR / "xgboost_feature_importance.png"
 
 # --- Module 1 combined final forecast (Decision 010; src/module1_forecasting/combine.py) ---
 MODULE1_FINAL_PREDICTIONS_PATH = MODULE1_PROCESSED_DIR / "final_combined_predictions.csv"
 MODULE1_COMBINED_METRICS_PATH = MODULE1_METRICS_DIR / "combined_vs_baseline_metrics.csv"
 MODULE1_DM_TEST_PATH = MODULE1_METRICS_DIR / "diebold_mariano_results.csv"
+MODULE1_DM_TEST_PLOT_PATH = MODULE1_FIGURES_DIR / "diebold_mariano_significance.png"
+MODULE1_LJUNG_BOX_PLOT_PATH = MODULE1_FIGURES_DIR / "ljung_box_before_after.png"
 
 # --- M1-023 direct-horizon (h=2) pilot; src/module1_forecasting/direct_horizon_pilot.py ---
 MODULE1_DIRECT_HORIZON_PILOT_PATH = MODULE1_PROCESSED_DIR / "direct_horizon_pilot_h2.csv"

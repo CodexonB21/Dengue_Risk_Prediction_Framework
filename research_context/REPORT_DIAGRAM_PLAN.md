@@ -423,6 +423,45 @@ Notes:
 
 ---
 
+## Figure 5.7: Seasonal-Differencing Test Results (OCSB / Canova-Hansen) by District
+
+Chapter: Chapter 5 - Analysis and Design (or Chapter 7 evidence appendix if Chapter 5 stays diagram-only)
+Status: Created (2026-08-12)
+
+Purpose:
+
+Provide reproducible evidence for the claim (Open Question #1/#12, `MODULE_CONTEXT.md`) that both the OCSB and
+Canova-Hansen seasonal-differencing tests independently selected `D=0` for all 25 districts — explaining why 18/25
+districts' `auto_arima`-selected SARIMA configs have `seasonal_order=(0,0,0,52)` despite `m=52`. This claim
+previously had no saved artifact behind it, only narrative in `EXPERIMENT_LOG.md`/`CHANGELOG.md` — this figure and
+its companion CSV close that citation gap.
+
+Caption:
+
+```text
+Figure 5.7: OCSB and Canova-Hansen seasonal-differencing test decisions (D) by district and transform — unanimous D=0 across all 25 districts, both tests, both raw and log1p transforms.
+```
+
+Source / file:
+
+- Generator: `src/module1_forecasting/seasonal_diff_diagnostics.py`
+- PNG: `outputs/figures/module1/seasonal_differencing_test_heatmap.png`
+- Data: `outputs/metrics/module1/seasonal_differencing_tests.csv` (50 rows: 25 districts x {raw, log1p})
+
+Notes:
+
+- The heatmap is intentionally a single flat color (all D=0) — that uniformity IS the finding (unanimous agreement),
+  not a rendering issue. Since there is no numeric variation to show, a compact results **table** (district x test x
+  transform → D) may communicate this more efficiently in the report body than the heatmap; consider using the table
+  as the primary in-text evidence and the heatmap as a supplementary/poster visual.
+- pmdarima 2.1.1's public API (`nsdiffs`) exposes only the binary D decision per test, not a raw statistic or
+  p-value — the artifact matches the granularity of the original claim, not a stronger one.
+- Do not use this figure to imply seasonality is absent from the case-count series overall — Open Question #12's
+  resolution shows the annual cycle is real but too irregular in timing/amplitude for these tests to detect as a
+  fixed once-a-year pattern; Stage 2's `sin_week`/`cos_week`/monsoon features are what actually recover it.
+
+---
+
 ## Figure 6.1: Shared vs Module-Specific Pipeline
 
 Chapter: Chapter 6 - Implementation
@@ -643,6 +682,134 @@ Notes:
 - IDW is visualisation-only (k=4, power=4); not a modelling stage.
 - Do not present this map as evidence that Stage 2 improved aggregate case-fit (M3-005 null/negative).
 - Optional companion weeks: `risk_surface_2007_wk13.png`, `risk_surface_2021_wk01.png`.
+
+---
+
+## Figure 7.6: Module 1 Stage 2 Feature Importance (Gain-Based)
+
+Chapter: Chapter 7 - Evaluation and Results
+Status: Created (2026-08-12)
+
+Purpose:
+
+Show which engineered features the production Stage 2 (XGBoost, M1-006B) model actually relies on, grouped by
+`FEATURE_ENGINEERING_SPEC.md` feature group, to support the claim (raised during Q&A prep, `EXPERIMENT_LOG.md`
+M1-001 interpretation) that Stage 2's climate/seasonal features compensate for the seasonal structure Stage 1/SARIMA
+misses for 18/25 districts.
+
+Caption:
+
+```text
+Figure 7.6: Gain-based XGBoost feature importance for Module 1 Stage 2, grouped by feature category — residual-lag features dominate, with climate and seasonal features also present among the top contributors.
+```
+
+Source / file:
+
+- Generator: `src/module1_forecasting/plot_feature_importance.py`
+- PNG: `outputs/figures/module1/xgboost_feature_importance.png`
+- Data: `outputs/metrics/module1/xgboost_feature_importance.csv` (production, M1-006B)
+
+Key reading:
+
+- `residual_lag_1`/`residual_lag_2` dominate by a wide margin — consistent with the Ljung-Box/ACF evidence
+  (Open Question #3) that SARIMA residuals carry strong short-lag autocorrelation.
+- Climate lags (`rainfall_lag_5`, `humidity_lag_2`) and seasonal encodings (`cos_week`, `sin_week`) both appear
+  in the top ~20, supporting (not proving on their own) the Open Question #12 resolution that Stage 2 compensates
+  for Stage 1's missing seasonal component.
+- `weeks_since_reporting_anomaly` (Group 6, M1-006B) ranks 10th — the evidence cited for keeping that feature
+  group in production (Decision 030).
+
+Notes:
+
+- Group colors are assigned by a fixed feature→group mapping in the generator script (prefix-matched for lag/rolling
+  families, exact-matched for one-off features) — update `GROUP_PREFIXES`/`GROUP_EXACT` there if a new engineered
+  feature is added to `FEATURE_COLUMNS` without a matching group, or the script raises rather than mis-color it.
+- This is the production (M1-006B) importance file; variant-specific importance CSVs also exist
+  (`xgboost_feature_importance_causal_safe.csv`, `_m1_006_log.csv`, `_m1_007_residual_ext.csv`) for ablation
+  comparison — not plotted by default.
+
+---
+
+## Figure 7.7: Module 1 Stage 2 Diebold-Mariano Test Significance
+
+Chapter: Chapter 7 - Evaluation and Results
+Status: Created (2026-08-12)
+
+Purpose:
+
+Show, per district, whether Stage 2's MASE improvement is statistically distinguishable from noise (Decision 016),
+at both the pooled `validation_and_holdout` scope and the stricter `holdout_only` scope — the evidence behind the
+"12/25 significant (pooled), 5/25 significant (holdout)" claim in `MODULE_CONTEXT.md`.
+
+Caption:
+
+```text
+Figure 7.7: Diebold-Mariano test p-values by district (Stage 1 vs Stage 1+2), pooled validation+holdout scope and holdout-only scope — dashed line marks p=0.05; diamonds mark districts where Stage 2 is directionally (non-significantly) worse.
+```
+
+Source / file:
+
+- Generator: `src/module1_forecasting/plot_dm_test.py`
+- PNG: `outputs/figures/module1/diebold_mariano_significance.png`
+- Data: `outputs/metrics/module1/diebold_mariano_results.csv` (production, M1-006B — identical file)
+
+Notes:
+
+- **Corrected a real documentation/data conflict (2026-08-12)**: `MODULE_CONTEXT.md`'s "Statistical significance"
+  section previously stated 14/25 significant at the pooled scope with a named district list that matched no saved
+  `diebold_mariano_results*.csv` variant (checked all: base/M1-006B/M1-006-log/M1-007/M1-009 give 12, 13, 15, 18 —
+  never 14; causal-safe gives 18). Corrected to the verified 12/25 (pooled) / 5/25 (holdout-only), matching the
+  production (M1-006B) artifact exactly. See `MODULE_CONTEXT.md` "Statistical significance" for the corrected
+  district lists.
+- The poster storytelling script (`research_context/poster/MODULE1_POSTER_STORYTELLING_SCRIPT.md`, section 5) still
+  says "fourteen of twenty-five" for the pooled scope — this now needs correcting to "twelve of twenty-five" to
+  match verified data; not changed here since that file is presentation content under active editing.
+- Kilinochchi/Mannar are directionally worse at both scopes (consistent with their red-diamond treatment in Figure
+  7.3); Mullaitivu (pooled scope only) and Matale (holdout-only scope only) are additional, scope-specific
+  directional-worsening cases not previously called out anywhere else in the documentation.
+
+---
+
+## Figure 7.8: Ljung-Box Residual Autocorrelation, Stage 1 vs Stage 1+2, All 25 Districts
+
+Chapter: Chapter 7 - Evaluation and Results
+Status: Created (2026-08-12)
+
+Purpose:
+
+Extend the existing 4-district ACF spot-check (Figure showing `acf_residuals_*.png`/`acf_residuals_final_*.png` for
+Colombo/Kandy/Mullaitivu/Kilinochchi) to a full 25-district view of whether Stage 2 actually removes residual
+autocorrelation or just redistributes it (Decision 016's final Ljung-Box check).
+
+Caption:
+
+```text
+Figure 7.8: Ljung-Box test p-values by district, Stage 1 only vs Stage 1+2, at lags 26 and 52 weeks — dashed line marks p=0.05; the count of significant districts is essentially unchanged (23/25 to 23/25 at lag 26; 22/25 to 22/25 at lag 52), but which districts pass shifts.
+```
+
+Source / file:
+
+- Generator: `src/module1_forecasting/plot_ljung_box.py`
+- PNG: `outputs/figures/module1/ljung_box_before_after.png`
+- Data: `outputs/metrics/module1/sarima_walk_forward_metrics.csv` (`split=validation_aggregate`, Stage 1) and
+  `outputs/metrics/module1/combined_vs_baseline_metrics.csv` (`model=stage1_plus_stage2`,
+  `fold_id=validation_aggregate`, Stage 1+2)
+
+Key reading:
+
+- At lag 26: 23/25 significant both before and after Stage 2. Only `Ampara` and `Vavuniya` pass after Stage 2
+  (matches the existing "Stage 2 Implementation Status" narrative in `MODULE_CONTEXT.md` exactly).
+- At lag 52: 22/25 significant both before and after. `Kilinochchi`, `Mannar`, `Mullaitivu` move from
+  passing (p>0.05) to failing; `Ampara`, `Anuradhapura`, `Vavuniya` move the other way.
+- The honest reading: Stage 2 is not shrinking the *number* of districts with leftover residual structure — it's
+  changing *which* districts have it. Do not caption this as "Stage 2 fixes residual autocorrelation."
+
+Notes:
+
+- p-values of exactly 0.0 (float underflow from an extremely small true p-value) are floored to 1e-10 for display
+  only, so they can be plotted on a log axis — flagged in the generator's docstring, not a data change.
+- Complements, does not replace, the existing 4-district ACF plots (Figure — visual "what does the leftover
+  structure look like" evidence) with a "how many/which districts" summary across all 25.
 
 ---
 

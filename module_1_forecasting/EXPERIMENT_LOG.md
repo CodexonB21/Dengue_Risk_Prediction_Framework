@@ -111,7 +111,19 @@ out-of-sample validation residuals per district.
   seasonal-differencing tests independently selected `D=0` for every
   district tested; forcing `D=1` was confirmed computationally infeasible
   at scale (7+ minutes per fit vs. ~0.01s for the `D=0` fixed-order refits
-  used everywhere else).
+  used everywhere else). **Reproducible evidence added 2026-08-12**
+  (`src/module1_forecasting/seasonal_diff_diagnostics.py`, run against both
+  transforms per district): `nsdiffs(test="ocsb")` and `nsdiffs(test="ch")`
+  both return `D=0` for all 25 districts x {raw, log1p} = 50/50 rows, zero
+  disagreements between the two tests. Full per-row result:
+  `outputs/metrics/module1/seasonal_differencing_tests.csv`; heatmap:
+  `outputs/figures/module1/seasonal_differencing_test_heatmap.png`. This
+  claim previously had no saved artifact backing it - only this narrative -
+  which was a citation gap for the report; it is now backed by a
+  regeneratable result. Note: pmdarima 2.1.1's public API exposes only the
+  binary D decision from each test, not a raw statistic/p-value, so the
+  saved result matches the granularity of what was originally claimed and
+  no stronger.
 - Zero-inflation % does **not** simply predict SARIMA performance:
   `Vavuniya` (32.2% zero-weeks) is the best performer; `Mullaitivu` (52.7%
   zero-weeks) is the worst; `Colombo` (0.5% zero-weeks, not sparse at all)

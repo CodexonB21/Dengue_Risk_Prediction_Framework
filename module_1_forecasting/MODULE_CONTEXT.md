@@ -80,7 +80,14 @@ residual = actual_cases - sarima_prediction
    `m=52` being specified. Forcing `D=1` was tested and found computationally
    infeasible at scale (one `D=1, m=52` SARIMAX fit took 7+ minutes vs
    ~0.01s for the fixed-order refits used everywhere else in this pipeline).
-   See open question #12 (new) for the implication.
+   See open question #12 (new) for the implication. **Evidence artifact
+   added 2026-08-12**: this claim previously had no saved test result behind
+   it, only this narrative — `src/module1_forecasting/seasonal_diff_diagnostics.py`
+   now reruns `nsdiffs(test="ocsb")`/`nsdiffs(test="ch")` per district per
+   transform and confirms `D=0` in all 50/50 rows, zero disagreements.
+   Results: `outputs/metrics/module1/seasonal_differencing_tests.csv`;
+   heatmap: `outputs/figures/module1/seasonal_differencing_test_heatmap.png`
+   (planned as Figure 5.7, `REPORT_DIAGRAM_PLAN.md`).
 2. **Deferred, not resolved — rationale strengthened (2026-07-27).** Should
    STL + SARIMA be tested as an alternative baseline? Still explicitly out
    of scope this session (building a second baseline architecture in the
@@ -646,7 +653,10 @@ Stage 2 + combine - CPU-only, no GPU needed at this data scale; see Stage 1's
   out-of-sample residuals - folds 1-14 + holdout - for potential future live
   use; not used for any reported metric).
 - `outputs/metrics/module1/xgboost_feature_importance.csv` (gain-based, from
-  the final production model).
+  the final production model). Plotted (2026-08-12) as a grouped horizontal
+  bar chart via `src/module1_forecasting/plot_feature_importance.py` ->
+  `outputs/figures/module1/xgboost_feature_importance.png` (planned as
+  Figure 7.6, `REPORT_DIAGRAM_PLAN.md`).
 - `outputs/metrics/module1/xgboost_stage2_metrics.csv`: RMSE/MAE/sMAPE of
   `predicted_residual` vs actual `residual` (a residual-prediction-quality
   diagnostic; MASE intentionally omitted here - its seasonal-naive scale
@@ -763,18 +773,25 @@ Ljung-Box): `outputs/metrics/module1/combined_vs_baseline_metrics.csv`,
 
 ### Statistical significance (Diebold-Mariano test)
 
-At the `validation_and_holdout` scope (larger pooled sample per district),
-**14/25 districts** reach `p < 0.05` (Stage 2 significantly better):
-`Badulla, Batticaloa, Colombo, Galle, Gampaha, Hambantota, Jaffna, Kalutara,
-Kandy, Kurunegala, Matara, Nuwara Eliya, Polonnaruwa, Puttalam`. At the
-stricter `holdout_only` scope (n=104/district, the genuinely-never-touched-
-until-now test block), **5/25** reach significance: `Badulla, Batticaloa,
-Gampaha, Kandy, Puttalam`. **No district shows a statistically significant
-worsening at either scope** (including `Kilinochchi` and `Mannar`, whose
-directional holdout worsening does not reach significance - `p ≈ 0.33`-`0.40`
-for both). This is an honest, expected outcome given per-district sample
-sizes (728 validation + 104 holdout observations) - directionally
-consistent, positive, but not universally significant.
+**Corrected 2026-08-12** (previous version of this section claimed 14/25 at
+the pooled scope with a named list that does not match any saved
+`diebold_mariano_results*.csv` variant - re-verified directly against
+`outputs/metrics/module1/diebold_mariano_results.csv`, see
+`src/module1_forecasting/plot_dm_test.py`). At the `validation_and_holdout`
+scope (larger pooled sample per district), **12/25 districts** reach
+`p < 0.05` (Stage 2 significantly better): `Badulla, Batticaloa, Colombo,
+Galle, Gampaha, Hambantota, Jaffna, Kalutara, Kandy, Matara, Nuwara Eliya,
+Puttalam`. At the stricter `holdout_only` scope (n=104/district, the
+genuinely-never-touched-until-now test block), **5/25** reach significance:
+`Badulla, Batticaloa, Colombo, Gampaha, Puttalam`. **No district shows a
+statistically significant worsening at either scope** (`Kilinochchi`,
+`Mannar`, and `Mullaitivu` are directionally worse at the pooled scope;
+`Kilinochchi`, `Mannar`, and `Matale` at the holdout-only scope - none reach
+significance, `p` ranging roughly 0.33-0.70). This is an honest, expected
+outcome given per-district sample sizes (728 validation + 104 holdout
+observations) - directionally consistent, positive, but not universally
+significant. Figure: `outputs/figures/module1/diebold_mariano_significance.png`
+(planned as Figure 7.7, `REPORT_DIAGRAM_PLAN.md`).
 
 *(Note: while re-verifying these numbers, a sign-convention bug was found
 and fixed in `evaluate.dm_test`'s docstring - it previously described
@@ -804,8 +821,19 @@ The final Ljung-Box check (lags 26/52, pooled non-imputed validation
 residuals) shows **23/25 districts still have statistically significant
 residual autocorrelation** (`p < 0.05` at lag 26) even after Stage 2 - only
 `Ampara` and `Vavuniya` pass (note: `Vavuniya` newly joins the passing set
-post-fix, replacing `Anuradhapura` from the pre-fix run). This is an
-important, honest limitation: Stage 2 substantially reduces error
+post-fix, replacing `Anuradhapura` from the pre-fix run). **Visualized
+2026-08-12** across all 25 districts (not just the 4-district ACF spot-check)
+as a before/after dumbbell plot:
+`src/module1_forecasting/plot_ljung_box.py` ->
+`outputs/figures/module1/ljung_box_before_after.png` (planned as Figure 7.8,
+`REPORT_DIAGRAM_PLAN.md`). The plot makes a subtler point than "23/25 still
+fail" alone conveys: the *count* of significant districts is essentially
+unchanged by Stage 2 at both lags (23/25 -> 23/25 at lag 26; 22/25 -> 22/25
+at lag 52), but the *membership* shifts - `Kilinochchi`/`Mannar`/`Mullaitivu`
+move from passing to failing at lag 52, while `Ampara`/`Anuradhapura`/
+`Vavuniya` move from failing to passing. Stage 2 is not uniformly cleaning up
+residual structure; it is reshuffling which districts have it left. This is
+an important, honest limitation: Stage 2 substantially reduces error
 *magnitude* (MASE, RMSE) for most districts but does **not** fully whiten
 the residual - real, exploitable structure likely still remains (candidate
 future work: additional residual lags beyond `residual_lag_1/2`, or a

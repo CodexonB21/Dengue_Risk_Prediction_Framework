@@ -6,6 +6,129 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-08-12 - Added Module 1 Ljung-Box before/after figure (all 25 districts)
+
+### Module
+Module 1 Stage 2 (evaluation, Decision 016)
+
+### Change
+New script `src/module1_forecasting/plot_ljung_box.py` renders a dumbbell (paired-dot) plot comparing Ljung-Box
+p-values (lags 26 and 52) before (Stage 1 only) and after (Stage 1+2) residual compensation, for all 25 districts —
+extending the existing 4-district ACF spot-check plots to a full-district summary. Saved to
+`outputs/figures/module1/ljung_box_before_after.png`. New config path `MODULE1_LJUNG_BOX_PLOT_PATH` added to
+`src/config.py`.
+
+### Result
+Confirms the existing `MODULE_CONTEXT.md` claim exactly (23/25 districts still significant at lag 26 after Stage 2,
+only `Ampara`/`Vavuniya` pass) and adds a sharper point the narrative alone didn't convey: the *count* of significant
+districts is essentially unchanged by Stage 2 at both lags, but the *membership* shifts — `Kilinochchi`/`Mannar`/
+`Mullaitivu` move from passing to failing at lag 52, while `Ampara`/`Anuradhapura`/`Vavuniya` move the other way.
+Stage 2 redistributes leftover residual structure rather than uniformly removing it.
+
+### Impact
+Added as planned Figure 7.8 in `REPORT_DIAGRAM_PLAN.md`; `MODULE_CONTEXT.md`'s Stage 2 Implementation Status updated
+to cite the new figure and the membership-shift finding.
+
+---
+
+## 2026-08-12 - Added Module 1 Diebold-Mariano significance figure; corrected a stale documentation/data conflict
+
+### Module
+Module 1 Stage 2 (evaluation, Decision 016)
+
+### Change
+New script `src/module1_forecasting/plot_dm_test.py` renders
+`outputs/metrics/module1/diebold_mariano_results.csv` as a two-panel dot plot (pooled `validation_and_holdout` scope
+vs. stricter `holdout_only` scope), districts sorted by p-value, with directionally-worse districts marked as
+diamonds. Saved to `outputs/figures/module1/diebold_mariano_significance.png`. New config path
+`MODULE1_DM_TEST_PLOT_PATH` added to `src/config.py`.
+
+### Reason
+Requested to visualize the DM significance claim already cited in `MODULE_CONTEXT.md`. Building the figure required
+recomputing the actual significant-district counts/names directly from the CSV, which surfaced a real conflict.
+
+### Conflict found and resolved
+`MODULE_CONTEXT.md`'s "Statistical significance" section stated **14/25** districts significant at the pooled
+scope, naming a list that includes `Kurunegala`/`Polonnaruwa`. Checked every saved `diebold_mariano_results*.csv`
+variant on disk (base, M1-006B, M1-006-log, M1-007, M1-009, causal-safe) — none produces 14/25 for that scope (they
+give 12, 13, 15, or 18). The base file and the M1-006B (production) file are byte-identical and both give **12/25**,
+with neither `Kurunegala` nor `Polonnaruwa` significant. The holdout-only count (5/25) coincidentally matched the
+stale doc, but one named district was also wrong there (`Kandy` listed instead of `Colombo`). Per the Conflict
+Handling rule (prefer the latest implementation/data over stale narrative), `MODULE_CONTEXT.md` was corrected to the
+verified 12/25 (pooled) and 5/25 (holdout) lists, matching the production artifact exactly.
+
+### Impact
+Added as planned Figure 7.7 in `REPORT_DIAGRAM_PLAN.md`. Flagged, but not changed: the poster storytelling script
+(`research_context/poster/MODULE1_POSTER_STORYTELLING_SCRIPT.md`, section 5) still says "fourteen of twenty-five,"
+which now needs correcting to "twelve of twenty-five" — left for the team since that script is under active
+editing.
+
+---
+
+## 2026-08-12 - Added Module 1 Stage 2 feature importance figure (gain-based, grouped by feature category)
+
+### Module
+Module 1 Stage 2 (XGBoost residual compensation)
+
+### Change
+New script `src/module1_forecasting/plot_feature_importance.py` renders the existing
+`outputs/metrics/module1/xgboost_feature_importance.csv` (already produced by
+`compensation_model.run_stage2_pipeline()`) as a horizontal bar chart, with each feature colored by its
+`FEATURE_ENGINEERING_SPEC.md` group (case-trend, lagged climate, climate anomaly, seasonal/contextual,
+residual-specific, pooled-model support, reporting-delay). Saved to
+`outputs/figures/module1/xgboost_feature_importance.png`. New config path
+`MODULE1_XGBOOST_FEATURE_IMPORTANCE_PLOT_PATH` added to `src/config.py`.
+
+### Reason
+A feature-importance table existed but had never been visualized; requested to support the report's discussion of
+which engineered features Stage 2 actually relies on.
+
+### Result
+`residual_lag_1`/`residual_lag_2` dominate by a wide margin (consistent with the Ljung-Box/ACF residual-
+autocorrelation evidence). Climate lags and seasonal encodings (`cos_week`, `rainfall_lag_5`, `humidity_lag_2`,
+`sin_week`) also appear in the top ~20 — supporting evidence for the Open Question #12 resolution that Stage 2
+compensates for Stage 1's missing seasonal component.
+
+### Impact
+Added as planned Figure 7.6 in `REPORT_DIAGRAM_PLAN.md`; `MODULE_CONTEXT.md`'s Stage 2 Implementation Status
+updated to point to the new figure.
+
+---
+
+## 2026-08-12 - Added reproducible OCSB/Canova-Hansen seasonal-differencing test evidence (Module 1 Stage 1)
+
+### Module
+Module 1 Stage 1 (SARIMA baseline)
+
+### Change
+New script `src/module1_forecasting/seasonal_diff_diagnostics.py` reruns `pmdarima.arima.nsdiffs`
+with `test="ocsb"` and `test="ch"` (m=52, max_D=1) on each district's pre-holdout series, for both
+the raw and `log1p` transforms `select_order()` already uses. Saves per-row results to
+`outputs/metrics/module1/seasonal_differencing_tests.csv` and a heatmap to
+`outputs/figures/module1/seasonal_differencing_test_heatmap.png`. Added new config paths
+`MODULE1_SEASONAL_DIFF_TEST_PATH`/`MODULE1_SEASONAL_DIFF_PLOT_PATH` (`src/config.py`).
+
+### Reason
+The existing claim that "both OCSB and Canova-Hansen independently selected D=0 for all 25
+districts" (Open Question #1/#12, `MODULE_CONTEXT.md`; also cited in `EXPERIMENT_LOG.md` and
+earlier in this changelog) was backed only by narrative — no saved test result existed. This was
+identified as a citation gap during Q&A prep (a supervisor asking "show me the test statistics"
+would have had nothing to point to).
+
+### Result
+Confirmed exactly as previously claimed: `D=0` for all 25 districts x {raw, log1p} = 50/50 rows,
+zero disagreements between the two tests. pmdarima 2.1.1's public API only exposes the binary D
+decision per test (no raw statistic/p-value), so the artifact matches — not exceeds — the
+granularity of the original claim.
+
+### Impact
+`MODULE_CONTEXT.md` (Open Question #1) and `EXPERIMENT_LOG.md` (M1-001 results) updated to cite the
+new artifact. Added as planned Figure 5.7 in `REPORT_DIAGRAM_PLAN.md`, with a note that a results
+table may communicate the (uniform, non-varying) finding more efficiently in the report body than
+the heatmap.
+
+---
+
 ## 2026-08-11 - Verified DOIs/access links for all 16 Module 1 literature-connection papers; found 3 citation corrections
 
 ### Module
