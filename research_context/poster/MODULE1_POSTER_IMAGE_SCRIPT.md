@@ -1,24 +1,3 @@
----
-name: module1-poster-image-script
-description: Short spoken narration script for Module 1, organized one block per image in Final Evaluation/Images — read this while looking at each figure
-metadata:
-  type: report_support
----
-
-# Module 1 — Narration Script, By Image
-
-**How to use this:** put each image up (poster panel or laptop) and read/say the block
-below it. Each block is a few sentences, not a page — short enough to actually hold in
-your head, long enough to sound like a person talking rather than a list of facts.
-Target: roughly 15-20 seconds per image, ~4-5 minutes end to end for all ten.
-
-This is a shorter, flowing-prose sibling of two other files: `MODULE1_POSTER_IMAGE_CUES.md`
-(bare cue fragments, for a glance-and-go reminder) and `MODULE1_POSTER_STORYTELLING_SCRIPT.md`
-(the full ~20-minute version with every citation, for deep Q&A prep). All numbers below
-were verified against `module_1_forecasting/MODULE_CONTEXT.md` on 2026-08-12.
-
----
-
 ## Opening (no image)
 
 "Every district reports dengue cases every week, but a raw number alone doesn't tell a
