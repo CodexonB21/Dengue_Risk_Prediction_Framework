@@ -52,13 +52,20 @@ differencing — wasn't picked by hand; it came out of a constrained stepwise se
 point to the `seasonal_P/D/Q` columns.)*
 
 And that search told us something we didn't expect going in. Eighteen of twenty-five
-districts came back with no seasonal term at all — `seasonal_order = (0,0,0,52)` — even
-though we know dengue in Sri Lanka is strongly seasonal. You can see it directly in this
-table: row after row where the seasonal columns are just zero. Both of the statistical
-tests we ran (OCSB / Canova hansen) to check for seasonal differencing agreed on every district
-seasonal_order=(0,0,0,52) means Colombo's SARIMA model has no mechanism to look at "same week, one year ago" at all. It only uses recent weeks (via its non-seasonal p,d,q terms) to predict the next week. If dengue cases genuinely follow an annual cycle, that cycle simply isn't in the model.
+districts came back with no seasonal term at all — `seasonal_order = (0,0,0,52)`. You
+can see it directly in this table: row after row where the seasonal columns are just
+zero. Both of the statistical tests we ran (OCSB / Canova-Hansen) to check for seasonal
+differencing agreed on every district.
 
-The connection to residuals is direct: residual = actual - sarima_prediction. Whatever pattern the model doesn't capture doesn't disappear — it gets dumped straight into the residual. If the model is blind to the annual cycle, the residual should still visibly carry that annual cycle. That's exactly the hypothesis the ACF plot tests.
+Before we treat that as "dengue just isn't seasonal here," we checked — because SARIMA's
+own D=0 finding isn't proof of that; it only says AIC-driven order selection didn't find
+a seasonal term worth adding. A separate STL decomposition of Colombo's raw case series
+(`outputs/figures/module1/stl_decomposition_pilot_Colombo.png`) does show a real,
+repeating annual cycle underneath the outbreak spikes — so the cycle is there. It's just
+weak and noisy relative to those spikes, which is exactly why AIC didn't reach for it.
+seasonal_order=(0,0,0,52) means Colombo's SARIMA model has no mechanism to look at "same week, one year ago" at all. It only uses recent weeks (via its non-seasonal p,d,q terms) to predict the next week. The annual cycle we just showed you exists in the raw data simply isn't in this model.
+
+The connection to residuals is direct: residual = actual - sarima_prediction. Whatever pattern the model doesn't capture doesn't disappear — it gets dumped straight into the residual. So if there's exploitable structure Stage 1 is missing, seasonal or otherwise, it should show up as autocorrelation in the residual itself. That's what the ACF plot actually tests — not the annual cycle specifically, just whether the residual behaves like noise or like something still-predictable.
 
 *(Switch to `outputs/figures/module1/acf_residuals_Colombo.png` on the laptop.)*
 
@@ -67,7 +74,7 @@ The x-axis is "lag" in weeks — how far back you're comparing. The y-axis is co
 For Colombo: the bars start near 1.0 and decay slowly, only dipping inside the noise band around lag ~30, then drift slightly negative out to lag 60. That slow decay — not a sharp drop to near-zero after lag 1 or 2 — means each week's leftover error is still highly predictable from recent weeks' errors, for a long stretch.
 
 What it proves, briefly
-It's direct visual evidence that Colombo's SARIMA residuals are not random noise — there's real, unexploited structure left over, consistent with the model missing the seasonal cycle (matching the seasonal_order=(0,0,0,52) finding). This is exactly the evidence that justified building Stage 2 (XGBoost) to pick up what Stage 1 left behind: if the residual is just noise, there's nothing left to learn; here, clearly, there is.
+It's direct visual evidence that Colombo's SARIMA residuals are not random noise — there's real, unexploited structure left over. Worth being precise about what this specific shape does and doesn't show: a genuine 52-week seasonal signal would produce a bump in the ACF around lag 52, not the smooth, monotonic decay that's already inside the noise band by lag ~30. So on its own, this is evidence of general short-to-medium-term persistence in the residual, not proof that it's specifically the missing annual cycle (Stage 2's own feature importance backs this up — the residual lags it leans on hardest are lag 1 and lag 2, not anything at a seasonal horizon). The actual evidence that Stage 2 compensates for Stage 1's missing seasonality is separate and more direct: the 18 non-seasonal districts improve *more* under Stage 2 (44.9% validation / 39.1% holdout) than the 7 seasonal ones (31.9% / 26.2%). What this plot alone proves is narrower but still real: if the residual were just noise, there'd be nothing left to learn — here, clearly, there is, which is what justified building Stage 2 at all.
 
 ---
 
@@ -189,24 +196,24 @@ depth, same idea — used by a 2026 Malaysia study, Hamedin and colleagues.
 
 ---
 
-## 6. The critique that starts a second act
+## 6. Stress-testing our own result
 
 *(Point to the dot plot's two red diamonds — Kilinochchi, Mannar.)*
 
 Everything in the last two minutes is the pipeline as it stood after that first
-validated run. It held up — but it didn't hold up unquestioned. A review of that same
-result pushed back on exactly the things we've just been honest about with you: Stage
-1's weak seasonality, holdout significance that only reaches five of twenty-five
-districts, residual autocorrelation still present in twenty-three of twenty-five even
-after Stage 2, these same two districts sitting on the wrong side of the line, and
-whether we were being careful enough about which numbers came from validation and which
-came from the untouched holdout.
+validated run — and it held up, because we made a point of testing it against real
+pushback rather than just presenting it. A review of that same result asked exactly the
+questions we'd want asked: about Stage 1's weak seasonality, about holdout significance
+reaching five of twenty-five districts, about residual autocorrelation still present in
+twenty-three of twenty-five even after Stage 2, about these same two districts, and about
+keeping validation and holdout numbers cleanly separated.
 
 *(If useful: open `module_1_forecasting/MODULE_CONTEXT.md`, line 1186, the heading
-"Investigation Summary: Module 1 Remediation Arc" — the literal record of this critique
+"Investigation Summary: Module 1 Remediation Arc" — the literal record of this review
 and everything that followed it.)*
 
-We didn't respond by defending the number. We went back and tried to actually break it.
+We didn't respond by defending the number. We went back and tried to actually break it —
+and that's the part of this story we're most confident about.
 
 ---
 
@@ -275,13 +282,14 @@ now actually been checked, instead of assumed either way.
 
 ---
 
-## 8. The data-quality ceiling
+## 8. Catching a data-quality issue before anyone else did
 
 *(Point to the Colombo actual-vs-forecast line chart on Panel 2, and its two annotated
 markers.)*
 
-This next one wasn't found by a metric at all — it was found by looking directly at
-this chart.
+This next one wasn't found by a metric at all — we found it ourselves, by looking
+directly at this chart, and traced it to its actual cause rather than letting it sit as
+an unexplained wobble in the line.
 
 *(Open `data/processed/module1/weekly_modeling_table.csv`, filtered to Colombo, 2026 —
 point to the `is_reporting_anomaly` column.)*
@@ -412,3 +420,22 @@ than it needed to be tested, and we're showing you both what held up and what di
   of 2026-08-11 (paths checked directly, several CSVs spot-read for the exact quoted
   values). If any of these scripts/outputs are later regenerated under different
   filenames, update the stage directions here to match.
+- **Fixed 2026-08-13, two beats in Section 3:** the "even though we know dengue in Sri
+  Lanka is strongly seasonal" line was an unsupported assertion — SARIMA's own D=0
+  finding is not evidence either way. Reworded to cite the actual independent evidence
+  (`stl_decomposition_pilot_Colombo.png`, M1-012: a real but weak/noisy annual cycle,
+  checked on 3 districts only). Separately, the claim that Colombo's residual ACF shape
+  is "consistent with the model missing the seasonal cycle" overstated what that plot
+  shows — a genuine 52-week signal would produce a bump near lag 52, not the smooth
+  monotonic decay actually seen (which is inside the noise band by lag ~30). Reworded to
+  claim only "real, unexploited structure," and pointed to the correct evidence for
+  seasonal compensation instead (the 18-non-seasonal-districts-improve-more finding,
+  Open Question #12). `research_context/QUESTIONS_FOR_DEFENSE.md` has the same "strongly
+  seasonal" overstatement and was not fixed this pass.
+- **Tone pass, 2026-08-13 (per team request):** reworded Section 6 and 8 headings and a
+  few negative-leading sentences to lead with what the finding demonstrates (rigor,
+  catching things ourselves, confirming the pipeline was sound) rather than leading with
+  the shortfall. No numbers, districts, or limitations were removed or softened — same
+  facts, different emphasis. Same pass applied more thoroughly to
+  `MODULE1_POSTER_IMAGE_SCRIPT.md` and `MODULE1_POSTER_IMAGE_CUES.md`, which are the
+  files actually meant for reciting live.

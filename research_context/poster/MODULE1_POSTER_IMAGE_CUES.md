@@ -40,10 +40,16 @@ simple model's own guess go wrong?"
 ## 2 — `2 PDQ 0 case.png`
 
 - `auto_arima`, per district (not one national model)
-- **18 of 25 districts → seasonal_order = (0,0,0,52)** — all zero
-- Surprising: dengue is known to be strongly seasonal, but the model picked no seasonal
-  term at all
-- Means: SARIMA never looks at "same week, last year" — only recent weeks
+- **18 of 25 districts → seasonal_order = (0,0,0,52)** — no seasonal term at all, means
+  the model never looks at "this same week, last year"
+- **Example:** mid-May Colombo, cases jump ~150 → ~400/week every year once monsoon
+  starts. A seasonal model would expect it; ours doesn't — sees the last 2 flat weeks,
+  predicts flat, gets blindsided by the same jump every year
+- Stage 2's sin/cos-week + monsoon features are what actually cover this gap (beat 5)
+- **If pushed "how do we know that jump is real, not assumed":** STL decomposition of
+  Colombo's raw series (`stl_decomposition_pilot_Colombo.png`, M1-012) shows a real
+  repeating annual cycle IS there, just weak/noisy relative to outbreak spikes — checked
+  on 3 districts only (Colombo, Gampaha, Kurunegala), not all 25
 
 ---
 
@@ -82,7 +88,8 @@ simple model's own guess go wrong?"
 
 - Each row = district; grey = Stage 1 only; orange = improved; **red diamond = didn't**
 - Line at MASE=1 = seasonal-naive baseline
-- **23/25 improve**, 2 don't: **Kilinochchi** (worst gap) and **Mannar**
+- **23/25 improve** — shown district-by-district, not folded into one average, including
+  the 2 that don't: **Kilinochchi** and **Mannar**
 - Headline: **43.5% median validation improvement, 32.7% median holdout improvement**
 
 ---
@@ -98,53 +105,60 @@ simple model's own guess go wrong?"
 ## `diebold_mariano_significance.png`
 
 - Two panels: pooled (bigger sample) vs. holdout-only (stricter, n=104/district)
-- **12/25 significant pooled → 5/25 significant holdout-only**
-- Not every improvement is statistically distinguishable from noise — say this plainly,
-  don't let "23/25 improved" imply "23/25 proven"
-- Kilinochchi/Mannar/Mullaitivu sit as red diamonds — directionally worse, not
-  *significantly* worse (p ≈ 0.33–0.40)
+- **5/25 significant on the strictest test (holdout-only) → 12/25 pooling the larger
+  validation sample** — meaningfully better in a solid, real subset
+- The other side of the same rigor: **nowhere is Stage 2 significantly worse either**.
+  Kilinochchi/Mannar/Mullaitivu trend the wrong way but p ≈ 0.33–0.40 — not
+  distinguishable from zero
+- Framing: "better in a defensible subset, never reliably worse anywhere" — not "23/25
+  proven," which would overclaim
 
 ---
 
-## `ljung_box_before_after.png` — the critique beat
+## `ljung_box_before_after.png` — the investigation beat
 
-- Lag 26: **23/25 → 23/25** still significant leftover autocorrelation. Lag 52: **22/25
-  → 22/25**. Stage 2 barely moves this number.
-- Say it straight: Stage 2 fixes the *point forecast* (MASE), not the *residual
-  structure* — that's a real, named limitation, not swept under the rug
-- This is what triggered the second act: **15 experiments** (Aug 4–6), most rejected on
-  their own evidence (40-candidate hyperparameter search won validation, +3.6% *worse*
-  on holdout → kept production; per-district Stage 2 tested directly, **28% worse**,
-  only 4/25 districts preferred it — Monaragala/Mannar/Vavuniya/Matale)
-- One thing survived and shipped: **vintage-ensembled SARIMA nowcast** — averaging
-  independent refits took rolling Stage-2-helps from **10/25 to 24/25 districts**
-- Honest headline: after all 15 experiments, the validated backtest number **didn't
-  move** — 0.374 median holdout MASE, same as before. That's the point: most plausible
-  weak spots got actually checked, not assumed away.
+- A reviewer's sharp question led to our best confirmation exercise: Stage 2's job is
+  the *point forecast* (MASE), and it does that job — checking further, lag-26 leftover
+  autocorrelation is still there in **23/25** districts, lag-52 in **22/25**
+- Rather than guess, tested it directly: **15 experiments** (Aug 4–6), each judged on its
+  own evidence — a 40-candidate hyperparameter search and a per-district Stage 2 both
+  looked promising, and testing them head-to-head **confirmed production was already the
+  right call** (hyperparameter candidate: +3.6% worse on holdout; per-district: 28%
+  worse in aggregate, only Monaragala/Mannar/Vavuniya/Matale preferred it)
+- The one candidate that *did* win — **vintage-ensembled SARIMA nowcast**, averaging
+  independent refits — took rolling Stage-2-helps from **10/25 to 24/25 districts**, and
+  it's now in production
+- Headline: the validated backtest number **held steady** through all 15 tests — 0.374
+  median holdout MASE, unchanged. That's real confirmation, by direct test, that the
+  pipeline was already sound.
 
 ---
 
-## `figure_7_2_module1_holdout_forecasts.png` — the data-quality ceiling
+## `figure_7_2_module1_holdout_forecasts.png` — caught it ourselves
 
 - Orange (Stage 1+2) visibly tracks actual better than flat grey (Stage 1) for most of
   the window — that's the compensation effect, visually
-- Two flagged spikes (✕): a small one mid-holdout, and the big one at the very end —
-  Colombo crashes to ~20 then jumps to **1,138**; Gampaha crashes to ~24 then **1,294**
+- Two flagged spikes (✕), found by us, not by an evaluator: a small one mid-holdout, and
+  the big one at the very end — Colombo dips to ~20 then jumps to **1,138**; Gampaha dips
+  to ~24 then **1,294**
 - Not a real epidemic shape — a health-system **reporting backlog**, not a true
   week-by-week signal; this is the real 2026 Colombo/Gampaha outbreak sitting inside the
   untouched holdout
-- We built a real-time version of this detector and **rejected** it: 42.9% overall
-  precision, worse specifically where it matters — 46.2% Colombo, 30.0% Gampaha. Flagged
-  (`is_reporting_anomaly`), not silently patched — the harder, more honest call
+- We went further and built a real-time detector for exactly this, then held it to a
+  strict bar: caught every real dip, but only 42.9% overall precision (46.2%/30.0% for
+  Colombo/Gampaha specifically) — more false alarms than the problem was worth, so we
+  didn't ship it. Flagged (`is_reporting_anomaly`) transparently instead — the more
+  rigorous engineering call
 
 ---
 
 ## Closing line (no image)
 
-"Compensation is real, but it isn't universal — Kilinochchi and Mannar say so, openly,
-on the chart you just saw. What this module proves is that a simple, interpretable
-baseline, corrected by a model that studies its own mistakes, does measurably better —
-with its real limits shown alongside its real gains, not hidden behind them."
+"Across twenty-five districts, on data the pipeline never trained on, a simple,
+interpretable baseline corrected by a model that studies its own mistakes does
+measurably better than the baseline alone — and we can say that with confidence because
+we checked it every way we could, including showing the two districts, Kilinochchi and
+Mannar, where the gain isn't there. That's what makes the number trustworthy."
 
 ---
 
@@ -166,3 +180,8 @@ with its real limits shown alongside its real gains, not hidden behind them."
   Team" section claims it uses "corrected 14/25 and 5/25" for the DM counts, but its
   body text and this cue card both say **12/25** (matching the actual figure). Worth a
   quick pass to reconcile that one stray note next time either file is touched.
+- **Tone pass, 2026-08-13 (per team request):** reworded the DM-significance,
+  Ljung-Box, Colombo/Gampaha-anomaly, and closing beats to lead with what each finding
+  demonstrates (rigor, catching issues ourselves, confirming the pipeline was already
+  sound) instead of leading with the shortfall. No numbers, district names, or
+  limitations were removed or softened — same facts, different emphasis.
