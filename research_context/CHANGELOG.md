@@ -6,6 +6,40 @@ Use it to track why the architecture, features, models, or decisions changed ove
 
 ---
 
+## 2026-08-13 - Added evaluator Q&A bank (mechanism/is-it-good/contradiction/deliberate-vs-incidental); corrected a stale Module 2 defense entry
+
+### Module
+All modules (documentation only, no code/model change)
+
+### Change
+Four new companion files added alongside `research_context/QUESTIONS_FOR_DEFENSE.md`:
+`EVALUATOR_QA_BANK_MODULE1.md`, `EVALUATOR_QA_BANK_MODULE2.md`, `EVALUATOR_QA_BANK_MODULE3.md`,
+`EVALUATOR_QA_BANK_CROSSMODULE.md` — 64 new entries total, each citing an exact file/line or
+Decision/experiment number, organized around four recurring evaluator question shapes
+(mechanism, is-that-actually-good, contradiction-check, deliberate-vs-incidental). Built per
+`EVALUATOR_QA_BANK_PROMPT.md`'s Step 0-3 process (audit existing coverage, propose an outline,
+write verified answers only after outline approval).
+
+### Result
+The audit step found `QUESTIONS_FOR_DEFENSE.md`'s existing Module 2 entry
+("Why does Module 2 use isotonic calibration...") was **stale**: production flipped from
+isotonic (τ=0.14) to Platt scaling (τ=0.10) under Decision 047/M2-013 (2026-08-06), and that
+decision's own "Documentation Updated" list never included this file, so the drift went
+uncaught until now. Corrected in place (numbers, architecture name, and the M2-009 comparison
+table's "M2 production" row annotated as pre-047 and not confirmed rerun under Platt). Also
+independently confirmed, via direct code verification (not assumed from prose): Module 3's
+current Random Forest feature-importance breakdown is 86.0% (own-district relative-residual
+lags alone) / 91% (including legacy absolute lags), not the "~81%" figure `MODULE_CONTEXT.md`'s
+prose states — flagged in `EVALUATOR_QA_BANK_MODULE3.md` (M3-10) for a future
+`MODULE_CONTEXT.md` correction.
+
+### Impact
+`QUESTIONS_FOR_DEFENSE.md` updated in place for the isotonic/Platt correction. The four new
+files are kept as separate companion files for now, cross-referenced from the corrected entry;
+whether to merge them into `QUESTIONS_FOR_DEFENSE.md` itself is still an open placement decision.
+
+---
+
 ## 2026-08-12 - Added Module 1 Ljung-Box before/after figure (all 25 districts)
 
 ### Module

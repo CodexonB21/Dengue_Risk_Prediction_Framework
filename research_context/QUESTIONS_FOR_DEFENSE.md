@@ -97,27 +97,30 @@ The latest documentation should be treated as the source of truth, not the conve
 
 ---
 
-## Why does Module 2 use isotonic calibration instead of climate/residual compensation like Module 1?
+## Why does Module 2 use calibration (Platt scaling, currently) instead of climate/residual compensation like Module 1?
 
-**Short answer:** The unified framework is a **two-stage hybrid** (baseline + error correction), not a literal copy of Module 1’s additive residual formula everywhere. Module 2 **does** use climate and case history — in **Stage 1**, where they drive discrimination. Stage 2’s dominant error turned out to be **probability miscalibration** from imbalance handling (`scale_pos_weight` / `class_weight`), not missing weather signal. Isotonic regression fixes that scale distortion; feature-based “residual” models (stacked XGBoost, logit-residual) consistently underperformed in held-out evaluation (M2-002/M2-003/M2-007A).
+**Correction (2026-08-13):** this entry previously named **isotonic regression, τ=0.14** as production. That was the state before Decision 047/M2-013 (2026-08-06). As of Decision 047, **Platt scaling is production**, alert threshold **τ=0.100** (high-confidence boundary 0.500, up from 0.350), holdout PR-AUC **0.4228** (up from 0.412), holdout recall **62.5%** (up from 60.0%), precision **34.2%** (up from 33.8%), F2 **0.536** (up from 0.519). Decision 047’s own “Documentation Updated” list did not include this file, so the drift went uncaught until this pass — see `research_context/EVALUATOR_QA_BANK_MODULE2.md` (M2-2, M2-3) for the full four-round isotonic-vs-Platt flip-flop history and why it is not itself a red flag (it tracks upstream Stage-1/label changes, not a Stage-2 code change each time).
+
+**Short answer (architecture-family point, unaffected by the isotonic/Platt flip):** The unified framework is a **two-stage hybrid** (baseline + error correction), not a literal copy of Module 1’s additive residual formula everywhere. Module 2 **does** use climate and case history — in **Stage 1**, where they drive discrimination. Stage 2’s dominant error turned out to be **probability miscalibration** from imbalance handling (`scale_pos_weight` / `class_weight`), not missing weather signal. Pooled, feature-free recalibration (isotonic or Platt — whichever wins the current benchmark round) fixes that scale distortion; feature-based “residual” models (stacked XGBoost, logit-residual) consistently underperformed in held-out evaluation (M2-002/M2-003/M2-007A) and still do post-047.
 
 **Why the architectures differ (by design, not oversight):**
 
-| | Module 1 | Module 2 (production) |
+| | Module 1 | Module 2 (production, post-Decision-047) |
 |---|---|---|
 | Stage 1 role | Deliberately climate-free SARIMA | Full classifier with case history **and** climate |
 | Stage 2 error type | Structured count residuals (`actual − SARIMA`) | Probability scale distortion |
-| Stage 2 fix | XGBoost on residuals + climate | Isotonic calibration |
+| Stage 2 fix | XGBoost on residuals + climate | Platt scaling (was isotonic pre-047; see correction above) |
 | Literal residual target | Well-posed (continuous) | Ill-posed for binary labels (Decision 022) |
 
 **How to present this honestly:**
 - “Climate **does** improve outbreak-risk ranking in Module 2 — via Stage 1 features, not via a failed Stage 2 residual layer.”
 - “Stage 2 residual correction in probability space was **tested and rejected** — a documented negative result, not an unexamined gap.”
+- “Which pooled recalibration method wins (isotonic vs. Platt) is a close, upstream-driven race, not a fixed property of the problem — it has flipped four times, always tracking a Stage 1 or label change, never a Stage 2 change.”
 - “The framework claim is **validated hybrid correction with documented limits**, not state-of-the-art on every metric.”
 
-**Symmetric ablation (M2-008, 2026-07-29):** Stage 1 retrained **without** climate (case history + seasonality only); climate routed **only** to Stage 2 stacked correction. **Result: stacked climate compensation still failed** — holdout PR-AUC 0.424 vs climate-free Stage 1 raw 0.462 (−3.8 pp), BSS −0.22. Platt/isotonic calibration on the weaker Stage 1 probabilities worked (Platt holdout PR-AUC 0.462, isotonic BSS 0.284), but the feature-based residual layer did not behave like Module 1. This strengthens the conclusion that classification’s bottleneck is not merely “climate was already in Stage 1” — even a Module 1–style split does not make stacked probability correction competitive.
+**Symmetric ablation (M2-008, 2026-07-29):** Stage 1 retrained **without** climate (case history + seasonality only); climate routed **only** to Stage 2 stacked correction. **Result: stacked climate compensation still failed** — holdout PR-AUC 0.424 vs climate-free Stage 1 raw 0.462 (−3.8 pp), BSS −0.22. Platt/isotonic calibration on the weaker Stage 1 probabilities worked (Platt holdout PR-AUC 0.462, isotonic BSS 0.284), but the feature-based residual layer did not behave like Module 1. This strengthens the conclusion that classification’s bottleneck is not merely “climate was already in Stage 1” — even a Module 1–style split does not make stacked probability correction competitive. (Predates Decision 047; unaffected by the isotonic/Platt flip since it’s about the stacked-vs-recalibration architecture question, not which recalibration method wins.)
 
-**Evidence:** Decision 022, M2-002/M2-003/M2-005, M2-007A (logit-residual rejected), M2-007D (M1-fed stacked improves PR-AUC but hurts BSS/precision), **M2-008** (`outputs/metrics/module2/m2_008_summary.csv`).
+**Evidence:** Decision 022, Decision 047/M2-013, M2-002/M2-003/M2-005, M2-007A (logit-residual rejected), M2-007D (M1-fed stacked improves PR-AUC but hurts BSS/precision), **M2-008** (`outputs/metrics/module2/m2_008_summary.csv`), `research_context/EVALUATOR_QA_BANK_MODULE2.md`.
 
 ---
 
@@ -167,11 +170,11 @@ outbreak = 1 if cases > harmonic_seasonal_expectation(district, week) + 3 × SD
 
 Colombo at 200 cases may be normal; a low-incidence district at 30 may be an outbreak. High predicted counts in high-baseline districts (Colombo, Gampaha) are often **not** outbreaks — on holdout, **240 of 260** top-decile M1 prediction weeks are non-outbreaks.
 
-**Empirical comparison (M2-009, holdout — 2,600 district-weeks, 40 true outbreaks):**
+**Empirical comparison (M2-009, holdout — 2,600 district-weeks, 40 true outbreaks). Caveat added 2026-08-13: this table predates Decision 047/M2-013 (2026-08-06), which flipped production from isotonic/τ=0.14 to Platt/τ=0.10 (see the isotonic-calibration entry above). No record found confirming `m2_009_m1_alert_baseline.py` was rerun under Platt — cite the row below as the pre-047 configuration, and note current production PR-AUC/recall/precision are 0.4228/62.5%/34.2% (M2-013), somewhat better than the row shown, until this comparison is regenerated:**
 
 | Alert / scoring rule | PR-AUC | Recall | Precision | F2 | Alerts |
 |---|---:|---:|---:|---:|---:|
-| **M2 production (isotonic, τ=0.14)** | **0.412** | **0.600** | 0.338 | **0.519** | 71 |
+| **M2 production (isotonic, τ=0.14 — pre-Decision-047, not yet rerun)** | **0.412** | **0.600** | 0.338 | **0.519** | 71 |
 | M1 forecast > **same epidemic threshold** | 0.063 | 0.225 | 0.563 | 0.256 | 16 |
 | M1 excess (pred − threshold) score | 0.280 | — | — | — | — |
 | M1 forecast > **fixed 100 cases** (naive) | 0.063 | 0.500 | 0.073 | 0.231 | 273 |
